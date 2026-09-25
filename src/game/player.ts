@@ -1,4 +1,4 @@
-import { BoxGeometry, CapsuleGeometry, CylinderGeometry, Group, Mesh, MeshLambertMaterial } from 'three'
+import { BoxGeometry, CapsuleGeometry, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, RingGeometry } from 'three'
 import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 import { yawFromDirection } from '../core/math'
@@ -119,10 +119,17 @@ export function createPlayerView(): Group {
     new CylinderGeometry(TUNING.player.haloDisc, TUNING.player.haloDisc, 0.08, 16),
     new MeshLambertMaterial({ color: COLOR.gold }),
   )
-  halo.position.set(0, 1.35, 0.18)
+  halo.position.set(0, 1.45, 0.05)
+  halo.rotation.x = Math.PI / 2
   const blade = new Mesh(new BoxGeometry(0.08, 0.08, 1.15), new MeshLambertMaterial({ color: COLOR.bronze }))
   blade.position.set(0.22, 0.9, -0.7)
+  const ring = new Mesh(new RingGeometry(0.55, 0.82, 24), new MeshBasicMaterial({ color: COLOR.gold, side: DoubleSide }))
+  ring.rotation.x = -Math.PI / 2
+  ring.position.y = 0.05
+  const ghost = new Mesh(body.geometry, new MeshBasicMaterial({ color: COLOR.linen, transparent: true, opacity: 0.28, depthTest: false }))
+  ghost.position.y = body.position.y
+  ghost.renderOrder = 6
   const root = new Group()
-  root.add(body, halo, blade)
+  root.add(ring, body, ghost, halo, blade)
   return root
 }

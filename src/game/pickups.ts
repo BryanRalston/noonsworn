@@ -9,7 +9,7 @@ const MAX = TUNING.tiers.high.xp
 export interface Pickups {
   mesh: InstancedMesh
   update: (dt: number, px: number, pz: number, radius: number, cap: number, gain: (value: number) => void) => void
-  spawn: (x: number, z: number, value: number, cap: number) => void
+  spawn: (x: number, z: number, value: number, cap: number, px: number, pz: number) => void
   sync: () => void
   clear: () => void
   used: () => number
@@ -30,21 +30,39 @@ export function createPickups(): Pickups {
       alive.fill(0)
       free.reset()
     },
-    spawn(sx, sz, amount, cap) {
+    spawn(sx, sz, amount, cap, px, pz) {
       if (free.used >= cap || free.free <= 0) {
-        let best = -1
-        let bestD = 1e12
+        const limit = TUNING.xp.merge * TUNING.xp.merge
+        let near = -1
+        let nearD = limit
+        let far = -1
+        let farD = -1
         for (let i = 0; i < MAX; i++) {
           if (!alive[i]) continue
           const dx = (x[i] ?? 0) - sx
           const dz = (z[i] ?? 0) - sz
           const d = dx * dx + dz * dz
-          if (d < bestD) {
-            bestD = d
-            best = i
+          if (d <= nearD) {
+            nearD = d
+            near = i
+          }
+          const pdx = (x[i] ?? 0) - px
+          const pdz = (z[i] ?? 0) - pz
+          const pd = pdx * pdx + pdz * pdz
+          if (pd > farD) {
+            farD = pd
+            far = i
           }
         }
-        if (best >= 0) value[best] = (value[best] ?? 0) + amount
+        if (near >= 0) {
+          value[near] = (value[near] ?? 0) + amount
+          return
+        }
+        if (far >= 0) {
+          x[far] = sx
+          z[far] = sz
+          value[far] = amount
+        }
         return
       }
       const i = free.acquire()

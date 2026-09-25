@@ -42,6 +42,9 @@ export function createBuild(): Build {
 }
 
 export function xpToNext(level: number): number {
+  if (level <= 1) return TUNING.xp.early1
+  if (level === 2) return TUNING.xp.early2
+  if (level === 3) return TUNING.xp.early3
   return Math.round(TUNING.xp.base + TUNING.xp.lin * level + TUNING.xp.quad * level * level)
 }
 
@@ -63,6 +66,15 @@ export function rollCards(build: Build, rng: Rng, out: Card[]): number {
     const tmp = pool[i] ?? 0
     pool[i] = pool[j] ?? 0
     pool[j] = tmp
+  }
+  if (build.halo === 0 && build.level <= 2) {
+    let found = -1
+    for (let i = 0; i < n; i++) if (pool[i] === CARD.halo) found = i
+    if (found > 2) {
+      const tmp = pool[0] ?? 0
+      pool[0] = CARD.halo
+      pool[found] = tmp
+    }
   }
   const take = Math.min(3, n)
   for (let i = 0; i < 3; i++) {
@@ -99,7 +111,7 @@ export function describe(build: Build, id: number): Card {
     return { id, name: 'Lodestone', text: '+25% pickup radius', from: rank(build.lodestone, 5), to: rank(build.lodestone + 1, 5) }
   }
   if (id === CARD.wide) {
-    return { id, name: 'Wide Noon', text: 'Beam half-angle +4°', from: `${build.wide}/2`, to: `${build.wide + 1}/2` }
+    return { id, name: 'Wide Noon', text: 'the sun\'s beam gets wider', from: `${build.wide}/2`, to: `${build.wide + 1}/2` }
   }
   return { id: CARD.heal, name: 'Heal 30', text: 'Restore 30 HP', from: 'now', to: '+30' }
 }

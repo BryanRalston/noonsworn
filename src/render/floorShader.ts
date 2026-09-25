@@ -1,4 +1,4 @@
-import { Color, ShaderMaterial, Vector2, Vector3 } from 'three'
+import { Color, DataTexture, RepeatWrapping, ShaderMaterial, Texture, Vector2, Vector3 } from 'three'
 import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 
@@ -25,6 +25,8 @@ uniform vec3 uShadeDeep;
 uniform vec3 uGold;
 uniform vec3 uFogColor;
 uniform float uFog;
+uniform sampler2D uAlbedo;
+uniform float uTexMix;
 
 float clearance(vec2 s, vec2 p, vec2 c, float r) {
   vec2 d = p - s;
@@ -59,9 +61,14 @@ void main() {
   float radial = length(p);
   float hour = (1.0 - smoothstep(0.0, 0.015, frac)) * smoothstep(0.6, 1.8, radial) * (1.0 - smoothstep(22.0, 24.0, radial));
   col = mix(col, uGold, hour * 0.9);
+  float edge = smoothstep(0.55, 0.0, abs((cosAng - uCosBeta) * max(dist, 0.2)));
+  col += uGold * edge * clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * 0.55;
+  vec3 albedo = texture(uAlbedo, p * 0.08).rgb;
+  col = mix(col, col * albedo * 1.35, uTexMix);
   float fogF = smoothstep(40.0, 78.0, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
 `
@@ -78,6 +85,16 @@ export interface FloorUniforms {
   uGold: { value: Color }
   uFogColor: { value: Color }
   uFog: { value: number }
+  uAlbedo: { value: Texture }
+  uTexMix: { value: number }
+}
+
+function whiteTex(): DataTexture {
+  const tex = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1)
+  tex.wrapS = RepeatWrapping
+  tex.wrapT = RepeatWrapping
+  tex.needsUpdate = true
+  return tex
 }
 
 export function createFloorMaterial(): { material: ShaderMaterial; uniforms: FloorUniforms } {
@@ -102,6 +119,8 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
     uGold: { value: COLOR.gold.clone() },
     uFogColor: { value: COLOR.shadeDeep.clone() },
     uFog: { value: 0 },
+    uAlbedo: { value: whiteTex() },
+    uTexMix: { value: 0 },
   }
   const material = new ShaderMaterial({
     uniforms: uniforms as unknown as ShaderMaterial['uniforms'],

@@ -17,7 +17,7 @@ export function createHud(parent: HTMLElement): Hud {
   root.hidden = true
   root.innerHTML = `
     <div id="xp-wrap"><div id="xp-fill"></div><span id="level">Lv 1</span></div>
-    <div class="hp-wrap"><div class="hp-bar"><div id="hp-fill"></div></div><span id="hp-num">100</span></div>
+    <div class="hp-wrap"><div class="hp-bar"><div id="hp-fill"></div><span id="hp-num">100</span></div></div>
     <svg id="hud-ring" viewBox="0 0 36 36" class="ring" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"></circle><circle id="hud-ring-fg" cx="18" cy="18" r="15" class="ring-fg"></circle></svg>
     <div id="kills">0</div>
     <button type="button" id="btn-pause" aria-label="Pause">II</button>`

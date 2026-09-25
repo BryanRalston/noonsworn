@@ -1,4 +1,4 @@
-import { BoxGeometry, Mesh, MeshBasicMaterial, PlaneGeometry, SphereGeometry } from 'three'
+import { BoxGeometry, CircleGeometry, DoubleSide, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three'
 import { mountPalette, COLOR } from '../data/palette'
 import { TUNING, type TierName } from '../data/tuning'
 import { createEvents } from '../core/events'
@@ -18,6 +18,10 @@ import { createHud } from '../ui/hud'
 import { createLevelUp } from '../ui/levelUp'
 import { createScreens, type ScreenMode } from '../ui/screens'
 import { createSundial } from '../ui/sundialHud'
+import { createFloats } from '../ui/floats'
+import { createAudio } from '../audio/audio'
+import { loadArt } from '../render/art'
+import { storageGet, storageSet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
 import { buildTemple } from './arena'
 import { createDirector } from './director'
@@ -100,7 +104,7 @@ export function boot(container: HTMLElement) {
   const temple = new Mesh(buildTemple(), new MeshBasicMaterial({ vertexColors: true }))
   const playerView = createPlayerView()
   const ribbon = createRibbon()
-  const marker = new Mesh(new SphereGeometry(0.55, 10, 8), new MeshBasicMaterial({ color: COLOR.gold }))
+  const marker = new Mesh(new CircleGeometry(2.4, 24), new MeshBasicMaterial({ color: COLOR.goldHot, side: DoubleSide }))
   const pointer = new Mesh(new BoxGeometry(0.18, 0.06, 2.4), new MeshBasicMaterial({ color: COLOR.goldHot }))
   pointer.position.y = 0.08
   gpu.scene.add(floorMesh, temple, playerView, ribbon, marker, pointer)
@@ -119,6 +123,10 @@ export function boot(container: HTMLElement) {
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'title'
+  let endAt = 0
+  let xpWindow = 0
+  let xpWindowT = 0
+  let xpPerSec = 0
   let time = 0
   let kills = 0
   let tick = 0
@@ -138,6 +146,24 @@ export function boot(container: HTMLElement) {
     damageAmount(45, false, 'cut', 0) === 45 &&
     damageAmount(45, true, 'cut', 0) === 90
 
+  const floats = createFloats(container, TUNING.tiers.high.floats)
+  const audio = createAudio(() => fxRng())
+  const toast = document.createElement('div')
+  toast.id = 'toast'
+  toast.hidden = true
+  container.append(toast)
+  let exposePops = 0
+  let toastTimer = 0
+  const fxSeed = forcedSeed ?? 1
+  let fxState = fxSeed >>> 0
+  function fxRng() {
+    fxState = (fxState + 0x6d2b79f5) >>> 0
+    let t = fxState
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+
   const ctx: HordeCtx = {
     dt: 0,
     time: 0,
@@ -151,14 +177,34 @@ export function boot(container: HTMLElement) {
     separate: true,
     might: 0,
     isLit: (x, z) => sun.isLit(x, z),
+    onHit(x, z, amount, lit, killed) {
+      const text = lit ? `${Math.round(amount)}` : `${Math.round(amount)} shield`
+      floats.push(x, z, text, lit ? 'hot' : 'arm')
+      if (lit) audio.exposed()
+      else audio.armored()
+      if (killed && lit) {
+        audio.kill()
+        shakeAmp = Math.max(shakeAmp, 0.03)
+        shakeT = Math.max(shakeT, 0.12)
+      }
+    },
+    onExpose(x, z) {
+      audio.shimmer()
+      if (exposePops < 5) {
+        exposePops++
+        floats.push(x, z, 'EXPOSED!', 'pop')
+      }
+    },
     onHurt(amount) {
       if (!hurtPlayer(player, amount)) return
+      if (time < TUNING.openSeconds) player.invuln = TUNING.openInvuln
       shakeAmp = TUNING.hurtShake
       shakeT = TUNING.shakeDecay
+      audio.hurt()
       bus.emit('hurt', { amount })
     },
     onXp(x, z, value) {
-      pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp)
+      pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z)
     },
     onKill() {
       kills++
@@ -186,7 +232,11 @@ export function boot(container: HTMLElement) {
   function showMode(next: ScreenMode) {
     mode = next
     screens.setMode(next, next === 'dead' || next === 'clear' ? endDetail() : undefined)
-    hud.setVisible(next === 'playing' || next === 'paused' || next === 'level')
+    const playUi = next === 'playing' || next === 'paused' || next === 'level'
+    hud.setVisible(playUi)
+    sundial.root.hidden = !playUi
+    if (!playUi) touchView.hide()
+    if (next === 'dead' || next === 'clear') endAt = performance.now()
     if (next !== 'level') levelUp.hide()
   }
 
@@ -238,10 +288,19 @@ export function boot(container: HTMLElement) {
   function spawnBench() {
     horde.clear()
     for (let i = 0; i < TUNING.benchMites; i++) {
-      const x = -16 + (i % 10) * 1.15
-      const z = -16 + Math.floor(i / 10) * 1.15
+      const x = -70 + (i % 15) * 1.1
+      const z = -70 + Math.floor(i / 15) * 1.1
       horde.spawn(0, x, z, true)
     }
+  }
+
+  horde.onHit = ctx.onHit
+  horde.onExpose = ctx.onExpose
+
+  function showToast(text: string) {
+    toast.textContent = text
+    toast.hidden = false
+    toastTimer = 3.2
   }
 
   function startRun() {
@@ -262,6 +321,12 @@ export function boot(container: HTMLElement) {
     hitStop = 0
     shakeT = 0
     follow.snap(0, 0)
+    exposePops = 0
+    const seen = Number(storageGet('noonsworn.runs') ?? '0')
+    if (seen < 2) {
+      showToast(seen === 0 ? 'Fight in the SUN — enemies take ×2' : 'Space / Cut button to dash-slash')
+      storageSet('noonsworn.runs', String(seen + 1))
+    }
     levelUp.hide()
     featureMap.close()
     showMode('playing')
@@ -309,6 +374,7 @@ export function boot(container: HTMLElement) {
 
   sun.reset(mulberry32(forcedSeed ?? 1))
   spawnBench()
+  requestAnimationFrame(() => loadArt(floor.uniforms, () => {}))
   if (params.get('debug') === '1') debug.open()
 
   window.addEventListener('keydown', (e) => {
@@ -321,12 +387,16 @@ export function boot(container: HTMLElement) {
     const target = e.target
     if (!(target instanceof Element)) return
     if (target.closest('button, #feature-map, #debug, #level-up')) return
+    if ((mode === 'dead' || mode === 'clear') && performance.now() - endAt < 800) return
     if (mode === 'title' || mode === 'dead' || mode === 'clear') {
       startRun()
       input.clearCut()
     }
   })
+  window.addEventListener('pointerdown', () => audio.unlock())
+  window.addEventListener('keydown', () => audio.unlock())
   document.addEventListener('visibilitychange', () => {
+    audio.setMuted(document.hidden)
     if (document.hidden && mode === 'playing') {
       showMode('paused')
       ads.gameplayStop()
@@ -437,6 +507,7 @@ export function boot(container: HTMLElement) {
       halo.update(dt, player.x, player.z, horde, build.halo, build.might, time, ctx)
       const before = build.pending
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, (value) => {
+        xpWindow += value
         grantXp(build, value)
       })
       if (player.hp <= 0) {
@@ -479,7 +550,8 @@ export function boot(container: HTMLElement) {
       gpu.sunLight.target.position.set(x, 0, z)
       const mx = (sun.x / len) * TUNING.arena.markerRadius
       const mz = (sun.z / len) * TUNING.arena.markerRadius
-      marker.position.set(mx, TUNING.arena.markerHeight, mz)
+      marker.position.set(mx, TUNING.arena.markerHeight + 8, mz)
+      marker.quaternion.copy(follow.camera.quaternion)
       pointer.position.set((sun.x / len) * 22, 0.08, (sun.z / len) * 22)
       pointer.rotation.y = Math.atan2(-sun.x, -sun.z)
       sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
@@ -495,7 +567,18 @@ export function boot(container: HTMLElement) {
       gpu.renderer.render(gpu.scene, follow.camera)
       stats = gpu.readStats()
       pushFrameSample(frameMs)
+      xpWindowT += frameSec
+      if (xpWindowT >= 1) {
+        xpPerSec = xpWindow / xpWindowT
+        xpWindow = 0
+        xpWindowT = 0
+      }
       quality.sample(frameMs, frameSec, mode === 'playing')
+      if (toastTimer > 0) {
+        toastTimer -= frameSec
+        if (toastTimer <= 0) toast.hidden = true
+      }
+      floats.sync(follow.camera, canvas.clientWidth, canvas.clientHeight, frameSec)
       const ready = cut.cooldown <= 0 ? 1 : 1 - cut.cooldown / (TUNING.cut.cooldown * Math.max(0.2, 1 - TUNING.passive.haste * build.haste))
       hud.setHp(player.hp, player.maxHp)
       hud.setXp(build.xp, xpToNext(build.level), build.level)
@@ -526,7 +609,7 @@ export function boot(container: HTMLElement) {
             angle: sun.angle,
             pools: `spear ${spears.used()}/${TUNING.tiers[quality.tier].projectiles}  xp ${pickups.used()}/${TUNING.tiers[quality.tier].xp}`,
             renderer: quality.renderer || 'masked',
-            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${sun.isLit(player.x, player.z) ? 'lit' : 'shade'}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}`,
+            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${sun.isLit(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}`,
           })
         }
       }

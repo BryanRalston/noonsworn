@@ -61,8 +61,17 @@ export function createTouch(view: TouchView, basis: () => Basis) {
 
   function applyStick(p: Ptr) {
     const rad = TUNING.touch.stick
-    const dx = p.x - p.sx
-    const dy = p.y - p.sy
+    let dx = p.x - p.sx
+    let dy = p.y - p.sy
+    const drift = Math.hypot(dx, dy)
+    const limit = rad * TUNING.touch.recenter
+    if (drift > limit) {
+      const scale = (drift - limit) / drift
+      p.sx += dx * scale
+      p.sy += dy * scale
+      dx = p.x - p.sx
+      dy = p.y - p.sy
+    }
     const mag = Math.hypot(dx, dy) / rad
     const dead = TUNING.touch.deadzone
     if (mag < dead) {

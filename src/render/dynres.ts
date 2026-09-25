@@ -12,6 +12,7 @@ export function createDynres(start: number) {
   let overHold = 0
   let enabled = true
   let clock = 0
+  let settle = 0
 
   function reset() {
     count = 0
@@ -38,6 +39,11 @@ export function createDynres(start: number) {
     },
     sample(frameMs: number, frameSec: number, targetMs: number, min: number, max: number) {
       if (!enabled || frameMs <= 0 || frameMs > TUNING.quality.ignoreFrameMs) {
+        return { changed: false, dropTier: false }
+      }
+      if (settle > 0) {
+        settle -= frameSec
+        count = 0
         return { changed: false, dropTier: false }
       }
       clock += frameSec
@@ -67,6 +73,8 @@ export function createDynres(start: number) {
         if (next !== ratio) {
           ratio = next
           overHold = 0
+          settle = TUNING.quality.dynSettle
+          count = 0
           return { changed: true, dropTier: false }
         }
         overHold += frameSec
@@ -82,6 +90,8 @@ export function createDynres(start: number) {
           const next = Math.round(Math.min(max, ratio + step) * 100) / 100
           if (next !== ratio) {
             ratio = next
+            settle = TUNING.quality.dynSettle
+            count = 0
             return { changed: true, dropTier: false }
           }
         }

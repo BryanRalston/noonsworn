@@ -28,7 +28,8 @@ export function tierFromRenderer(renderer: string, mobile: boolean): TierName {
   if (!raw) return 'med'
   const lower = raw.toLowerCase()
   if (lower === 'webkit webgl' || lower === 'webgl') return 'med'
-  if (/mali-g[567]/i.test(raw)) return 'low'
+  const mali = /mali-g(\d{2,4})/i.exec(raw)
+  if (mali) return Number(mali[1]) >= 610 ? 'med' : 'low'
   if (/powervr|swiftshader|llvmpipe/i.test(raw)) return 'low'
   if (/uhd graphics|hd graphics|intel\(r\) hd|intel\(r\) uhd/i.test(raw)) return 'low'
   const adreno = /adreno(?:\D)*(\d{3,4})/i.exec(raw)
@@ -44,7 +45,7 @@ export function tierFromRenderer(renderer: string, mobile: boolean): TierName {
 
 export function tierMaxRatio(tier: TierName, dpr: number): number {
   const spec = TUNING.tiers[tier]
-  const cap = tier === 'high' ? Math.min(spec.maxRatio, dpr) : spec.maxRatio
+  const cap = Math.min(spec.maxRatio, dpr)
   return Math.max(spec.minRatio, cap)
 }
 
@@ -57,6 +58,11 @@ function clampRatio(tier: TierName, ratio: number, dpr: number): number {
 function drop(tier: TierName): TierName {
   const i = ORDER.indexOf(tier)
   return ORDER[Math.max(0, i - 1)] ?? 'low'
+}
+
+function raise(tier: TierName): TierName {
+  const i = ORDER.indexOf(tier)
+  return ORDER[Math.min(ORDER.length - 1, i + 1)] ?? 'high'
 }
 
 function parseTier(value: string | null): TierName | null {
@@ -94,8 +100,8 @@ export function createQuality(): QualityController {
   const raw = storageGet(TUNING.quality.storageKey)
   if (raw) {
     try {
-      const parsed = JSON.parse(raw) as { renderer?: string; tier?: TierName }
-      if (parsed.renderer === renderer && (parsed.tier === 'low' || parsed.tier === 'med' || parsed.tier === 'high')) {
+      const parsed = JSON.parse(raw) as { renderer?: string; tier?: TierName; version?: string }
+      if (parsed.version === __VERSION__ && parsed.renderer === renderer && (parsed.tier === 'low' || parsed.tier === 'med' || parsed.tier === 'high')) {
         saved = parsed.tier
       }
     } catch {
@@ -119,7 +125,9 @@ export function createQuality(): QualityController {
   let ratio = clampRatio(tier, tierMaxRatio(tier, dpr), dpr)
   const dynres = createDynres(ratio)
   const bench: number[] = []
+  const vsync: number[] = []
   let benchT = 0
+  let vsyncReady = mobile
   const api: QualityController = {
     tier,
     ratio,
@@ -134,6 +142,14 @@ export function createQuality(): QualityController {
     },
     onChange: null,
     sample(frameMs, frameSec, playing) {
+      if (!vsyncReady && frameMs > 0 && frameMs <= TUNING.quality.ignoreFrameMs) {
+        vsync.push(frameMs)
+        if (vsync.length >= 60) {
+          const sorted = vsync.slice().sort((a, b) => a - b)
+          api.targetMs = sorted[30] ?? TUNING.quality.desktopTarget
+          vsyncReady = true
+        }
+      }
       if (api.benchmarking) {
         benchT += frameSec
         if (benchT >= TUNING.quality.benchWarmup && frameMs > 0 && frameMs <= TUNING.quality.ignoreFrameMs) bench.push(frameMs)
@@ -144,10 +160,14 @@ export function createQuality(): QualityController {
             const mid = (sorted.length / 2) | 0
             const median = sorted.length % 2 === 0 ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2 : (sorted[mid] ?? 0)
             if (median > api.targetMs * TUNING.quality.benchDrop) api.tier = drop(api.tier)
-            else if (!api.mobile && api.tier === 'med' && median < api.targetMs * TUNING.quality.benchRaise) api.tier = 'high'
+            else if (median < api.targetMs * TUNING.quality.benchRaise) {
+              const next = raise(api.tier)
+              if (!(api.mobile && next === 'high' && median >= api.targetMs * TUNING.quality.benchPhone)) api.tier = next
+            } else if (api.tier === 'low') api.tier = 'med'
+            if (api.mobile && api.tier === 'high' && median >= api.targetMs * TUNING.quality.benchPhone) api.tier = 'med'
           }
           setRatio(tierMaxRatio(api.tier, Math.max(1, window.devicePixelRatio || 1)))
-          storageSet(TUNING.quality.storageKey, JSON.stringify({ renderer: api.renderer, tier: api.tier }))
+          storageSet(TUNING.quality.storageKey, JSON.stringify({ renderer: api.renderer, tier: api.tier, version: __VERSION__ }))
           api.onChange?.()
         }
         return
@@ -162,7 +182,7 @@ export function createQuality(): QualityController {
       if (result.dropTier && api.autoDrop && api.tier !== 'low') {
         api.tier = drop(api.tier)
         setRatio(TUNING.tiers[api.tier].minRatio)
-        storageSet(TUNING.quality.storageKey, JSON.stringify({ renderer: api.renderer, tier: api.tier }))
+        storageSet(TUNING.quality.storageKey, JSON.stringify({ renderer: api.renderer, tier: api.tier, version: __VERSION__ }))
         api.onChange?.()
       }
     },

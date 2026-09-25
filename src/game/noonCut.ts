@@ -84,10 +84,9 @@ export function updateCut(cut: CutState, player: Player, dt: number, input: CutI
       dx = input.wishX
       dz = input.wishZ
     } else {
-      const face = { x: 0, z: -1 }
-      forwardFromYaw(player.yaw, face)
-      dx = face.x
-      dz = face.z
+      forwardFromYaw(player.yaw, cutFace)
+      dx = cutFace.x
+      dz = cutFace.z
     }
     const len = Math.hypot(dx, dz) || 1
     cut.dirX = dx / len
@@ -146,6 +145,8 @@ export function sweepCut(
     onBig()
   }
 }
+
+const cutFace = { x: 0, z: -1 }
 
 export function createRibbon(): Mesh {
   const pos = new Float32Array([-0.5, 0.07, 0, 0.5, 0.07, 0, 0.5, 0.07, -1, -0.5, 0.07, 0, 0.5, 0.07, -1, -0.5, 0.07, -1])

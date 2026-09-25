@@ -1,4 +1,4 @@
-import { DirectionalLight, Fog, HemisphereLight, Scene, WebGLRenderer, type PerspectiveCamera } from 'three'
+import { ACESFilmicToneMapping, DirectionalLight, Fog, HemisphereLight, Scene, WebGLRenderer, type PerspectiveCamera } from 'three'
 import { COLOR, HEX } from '../data/palette'
 import { TUNING } from '../data/tuning'
 
@@ -29,7 +29,8 @@ export function createGpu(canvas: HTMLCanvasElement, camera: PerspectiveCamera, 
     stencil: false,
   })
   renderer.outputColorSpace = 'srgb'
-  renderer.toneMapping = 0
+  renderer.toneMapping = ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1
   renderer.shadowMap.enabled = false
   renderer.info.autoReset = false
   renderer.setClearColor(HEX.sky, 1)

@@ -1,5 +1,4 @@
 import {
-  AdditiveBlending,
   BoxGeometry,
   BufferAttribute,
   DoubleSide,
@@ -106,6 +105,8 @@ export interface Horde {
   update: (ctx: HordeCtx) => void
   sync: () => void
   nearest: (x: number, z: number, range: number) => number
+  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean) => void) | null
+  onExpose: ((x: number, z: number) => void) | null
 }
 
 export interface HordeCtx {
@@ -122,6 +123,8 @@ export interface HordeCtx {
   might: number
   isLit: (x: number, z: number) => boolean
   onHurt: (amount: number) => void
+  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean) => void) | null
+  onExpose: ((x: number, z: number) => void) | null
   onXp: (x: number, z: number, value: number) => void
   onKill: () => void
 }
@@ -153,17 +156,33 @@ export function createHorde(): Horde {
   const miteA = attrs(miteMesh)
   const houndA = attrs(houndMesh)
   const lineGeo = new BufferGeometry()
-  const linePos = new Float32Array([-0.5, 0.05, 0, 0.5, 0.05, 0, 0.5, 0.05, -1, -0.5, 0.05, 0, 0.5, 0.05, -1, -0.5, 0.05, -1])
+  const linePos = new Float32Array([
+    -0.72, 0.04, 0.08, 0.72, 0.04, 0.08, 0.72, 0.04, -1.08,
+    -0.72, 0.04, 0.08, 0.72, 0.04, -1.08, -0.72, 0.04, -1.08,
+    -0.4, 0.07, 0, 0.4, 0.07, 0, 0.4, 0.07, -1,
+    -0.4, 0.07, 0, 0.4, 0.07, -1, -0.4, 0.07, -1,
+  ])
+  const lineCol = new Float32Array(12 * 3)
+  for (let i = 0; i < 6; i++) {
+    lineCol[i * 3] = 0.08
+    lineCol[i * 3 + 1] = 0.04
+    lineCol[i * 3 + 2] = 0.12
+  }
+  for (let i = 6; i < 12; i++) {
+    lineCol[i * 3] = COLOR.telegraph.r
+    lineCol[i * 3 + 1] = COLOR.telegraph.g
+    lineCol[i * 3 + 2] = COLOR.telegraph.b
+  }
   lineGeo.setAttribute('position', new BufferAttribute(linePos, 3))
+  lineGeo.setAttribute('color', new BufferAttribute(lineCol, 3))
   const teleMesh = makeCrowd(
     lineGeo,
     new MeshBasicMaterial({
-      color: COLOR.telegraph,
+      vertexColors: true,
       transparent: true,
-      blending: AdditiveBlending,
+      opacity: 0.92,
       depthWrite: false,
       side: DoubleSide,
-      toneMapped: false,
     }),
     8,
   )
@@ -281,12 +300,16 @@ export function createHorde(): Horde {
         live--
       }
     },
+    onHit: null,
+    onExpose: null,
     damage(index, base, source, might) {
       if (!alive[index] || state[index] === DYING || bench[index]) return 0
       const amount = damageAmount(base, lit[index] === 1, source, might)
       hp[index] = (hp[index] ?? 0) - amount
       flash[index] = TUNING.hitFlash
-      return (hp[index] ?? 0) <= 0 ? 2 : 1
+      const killed = (hp[index] ?? 0) <= 0
+      horde.onHit?.(x[index] ?? 0, z[index] ?? 0, amount, lit[index] === 1, killed)
+      return killed ? 2 : 1
     },
     slay(index, ctx) {
       kill(index, ctx)
@@ -314,10 +337,13 @@ export function createHorde(): Horde {
         }
         if ((i + ctx.tick) % TUNING.litHzDiv === 0) {
           const now = ctx.isLit(x[i] ?? 0, z[i] ?? 0)
-          if (litKnown[i] && now && !lit[i] && ctx.time - (staggerAt[i] ?? -10) >= TUNING.staggerGap) {
-            state[i] = STAGGER
-            stateT[i] = TUNING.staggerTime
-            staggerAt[i] = ctx.time
+          if (litKnown[i] && now && !lit[i]) {
+            ctx.onExpose?.(x[i] ?? 0, z[i] ?? 0)
+            if (ctx.time - (staggerAt[i] ?? -10) >= TUNING.staggerGap) {
+              state[i] = STAGGER
+              stateT[i] = TUNING.staggerTime
+              staggerAt[i] = ctx.time
+            }
           }
           litKnown[i] = 1
           lit[i] = now ? 1 : 0
@@ -414,7 +440,8 @@ export function createHorde(): Horde {
         if ((contact[i] ?? 0) > 0) continue
         if (state[i] !== CHASE && state[i] !== LUNGE && state[i] !== RECOVER && state[i] !== TELE) continue
         contact[i] = TUNING.contactGap
-        ctx.onHurt(spec.contact)
+        const open = ctx.time < TUNING.openSeconds ? TUNING.openContact : 1
+        ctx.onHurt(spec.contact * open)
         if (!ctx.vulnerable()) return
       }
     },

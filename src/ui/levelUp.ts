@@ -29,6 +29,8 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
         btn.addEventListener('click', () => ui.onPick?.(i))
         cards.append(btn)
       }
+      const hint = root.querySelector('p')
+      if (hint) hint.textContent = window.matchMedia('(pointer: coarse)').matches ? 'Tap a card' : 'Press 1, 2, or 3'
       root.hidden = false
     },
     hide() {

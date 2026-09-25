@@ -1,4 +1,5 @@
 import { TUNING } from '../data/tuning'
+import { waveAt } from '../data/waves'
 import type { Rng } from '../core/rng'
 import { insideArena } from './collision'
 import type { Horde } from './enemies/horde'
@@ -32,23 +33,23 @@ export function createDirector(): Director {
     },
     update(dt, time, horde, px, pz, cap, rng, camX, camZ) {
       if (time >= TUNING.runLength) return
-      const u = Math.min(1, time / TUNING.runLength)
-      const rate = TUNING.rateStart + (TUNING.rateEnd - TUNING.rateStart) * u
-      const minCount = TUNING.minCountStart + (cap - TUNING.minCountStart) * u
+      const wave = waveAt(time)
+      const rate = wave.rate
+      const minCount = Math.min(wave.min, TUNING.designCap)
       director.acc += rate * dt
       const hour = Math.floor(time / TUNING.packEvery)
-      if (hour > director.hour && time < TUNING.runLength) {
+      if (hour > director.hour && time < TUNING.runLength && wave.pack > 0) {
         director.hour = hour
         const base = rng() * Math.PI * 2
-        for (let i = 0; i < TUNING.packSize; i++) {
-          const a = base + (i / TUNING.packSize - 0.5) * TUNING.packArc
+        for (let i = 0; i < wave.pack; i++) {
+          const a = base + (i / wave.pack - 0.5) * TUNING.packArc
           horde.spawn(0, px + Math.cos(a) * TUNING.packRadius, pz + Math.sin(a) * TUNING.packRadius, false, cap, px, pz)
         }
       }
       let spawned = 0
       while ((director.acc >= 1 || horde.count() < minCount) && spawned < TUNING.spawnBurst && time < TUNING.runLength) {
         if (director.acc >= 1) director.acc -= 1
-        const houndChance = time >= TUNING.houndLate ? TUNING.houndChanceLate : time >= TUNING.houndAt ? TUNING.houndChance : 0
+        const houndChance = wave.hound
         const kind: 0 | 1 = rng() < houndChance ? 1 : 0
         const spot = pickSpawn(px, pz, kind === 0 ? TUNING.mite.radius : TUNING.hound.radius, rng, camX, camZ)
         horde.spawn(kind, spot.x, spot.z, false, cap, px, pz)

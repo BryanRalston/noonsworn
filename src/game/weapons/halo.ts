@@ -1,4 +1,4 @@
-import { CircleGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
+import { InstancedMesh, MeshBasicMaterial, RingGeometry } from 'three'
 import { COLOR } from '../../data/palette'
 import { TUNING } from '../../data/tuning'
 import { makeCrowd, writeFlat } from '../../render/instancing'
@@ -47,7 +47,7 @@ export interface Halo {
 }
 
 export function createHalo(): Halo {
-  const geo = new CircleGeometry(TUNING.halo.discR, 10)
+  const geo = new RingGeometry(TUNING.halo.discR * 0.62, TUNING.halo.discR, 18)
   geo.rotateX(-Math.PI / 2)
   const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: COLOR.gold }), TUNING.halo.maxDiscs)
   const stamps = new Float32Array(TUNING.hordeCap * TUNING.halo.maxDiscs)

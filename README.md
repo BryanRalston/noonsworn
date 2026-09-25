@@ -1,6 +1,6 @@
 # NOONSWORN
 
-NOONSWORN is a browser bullet heaven set in a sunlit sandstone sundial temple. You move, weapons fire on their own, and the Noon Cut is the one dash-slash you choose. A low sun orbits the court: enemies in the beam are Exposed, enemies in shade or pillar shadow are Armored, and the shadows sweep as the day turns. This build is the M1 greybox.
+NOONSWORN is a browser bullet heaven set in a sunlit sandstone sundial temple. You move, weapons fire on their own, and the Noon Cut is the one dash-slash you choose. A low sun orbits the court: enemies in the beam are Exposed, enemies in shade or pillar shadow are Armored, and the shadows sweep as the day turns. This build is the M2 pass: the same arena, with a wider phone camera, a clearer opening, procedural sound, and Lapis Noon art slots.
 
 **Play:** https://bryanralston.github.io/noonsworn/
 
@@ -14,4 +14,4 @@ NOONSWORN is a browser bullet heaven set in a sunlit sandstone sundial temple. Y
 - Feature Map: the title button, the pause menu, or the M key.
 - Debug overlay: F3, backtick, or a three-finger tap.
 
-M1 greybox.
+M2.
