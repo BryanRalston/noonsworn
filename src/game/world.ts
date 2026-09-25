@@ -374,7 +374,25 @@ export function boot(container: HTMLElement) {
 
   sun.reset(mulberry32(forcedSeed ?? 1))
   spawnBench()
-  requestAnimationFrame(() => loadArt(floor.uniforms, () => {}))
+  requestAnimationFrame(() => loadArt(floor.uniforms, (slots) => {
+    const base = import.meta.env.BASE_URL
+    const title = document.querySelector('#title-screen') as HTMLElement | null
+    if (title && slots.keyart) {
+      title.style.backgroundImage = `url(${base}assets/art/${slots.keyart})`
+      title.style.backgroundSize = 'cover'
+      title.style.backgroundPosition = 'center'
+    }
+    const heading = document.querySelector('#title-screen h1')
+    if (heading && slots.logo) {
+      heading.textContent = ''
+      const img = document.createElement('img')
+      img.src = `${base}assets/art/${slots.logo}`
+      img.alt = 'NOONSWORN'
+      img.style.width = 'min(420px, 86vw)'
+      img.style.height = 'auto'
+      heading.append(img)
+    }
+  }))
   if (params.get('debug') === '1') debug.open()
 
   window.addEventListener('keydown', (e) => {
