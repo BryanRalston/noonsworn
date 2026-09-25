@@ -72,5 +72,29 @@ for (const id of icons) {
   if (!file) continue
   await keyAndSave(join(srcDir, file), 256, 256, [20, 18, 37], 40000)
 }
+const iconFiles = icons
+  .map((id) => join(outDir, `icon_${id}.webp`))
+  .filter((file) => existsSync(file))
+if (iconFiles.length > 0) {
+  const cell = 64
+  const composites = []
+  for (let i = 0; i < iconFiles.length; i++) {
+    const input = await sharp(iconFiles[i]).resize(cell, cell, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+    composites.push({ input, left: i * cell, top: 0 })
+  }
+  let quality = 72
+  const dest = join(outDir, 'cards_atlas.webp')
+  while (quality >= 36) {
+    await sharp({
+      create: { width: iconFiles.length * cell, height: cell, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+    })
+      .composite(composites)
+      .webp({ quality })
+      .toFile(dest)
+    const size = (await import('node:fs')).statSync(dest).size
+    if (size <= 60000) break
+    quality -= 8
+  }
+}
 const slots = writeArtManifest(root)
 console.log('art slots', Object.keys(slots).length)

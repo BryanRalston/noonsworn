@@ -59,10 +59,15 @@ export interface Sunspear {
   sync: () => void
   clear: () => void
   used: () => number
+  onFire: (() => void) | null
 }
 
 export function createSunspear(): Sunspear {
-  const mesh = makeCrowd(new BoxGeometry(0.12, 0.12, 1.05), new MeshBasicMaterial({ color: COLOR.goldHot }), MAX)
+  const mesh = makeCrowd(
+    new BoxGeometry(0.12, 0.12, 1.05),
+    new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false }),
+    MAX,
+  )
   const x = new Float32Array(MAX)
   const z = new Float32Array(MAX)
   const vx = new Float32Array(MAX)
@@ -99,6 +104,7 @@ export function createSunspear(): Sunspear {
     mesh,
     cooldown: 0.35,
     used: () => free.used,
+    onFire: null,
     clear() {
       alive.fill(0)
       life.fill(0)
@@ -120,6 +126,7 @@ export function createSunspear(): Sunspear {
             launch(px, pz, ang - spread, stats.damage, stats.pierce, cap)
             launch(px, pz, ang + spread, stats.damage, stats.pierce, cap)
           }
+          spear.onFire?.()
         }
       }
       for (let i = 0; i < MAX; i++) {

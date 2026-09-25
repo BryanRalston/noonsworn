@@ -13,14 +13,16 @@ export interface Pickups {
   sync: () => void
   clear: () => void
   used: () => number
+  visit: (fn: (x: number, z: number) => void) => void
 }
 
 export function createPickups(): Pickups {
-  const mesh = makeCrowd(new OctahedronGeometry(0.18, 0), new MeshBasicMaterial({ color: COLOR.xp }), MAX)
+  const mesh = makeCrowd(new OctahedronGeometry(0.18, 0), new MeshBasicMaterial({ color: COLOR.xp, toneMapped: false }), MAX)
   const x = new Float32Array(MAX)
   const z = new Float32Array(MAX)
   const value = new Float32Array(MAX)
   const alive = new Uint8Array(MAX)
+  const age = new Float32Array(MAX)
   const free = new FreeList(MAX)
 
   const pickups: Pickups = {
@@ -28,7 +30,11 @@ export function createPickups(): Pickups {
     used: () => free.used,
     clear() {
       alive.fill(0)
+      age.fill(0)
       free.reset()
+    },
+    visit(fn) {
+      for (let i = 0; i < MAX; i++) if (alive[i]) fn(x[i] ?? 0, z[i] ?? 0)
     },
     spawn(sx, sz, amount, cap, px, pz) {
       if (free.used >= cap || free.free <= 0) {
@@ -62,6 +68,7 @@ export function createPickups(): Pickups {
           x[far] = sx
           z[far] = sz
           value[far] = amount
+          age[far] = 0
         }
         return
       }
@@ -70,13 +77,15 @@ export function createPickups(): Pickups {
       x[i] = sx
       z[i] = sz
       value[i] = amount
+      age[i] = 0
       alive[i] = 1
     },
     update(dt, px, pz, radius, cap, gain) {
-      void cap
       const r2 = radius * radius
+      const crowded = cap > 0 && free.used / cap >= 0.8
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
+        age[i] = (age[i] ?? 0) + dt
         const dx = px - (x[i] ?? 0)
         const dz = pz - (z[i] ?? 0)
         const d2 = dx * dx + dz * dz
@@ -84,10 +93,12 @@ export function createPickups(): Pickups {
         if (d2 <= grab) {
           gain(value[i] ?? 0)
           alive[i] = 0
+          age[i] = 0
           free.release(i)
           continue
         }
-        if (d2 <= r2) {
+        const drift = crowded || (age[i] ?? 0) > 20
+        if (d2 <= r2 || drift) {
           const d = Math.sqrt(d2) || 1
           const step = Math.min(d, TUNING.xp.fly * dt)
           x[i] = (x[i] ?? 0) + (dx / d) * step

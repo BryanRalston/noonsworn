@@ -35,6 +35,10 @@ export const CARD = {
   lodestone: 6,
   wide: 7,
   heal: 8,
+  flare: 9,
+  bell: 10,
+  longday: 11,
+  searing: 12,
 } as const
 
 export function createBuild(): Build {
@@ -48,7 +52,7 @@ export function xpToNext(level: number): number {
   return Math.round(TUNING.xp.base + TUNING.xp.lin * level + TUNING.xp.quad * level * level)
 }
 
-const pool = new Int32Array(12)
+const pool = new Int32Array(16)
 
 export function rollCards(build: Build, rng: Rng, out: Card[]): number {
   let n = 0
@@ -60,6 +64,12 @@ export function rollCards(build: Build, rng: Rng, out: Card[]): number {
   if (build.vitality < TUNING.passive.max) pool[n++] = CARD.vitality
   if (build.lodestone < TUNING.passive.max) pool[n++] = CARD.lodestone
   if (build.wide < TUNING.wideMax) pool[n++] = CARD.wide
+  if (build.level >= 4) {
+    pool[n++] = CARD.flare
+    if (build.haste < TUNING.passive.max) pool[n++] = CARD.bell
+    if (build.wide < TUNING.wideMax) pool[n++] = CARD.longday
+    if (build.might < TUNING.passive.max) pool[n++] = CARD.searing
+  }
   if (n === 0) pool[n++] = CARD.heal
   for (let i = n - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0
@@ -112,6 +122,18 @@ export function describe(build: Build, id: number): Card {
   }
   if (id === CARD.wide) {
     return { id, name: 'Wide Noon', text: 'the sun\'s beam gets wider', from: `${build.wide}/2`, to: `${build.wide + 1}/2` }
+  }
+  if (id === CARD.flare) {
+    return { id, name: 'Solar Flare', text: 'A flare of noon restores 30 HP', from: 'new', to: '+30' }
+  }
+  if (id === CARD.bell) {
+    return { id, name: 'Noon Bell', text: 'The bell quickens cooldowns', from: rank(build.haste, 5), to: rank(Math.min(5, build.haste + 1), 5) }
+  }
+  if (id === CARD.longday) {
+    return { id, name: 'Long Day', text: 'The noon beam runs wider', from: `${build.wide}/2`, to: `${Math.min(2, build.wide + 1)}/2` }
+  }
+  if (id === CARD.searing) {
+    return { id, name: 'Searing Light', text: 'Heat bites deeper', from: rank(build.might, 5), to: rank(Math.min(5, build.might + 1), 5) }
   }
   return { id: CARD.heal, name: 'Heal 30', text: 'Restore 30 HP', from: 'now', to: '+30' }
 }

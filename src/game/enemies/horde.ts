@@ -1,16 +1,13 @@
 import {
-  BoxGeometry,
   BufferAttribute,
   DoubleSide,
   BufferGeometry,
-  ConeGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
   InstancedMesh,
   MeshBasicMaterial,
   Object3D,
 } from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { COLOR } from '../../data/palette'
 import { TUNING, type DamageSource } from '../../data/tuning'
 import { FreeList } from '../../core/pool'
@@ -18,6 +15,7 @@ import { yawFromDirection } from '../../core/math'
 import { resolveCircle } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
+import { houndGeometry, miteGeometry } from '../actors'
 import { createEnemyMaterial, makeCrowd, writeInstance } from '../../render/instancing'
 
 const MAX = TUNING.hordeCap
@@ -29,62 +27,20 @@ const STAGGER = 5
 const DYING = 6
 const QUERY = new Int16Array(48)
 
-function withEye(geo: BufferGeometry, eye: number): BufferGeometry {
-  const g = geo.index ? geo.toNonIndexed() : geo
-  if (g !== geo) geo.dispose()
-  const n = g.getAttribute('position').count
-  const eyes = new Float32Array(n)
-  eyes.fill(eye)
-  g.setAttribute('aEye', new BufferAttribute(eyes, 1))
-  if (g.getAttribute('uv')) g.deleteAttribute('uv')
-  return g
-}
-
-function paintAll(geo: BufferGeometry, r: number, g: number, b: number) {
-  const n = geo.getAttribute('position').count
-  const col = new Float32Array(n * 3)
-  for (let i = 0; i < n; i++) {
-    col[i * 3] = r
-    col[i * 3 + 1] = g
-    col[i * 3 + 2] = b
-  }
-  geo.setAttribute('color', new BufferAttribute(col, 3))
-}
-
-function miteGeo(): BufferGeometry {
-  const geo = new ConeGeometry(TUNING.mite.radius, 0.55, 6)
-  geo.translate(0, 0.22, 0)
-  geo.scale(1, 0.72, 1)
-  paintAll(geo, COLOR.umbral.r, COLOR.umbral.g, COLOR.umbral.b)
-  return withEye(geo, 0)
-}
-
-function houndGeo(): BufferGeometry {
-  const body = new BoxGeometry(0.62, 0.7, 1.25)
-  body.translate(0, 0.4, 0)
-  paintAll(body, COLOR.umbral.r, COLOR.umbral.g, COLOR.umbral.b)
-  const eyeL = new BoxGeometry(0.12, 0.1, 0.08)
-  eyeL.translate(-0.16, 0.55, -0.62)
-  paintAll(eyeL, COLOR.goldHot.r, COLOR.goldHot.g, COLOR.goldHot.b)
-  const eyeR = new BoxGeometry(0.12, 0.1, 0.08)
-  eyeR.translate(0.16, 0.55, -0.62)
-  paintAll(eyeR, COLOR.goldHot.r, COLOR.goldHot.g, COLOR.goldHot.b)
-  const merged = mergeGeometries([withEye(body, 0), withEye(eyeL, 1), withEye(eyeR, 1)], false)
-  if (!merged) throw new Error('hound merge failed')
-  return merged
-}
-
 function attrs(mesh: InstancedMesh) {
   const flash = new InstancedBufferAttribute(new Float32Array(MAX), 1)
   const lit = new InstancedBufferAttribute(new Float32Array(MAX), 1)
   const phase = new InstancedBufferAttribute(new Float32Array(MAX), 1)
+  const move = new InstancedBufferAttribute(new Float32Array(MAX), 1)
   flash.setUsage(DynamicDrawUsage)
   lit.setUsage(DynamicDrawUsage)
   phase.setUsage(DynamicDrawUsage)
+  move.setUsage(DynamicDrawUsage)
   mesh.geometry.setAttribute('iFlash', flash)
   mesh.geometry.setAttribute('iLit', lit)
   mesh.geometry.setAttribute('iPhase', phase)
-  return { flash, lit, phase }
+  mesh.geometry.setAttribute('iMove', move)
+  return { flash, lit, phase, move }
 }
 
 export interface Horde {
@@ -105,8 +61,10 @@ export interface Horde {
   update: (ctx: HordeCtx) => void
   sync: () => void
   nearest: (x: number, z: number, range: number) => number
-  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean) => void) | null
+  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
   onExpose: ((x: number, z: number) => void) | null
+  visit: (fn: (x: number, z: number, kind: number) => void) => void
+  tris: { mite: number; hound: number }
 }
 
 export interface HordeCtx {
@@ -123,10 +81,11 @@ export interface HordeCtx {
   might: number
   isLit: (x: number, z: number) => boolean
   onHurt: (amount: number) => void
-  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean) => void) | null
+  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
   onExpose: ((x: number, z: number) => void) | null
   onXp: (x: number, z: number, value: number) => void
   onKill: () => void
+  onDeath: (x: number, z: number, lit: boolean) => void
 }
 
 export function createHorde(): Horde {
@@ -151,8 +110,10 @@ export function createHorde(): Horde {
   const bench = new Uint8Array(MAX)
   const free = new FreeList(MAX)
   const material = createEnemyMaterial()
-  const miteMesh = makeCrowd(miteGeo(), material, MAX)
-  const houndMesh = makeCrowd(houndGeo(), material, MAX)
+  const miteGeo = miteGeometry()
+  const houndGeo = houndGeometry()
+  const miteMesh = makeCrowd(miteGeo, material, MAX)
+  const houndMesh = makeCrowd(houndGeo, material, MAX)
   const miteA = attrs(miteMesh)
   const houndA = attrs(houndMesh)
   const lineGeo = new BufferGeometry()
@@ -219,6 +180,7 @@ export function createHorde(): Horde {
     const value = type[i] === 0 ? TUNING.mite.xp : TUNING.hound.xp
     ctx.onXp(x[i] ?? 0, z[i] ?? 0, value)
     ctx.onKill()
+    ctx.onDeath(x[i] ?? 0, z[i] ?? 0, lit[i] === 1)
   }
 
   const horde: Horde = {
@@ -302,13 +264,23 @@ export function createHorde(): Horde {
     },
     onHit: null,
     onExpose: null,
+    tris: {
+      mite: miteGeo.getAttribute('position').count / 3,
+      hound: houndGeo.getAttribute('position').count / 3,
+    },
+    visit(fn) {
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || bench[i] || state[i] === DYING) continue
+        fn(x[i] ?? 0, z[i] ?? 0, type[i] ?? 0)
+      }
+    },
     damage(index, base, source, might) {
       if (!alive[index] || state[index] === DYING || bench[index]) return 0
       const amount = damageAmount(base, lit[index] === 1, source, might)
       hp[index] = (hp[index] ?? 0) - amount
       flash[index] = TUNING.hitFlash
       const killed = (hp[index] ?? 0) <= 0
-      horde.onHit?.(x[index] ?? 0, z[index] ?? 0, amount, lit[index] === 1, killed)
+      horde.onHit?.(x[index] ?? 0, z[index] ?? 0, amount, lit[index] === 1, killed, index)
       return killed ? 2 : 1
     },
     slay(index, ctx) {
@@ -467,17 +439,21 @@ export function createHorde(): Horde {
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
         const s = Math.max(0.001, scale[i] ?? 1)
+        const moving = state[i] === CHASE || state[i] === LUNGE ? 1 : 0
         if (type[i] === 0) {
-          writeInstance(miteMesh, mites, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s)
+          writeInstance(miteMesh, mites, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s * 1.7)
           miteA.flash.setX(mites, (flash[i] ?? 0) > 0 ? 1 : 0)
           miteA.lit.setX(mites, lit[i] ?? 0)
           miteA.phase.setX(mites, phase[i] ?? 0)
+          miteA.move.setX(mites, moving)
           mites++
         } else {
-          writeInstance(houndMesh, hounds, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s)
+          const crouch = state[i] === TELE ? 0.62 : 1
+          writeInstance(houndMesh, hounds, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s * 1.35, s * 1.35 * crouch)
           houndA.flash.setX(hounds, (flash[i] ?? 0) > 0 ? 1 : 0)
           houndA.lit.setX(hounds, lit[i] ?? 0)
           houndA.phase.setX(hounds, phase[i] ?? 0)
+          houndA.move.setX(hounds, moving)
           hounds++
           if (state[i] === TELE && lines < 8) {
             writeTele(teleMesh, lines, x[i] ?? 0, z[i] ?? 0, yaw[i] ?? 0)
@@ -508,7 +484,7 @@ function writeTele(mesh: InstancedMesh, index: number, x: number, z: number, yaw
 function finish(
   mesh: InstancedMesh,
   count: number,
-  a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute; phase: InstancedBufferAttribute },
+  a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute; phase: InstancedBufferAttribute; move: InstancedBufferAttribute },
 ) {
   mesh.count = count
   mesh.visible = count > 0
@@ -517,5 +493,6 @@ function finish(
     a.flash.needsUpdate = true
     a.lit.needsUpdate = true
     a.phase.needsUpdate = true
+    a.move.needsUpdate = true
   }
 }

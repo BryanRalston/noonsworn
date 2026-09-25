@@ -43,15 +43,32 @@ export function tierFromRenderer(renderer: string, mobile: boolean): TierName {
   return 'med'
 }
 
-export function tierMaxRatio(tier: TierName, dpr: number): number {
+const VSYNC_MS = [1000 / 144, 1000 / 120, 1000 / 90, 1000 / 60]
+
+export function snapVsync(ms: number): number {
+  let best = 1000 / 60
+  let bestD = Infinity
+  for (let i = 0; i < VSYNC_MS.length; i++) {
+    const v = VSYNC_MS[i] ?? best
+    const d = Math.abs(ms - v)
+    if (d < bestD) {
+      bestD = d
+      best = v
+    }
+  }
+  return Math.min(best, 16.7)
+}
+
+export function tierMaxRatio(tier: TierName, dpr: number, mobile = false): number {
   const spec = TUNING.tiers[tier]
-  const cap = Math.min(spec.maxRatio, dpr)
+  let cap = Math.min(spec.maxRatio, dpr)
+  if (mobile && tier === 'med') cap = Math.min(cap, 1.5)
   return Math.max(spec.minRatio, cap)
 }
 
-function clampRatio(tier: TierName, ratio: number, dpr: number): number {
+function clampRatio(tier: TierName, ratio: number, dpr: number, mobile: boolean): number {
   const min = TUNING.tiers[tier].minRatio
-  const max = tierMaxRatio(tier, dpr)
+  const max = tierMaxRatio(tier, dpr, mobile)
   return Math.round(Math.min(max, Math.max(min, ratio)) * 100) / 100
 }
 
@@ -122,12 +139,12 @@ export function createQuality(): QualityController {
     benchmarking = true
   }
   const targetMs = mobile ? TUNING.quality.mobileTarget : TUNING.quality.desktopTarget
-  let ratio = clampRatio(tier, tierMaxRatio(tier, dpr), dpr)
+  let ratio = clampRatio(tier, tierMaxRatio(tier, dpr, mobile), dpr, mobile)
   const dynres = createDynres(ratio)
   const bench: number[] = []
   const vsync: number[] = []
   let benchT = 0
-  let vsyncReady = mobile
+  let vsyncReady = false
   const api: QualityController = {
     tier,
     ratio,
@@ -146,7 +163,7 @@ export function createQuality(): QualityController {
         vsync.push(frameMs)
         if (vsync.length >= 60) {
           const sorted = vsync.slice().sort((a, b) => a - b)
-          api.targetMs = sorted[30] ?? TUNING.quality.desktopTarget
+          api.targetMs = snapVsync(sorted[30] ?? TUNING.quality.desktopTarget)
           vsyncReady = true
         }
       }
@@ -166,7 +183,7 @@ export function createQuality(): QualityController {
             } else if (api.tier === 'low') api.tier = 'med'
             if (api.mobile && api.tier === 'high' && median >= api.targetMs * TUNING.quality.benchPhone) api.tier = 'med'
           }
-          setRatio(tierMaxRatio(api.tier, Math.max(1, window.devicePixelRatio || 1)))
+          setRatio(tierMaxRatio(api.tier, Math.max(1, window.devicePixelRatio || 1), api.mobile))
           storageSet(TUNING.quality.storageKey, JSON.stringify({ renderer: api.renderer, tier: api.tier, version: __VERSION__ }))
           api.onChange?.()
         }
@@ -174,7 +191,7 @@ export function createQuality(): QualityController {
       }
       if (!playing || !api.dynres.enabled) return
       const nowDpr = Math.max(1, window.devicePixelRatio || 1)
-      const result = api.dynres.sample(frameMs, frameSec, api.targetMs, TUNING.tiers[api.tier].minRatio, tierMaxRatio(api.tier, nowDpr))
+      const result = api.dynres.sample(frameMs, frameSec, api.targetMs, TUNING.tiers[api.tier].minRatio, tierMaxRatio(api.tier, nowDpr, api.mobile))
       if (result.changed) {
         api.ratio = api.dynres.ratio
         api.onChange?.()
@@ -182,7 +199,6 @@ export function createQuality(): QualityController {
       if (result.dropTier && api.autoDrop && api.tier !== 'low') {
         api.tier = drop(api.tier)
         setRatio(TUNING.tiers[api.tier].minRatio)
-        storageSet(TUNING.quality.storageKey, JSON.stringify({ renderer: api.renderer, tier: api.tier, version: __VERSION__ }))
         api.onChange?.()
       }
     },
@@ -190,7 +206,7 @@ export function createQuality(): QualityController {
       api.tier = next
       api.autoDrop = false
       api.benchmarking = false
-      setRatio(tierMaxRatio(next, Math.max(1, window.devicePixelRatio || 1)))
+      setRatio(tierMaxRatio(next, Math.max(1, window.devicePixelRatio || 1), api.mobile))
       api.onChange?.()
     },
     setDynresEnabled(on) {
@@ -198,7 +214,7 @@ export function createQuality(): QualityController {
     },
   }
   function setRatio(next: number) {
-    api.ratio = clampRatio(api.tier, next, Math.max(1, window.devicePixelRatio || 1))
+    api.ratio = clampRatio(api.tier, next, Math.max(1, window.devicePixelRatio || 1), api.mobile)
     api.dynres.setRatio(api.ratio)
   }
   return api

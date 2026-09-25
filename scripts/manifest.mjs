@@ -8,6 +8,7 @@ const FIXED = [
   ['sky', /^sky_backdrop\./],
   ['keyart', /^title_keyart\./],
   ['logo', /^logo_noonsworn\./],
+  ['cards', /^cards_atlas\./],
 ]
 
 export function writeArtManifest(root) {

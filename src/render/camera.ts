@@ -88,8 +88,11 @@ export function createFollowCamera(): FollowCamera {
       const aspect = camera.aspect || 1
       const wantPortrait = aspect < 1
       if (wantPortrait !== portrait) fit(aspect)
+      const limit = TUNING.arena.size / 2 + TUNING.camera.overshoot
       focusX = smoothDamp(focusX, x, velX, TUNING.camera.smooth, dt)
       focusZ = smoothDamp(focusZ, z, velZ, TUNING.camera.smooth, dt)
+      focusX = Math.max(-limit, Math.min(limit, focusX))
+      focusZ = Math.max(-limit, Math.min(limit, focusZ))
       place(shakeX, shakeZ)
     },
     snap,

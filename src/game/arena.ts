@@ -1,115 +1,115 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
-  Color,
+  CircleGeometry,
   CylinderGeometry,
   Float32BufferAttribute,
+  PlaneGeometry,
   SphereGeometry,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 
-interface Bucket {
+interface WallBucket {
   pos: number[]
-  col: number[]
+  uv: number[]
 }
 
-function addVert(b: Bucket, x: number, y: number, z: number, color: Color) {
+function push(b: WallBucket, x: number, y: number, z: number, u: number, v: number) {
   b.pos.push(x, y, z)
-  b.col.push(color.r, color.g, color.b)
+  b.uv.push(u, v)
 }
 
 function addQuad(
-  b: Bucket,
+  b: WallBucket,
   p0: readonly [number, number, number],
   p1: readonly [number, number, number],
   p2: readonly [number, number, number],
   p3: readonly [number, number, number],
-  color: Color,
-  dark: readonly [boolean, boolean, boolean, boolean],
+  u0: number,
+  u1: number,
 ) {
   const pts = [p0, p1, p2, p3]
+  const uvs: Array<[number, number]> = [
+    [u0, 0],
+    [u0, 1],
+    [u1, 1],
+    [u1, 0],
+  ]
   const order = [0, 1, 2, 0, 2, 3]
   for (let k = 0; k < order.length; k++) {
     const i = order[k] ?? 0
     const p = pts[i]
-    if (!p) continue
-    const c = dark[i] ? COLOR.sandstoneMid.clone().lerp(COLOR.sandstoneDeep, TUNING.arena.aoMix) : color
-    addVert(b, p[0], p[1], p[2], c)
+    const uv = uvs[i]
+    if (!p || !uv) continue
+    push(b, p[0], p[1], p[2], uv[0], uv[1])
   }
 }
 
-function toGeo(b: Bucket): BufferGeometry {
-  const g = new BufferGeometry()
-  g.setAttribute('position', new Float32BufferAttribute(b.pos, 3))
-  g.setAttribute('color', new Float32BufferAttribute(b.col, 3))
-  return g
-}
-
-function paint(geo: BufferGeometry, color: Color, darkenBase: boolean, top: Color | null) {
-  const pos = geo.getAttribute('position')
-  const norm = geo.getAttribute('normal')
-  const arr = new Float32Array(pos.count * 3)
-  let minY = Infinity
-  for (let i = 0; i < pos.count; i++) minY = Math.min(minY, pos.getY(i))
-  for (let i = 0; i < pos.count; i++) {
-    const ny = norm ? norm.getY(i) : 0
-    let c = ny > 0.6 && top ? top : color
-    if (darkenBase && pos.getY(i) < minY + 0.45 && ny <= 0.6) c = color.clone().lerp(COLOR.sandstoneDeep, TUNING.arena.aoMix)
-    arr[i * 3] = c.r
-    arr[i * 3 + 1] = c.g
-    arr[i * 3 + 2] = c.b
-  }
-  geo.setAttribute('color', new BufferAttribute(arr, 3))
-  if (geo.getAttribute('normal')) geo.deleteAttribute('normal')
-  if (geo.getAttribute('uv')) geo.deleteAttribute('uv')
-  if (geo.index) {
-    const flat = geo.toNonIndexed()
-    geo.dispose()
-    return flat
-  }
-  return geo
-}
-
-function buildWalls(): BufferGeometry {
-  const b: Bucket = { pos: [], col: [] }
+export function buildWalls(): BufferGeometry {
+  const b: WallBucket = { pos: [], uv: [] }
   const half = TUNING.arena.size / 2
   const t = TUNING.arena.wallThick
   const h = TUNING.arena.wallHeight
   const o = half + t
-  const side = COLOR.sandstoneMid
-  const top = COLOR.sandstone
-  const dark: [boolean, boolean, boolean, boolean] = [true, false, false, true]
-  const none: [boolean, boolean, boolean, boolean] = [false, false, false, false]
-  addQuad(b, [-half, 0, half], [-half, h, half], [half, h, half], [half, 0, half], side, dark)
-  addQuad(b, [half, 0, -half], [half, h, -half], [-half, h, -half], [-half, 0, -half], side, dark)
-  addQuad(b, [half, 0, o], [half, h, o], [half, h, -o], [half, 0, -o], side, dark)
-  addQuad(b, [-half, 0, -o], [-half, h, -o], [-half, h, o], [-half, 0, o], side, dark)
-  addQuad(b, [o, 0, o], [o, h, o], [-o, h, o], [-o, 0, o], side, dark)
-  addQuad(b, [-o, 0, -o], [-o, h, -o], [o, h, -o], [o, 0, -o], side, dark)
-  addQuad(b, [o, 0, -o], [o, h, -o], [o, h, o], [o, 0, o], side, dark)
-  addQuad(b, [-o, 0, o], [-o, h, o], [-o, h, -o], [-o, 0, -o], side, dark)
-  addQuad(b, [-half, h, half], [-half, h, o], [half, h, o], [half, h, half], top, none)
-  addQuad(b, [-half, h, -o], [-half, h, -half], [half, h, -half], [half, h, -o], top, none)
-  addQuad(b, [half, h, -o], [half, h, o], [o, h, o], [o, h, -o], top, none)
-  addQuad(b, [-o, h, -o], [-o, h, o], [-half, h, o], [-half, h, -o], top, none)
-  return toGeo(b)
+  const span = TUNING.arena.size / 4
+  addQuad(b, [-half, 0, half], [-half, h, half], [half, h, half], [half, 0, half], 0, span)
+  addQuad(b, [half, 0, -half], [half, h, -half], [-half, h, -half], [-half, 0, -half], 0, span)
+  addQuad(b, [half, 0, o], [half, h, o], [half, h, -o], [half, 0, -o], 0, span)
+  addQuad(b, [-half, 0, -o], [-half, h, -o], [-half, h, o], [-half, 0, o], 0, span)
+  addQuad(b, [o, 0, o], [o, h, o], [-o, h, o], [-o, 0, o], 0, span)
+  addQuad(b, [-o, 0, -o], [-o, h, -o], [o, h, -o], [o, 0, -o], 0, span)
+  addQuad(b, [o, 0, -o], [o, h, -o], [o, h, o], [o, 0, o], 0, span * 0.2)
+  addQuad(b, [-o, 0, o], [-o, h, o], [-o, h, -o], [-o, 0, -o], 0, span * 0.2)
+  const g = new BufferGeometry()
+  g.setAttribute('position', new Float32BufferAttribute(b.pos, 3))
+  g.setAttribute('uv', new Float32BufferAttribute(b.uv, 2))
+  g.computeVertexNormals()
+  return g
 }
 
-function pillarPiece(cx: number, cz: number): BufferGeometry[] {
-  const h = TUNING.arena.pillarH
-  const body = new CylinderGeometry(TUNING.arena.pillarR, TUNING.arena.pillarR, h, TUNING.arena.pillarSeg)
-  body.translate(cx, h / 2, cz)
-  const painted = paint(body, COLOR.sandstoneMid, true, COLOR.sandstone)
-  const gem = new SphereGeometry(0.38, 8, 6)
-  gem.translate(cx, h + 0.38, cz)
-  const gold = paint(gem, COLOR.gold, false, null)
-  return [painted, gold]
+export function buildWallTrim(): BufferGeometry {
+  const half = TUNING.arena.size / 2
+  const t = TUNING.arena.wallThick
+  const h = TUNING.arena.wallHeight
+  const o = half + t
+  const parts: BufferGeometry[] = []
+  const strips: Array<[number, number, number, number]> = [
+    [-half, half, half, o],
+    [-half, half, -o, -half],
+    [half, o, -o, o],
+    [-o, -half, -o, o],
+  ]
+  for (let i = 0; i < strips.length; i++) {
+    const s = strips[i]
+    if (!s) continue
+    const dx = Math.abs(s[1] - s[0])
+    const dz = Math.abs(s[3] - s[2])
+    const geo = new BoxGeometry(Math.max(dx, 0.2), 0.18, Math.max(dz, 0.2))
+    geo.translate((s[0] + s[1]) / 2, h + 0.08, (s[2] + s[3]) / 2)
+    parts.push(geo)
+  }
+  const merged = mergeGeometries(parts, false)
+  for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
+  if (!merged) throw new Error('trim merge failed')
+  return merged
 }
 
-export function buildTemple(): BufferGeometry {
-  const parts: BufferGeometry[] = [buildWalls()]
+function paint(geo: BufferGeometry, r: number, g: number, b: number) {
+  const n = geo.getAttribute('position').count
+  const col = new Float32Array(n * 3)
+  for (let i = 0; i < n; i++) {
+    col[i * 3] = r
+    col[i * 3 + 1] = g
+    col[i * 3 + 2] = b
+  }
+  geo.setAttribute('color', new BufferAttribute(col, 3))
+}
+
+export function buildPillars(): BufferGeometry {
+  const parts: BufferGeometry[] = []
   const at = TUNING.arena.pillarAt
   const centers = [
     [-at, -at],
@@ -117,14 +117,55 @@ export function buildTemple(): BufferGeometry {
     [at, -at],
     [at, at],
   ]
+  const h = TUNING.arena.pillarH
+  const r = TUNING.arena.pillarR
   for (let i = 0; i < centers.length; i++) {
     const c = centers[i]
     if (!c) continue
-    const pieces = pillarPiece(c[0] ?? 0, c[1] ?? 0)
-    parts.push(pieces[0]!, pieces[1]!)
+    const cx = c[0] ?? 0
+    const cz = c[1] ?? 0
+    const base = new CylinderGeometry(r * 1.45, r * 1.55, 0.5, 12)
+    base.translate(cx, 0.25, cz)
+    const shaft = new CylinderGeometry(r, r, h - 1.05, TUNING.arena.pillarSeg)
+    shaft.translate(cx, 0.5 + (h - 1.05) / 2, cz)
+    const capital = new CylinderGeometry(r * 1.6, r * 1.25, 0.55, 12)
+    capital.translate(cx, h - 0.28, cz)
+    paint(base, 1, 1, 1)
+    paint(shaft, 1, 1, 1)
+    paint(capital, 1, 1, 1)
+    const gem = new SphereGeometry(0.34, 8, 6)
+    gem.translate(cx, h + 0.28, cz)
+    paint(gem, COLOR.gold.r, COLOR.gold.g, COLOR.gold.b)
+    parts.push(base, shaft, capital, gem)
   }
   const merged = mergeGeometries(parts, false)
   for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
-  if (!merged) throw new Error('temple merge failed')
+  if (!merged) throw new Error('pillar merge failed')
+  return merged
+}
+
+export function buildInlay(): BufferGeometry {
+  const medallion = new CircleGeometry(7.5, 40)
+  medallion.rotateX(-Math.PI / 2)
+  medallion.translate(0, 0.03, 0)
+  const half = TUNING.arena.size / 2 - 0.15
+  const bands: BufferGeometry[] = [medallion]
+  const specs: Array<[number, number, number, number]> = [
+    [0, half - 0.7, half * 2, 1.3],
+    [0, -half + 0.7, half * 2, 1.3],
+    [half - 0.7, 0, 1.3, half * 2],
+    [-half + 0.7, 0, 1.3, half * 2],
+  ]
+  for (let i = 0; i < specs.length; i++) {
+    const s = specs[i]
+    if (!s) continue
+    const band = new PlaneGeometry(s[2], s[3])
+    band.rotateX(-Math.PI / 2)
+    band.translate(s[0], 0.03, s[1])
+    bands.push(band)
+  }
+  const merged = mergeGeometries(bands, false)
+  for (let i = 0; i < bands.length; i++) bands[i]?.dispose()
+  if (!merged) throw new Error('inlay merge failed')
   return merged
 }

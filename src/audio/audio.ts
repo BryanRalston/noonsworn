@@ -16,6 +16,7 @@ export interface AudioBus {
   ui: () => void
   death: () => void
   win: () => void
+  counts: () => Record<string, number>
 }
 
 export function createAudio(fxRng: () => number): AudioBus {
@@ -27,6 +28,29 @@ export function createAudio(fxRng: () => number): AudioBus {
   let voices = 0
   let exposedAt = 0
   let shimmerAt = 0
+  let xpWindow = 0
+  let xpPlays = 0
+  let xpStep = 0
+  const counts: Record<string, number> = {
+    spear: 0,
+    hit: 0,
+    exposed: 0,
+    armored: 0,
+    kill: 0,
+    cut: 0,
+    xp: 0,
+    level: 0,
+    hurt: 0,
+    shimmer: 0,
+    ui: 0,
+    death: 0,
+    win: 0,
+  }
+
+  function mark(name: string) {
+    if (!unlocked) return
+    counts[name] = (counts[name] ?? 0) + 1
+  }
 
   function ensure(): AudioContext {
     if (!ctx) {
@@ -100,53 +124,77 @@ export function createAudio(fxRng: () => number): AudioBus {
       if (master && !muted) master.gain.value = m
       if (sfx) sfx.gain.value = s
     },
+    counts() {
+      return { ...counts }
+    },
     spear() {
+      mark('spear')
       tone(640, 0.07, 'square', 0.05)
     },
     hit() {
+      mark('hit')
       tone(220, 0.05, 'triangle', 0.06)
     },
     exposed() {
       const now = performance.now()
       if (now - exposedAt < 125) return
       exposedAt = now
+      mark('exposed')
       tone(880, 0.09, 'sine', 0.07)
     },
     armored() {
+      mark('armored')
       tone(90, 0.06, 'sine', 0.08)
     },
     kill() {
+      mark('kill')
       tone(520, 0.08, 'triangle', 0.06)
     },
     cut() {
+      mark('cut')
       noise(0.12, 0.05)
       tone(140, 0.1, 'sine', 0.08)
     },
     xp(step) {
-      tone(480 + step * 40, 0.05, 'sine', 0.04)
+      const now = performance.now()
+      if (now - xpWindow > 1000) {
+        xpWindow = now
+        xpPlays = 0
+      }
+      if (xpPlays >= 12) return
+      xpPlays++
+      xpStep = step
+      mark('xp')
+      tone(480 + (xpStep % 8) * 40, 0.05, 'sine', 0.04)
     },
     level() {
+      mark('level')
       tone(523, 0.12, 'triangle', 0.07)
       tone(659, 0.16, 'triangle', 0.06)
       tone(784, 0.2, 'sine', 0.05)
     },
     hurt() {
+      mark('hurt')
       tone(160, 0.12, 'sawtooth', 0.05)
     },
     shimmer() {
       const now = performance.now()
       if (now - shimmerAt < 250) return
       shimmerAt = now
+      mark('shimmer')
       tone(1200, 0.14, 'sine', 0.03)
     },
     ui() {
+      mark('ui')
       tone(700, 0.04, 'square', 0.03)
     },
     death() {
+      mark('death')
       tone(196, 0.4, 'sine', 0.08)
       tone(98, 0.5, 'triangle', 0.06)
     },
     win() {
+      mark('win')
       tone(523, 0.2, 'sine', 0.06)
       tone(784, 0.28, 'sine', 0.05)
     },

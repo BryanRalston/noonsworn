@@ -2,11 +2,12 @@ import {
   BufferGeometry,
   DynamicDrawUsage,
   InstancedMesh,
-  MeshLambertMaterial,
+  MeshToonMaterial,
   Object3D,
   type Material,
 } from 'three'
 import { COLOR } from '../data/palette'
+import { toonMap } from './toon'
 
 const dummy = new Object3D()
 const time = { value: 0 }
@@ -15,25 +16,73 @@ export function enemyTime(): { value: number } {
   return time
 }
 
-export function createEnemyMaterial(): MeshLambertMaterial {
-  const material = new MeshLambertMaterial({ vertexColors: true, color: 0xffffff })
+export function createEnemyMaterial(): MeshToonMaterial {
+  const material = new MeshToonMaterial({
+    color: COLOR.umbral,
+    gradientMap: toonMap(),
+  })
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time
     shader.uniforms.uGold = { value: COLOR.goldHot }
     shader.uniforms.uUmbral = { value: COLOR.umbral }
+    shader.uniforms.uRim = { value: COLOR.umbralRim }
     shader.vertexShader =
-      'attribute float iFlash;\nattribute float iLit;\nattribute float iPhase;\nattribute float aEye;\nuniform float uTime;\nuniform vec3 uGold;\nuniform vec3 uUmbral;\n' +
-      shader.vertexShader
-        .replace(
-          '#include <begin_vertex>',
-          '#include <begin_vertex>\nfloat bob = sin(uTime * 5.0 + iPhase) * 0.05;\ntransformed.y += bob;\ntransformed.y *= 0.94 + 0.06 * sin(uTime * 3.2 + iPhase);',
-        )
-        .replace(
-          '#include <color_vertex>',
-          '#include <color_vertex>\nvColor.rgb = mix(vColor.rgb, uGold, iLit * (1.0 - aEye) * 0.72);\nvColor.rgb = mix(vColor.rgb, uUmbral, aEye * (1.0 - iLit));\nvColor.rgb = mix(vColor.rgb, vec3(1.0), iFlash);',
-        )
+      'attribute float iFlash;\nattribute float iLit;\nattribute float iPhase;\nattribute float iMove;\nattribute float aEye;\nattribute float aLeg;\nvarying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nuniform float uTime;\n' +
+      shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vLocal = position;
+vEye = aEye;
+vLit = iLit;
+vFlash = iFlash;
+float wave = sin(uTime * 9.0 + iPhase);
+float body = step(abs(aLeg), 0.01);
+float hop = body * wave;
+transformed.y += hop * 0.08;
+float squash = 1.0 + hop * 0.16;
+transformed.y *= squash;
+transformed.x /= squash;
+transformed.z /= squash;
+float swing = sin(uTime * 12.0 + iPhase);
+transformed.x += aLeg * swing * iMove * 0.1;
+transformed.z += aLeg * cos(uTime * 12.0 + iPhase) * iMove * 0.05;`,
+      )
+    shader.fragmentShader =
+      'varying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nuniform vec3 uGold;\nuniform vec3 uUmbral;\nuniform vec3 uRim;\n' +
+      shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        `float facing = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+float fres = pow(1.0 - facing, 2.0);
+float luma = dot(outgoingLight, vec3(0.299, 0.587, 0.114));
+if (vEye > 0.5) {
+  outgoingLight = mix(vec3(0.82, 0.7, 1.0), uGold, vLit);
+} else if (vLit > 0.5) {
+  float band = floor(clamp(luma, 0.0, 0.999) * 3.0);
+  outgoingLight = uGold * (0.5 + band * 0.12);
+  outgoingLight += vec3(0.1, 0.07, 0.02);
+  float crack = step(0.82, fract(sin(dot(vLocal.xz, vec2(19.1, 73.7)) + vLocal.y * 4.0) * 43758.5));
+  outgoingLight += uGold * crack * 0.45;
+  outgoingLight *= mix(0.32, 1.0, facing);
+} else {
+  outgoingLight = max(outgoingLight, uUmbral * 0.92);
+  outgoingLight += uRim * fres * 1.1;
+}
+outgoingLight = mix(outgoingLight, uGold * 1.8, vFlash);
+#include <opaque_fragment>`,
+      )
   }
   return material
+}
+
+export function whiteRim(material: MeshToonMaterial) {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.0);
+outgoingLight += vec3(fres * 0.28);
+#include <opaque_fragment>`,
+    )
+  }
 }
 
 export function makeCrowd(geo: BufferGeometry, material: Material, capacity: number): InstancedMesh {
@@ -44,10 +93,19 @@ export function makeCrowd(geo: BufferGeometry, material: Material, capacity: num
   return mesh
 }
 
-export function writeInstance(mesh: InstancedMesh, index: number, x: number, y: number, z: number, yaw: number, scale: number) {
+export function writeInstance(
+  mesh: InstancedMesh,
+  index: number,
+  x: number,
+  y: number,
+  z: number,
+  yaw: number,
+  scale: number,
+  sy?: number,
+) {
   dummy.position.set(x, y, z)
   dummy.rotation.set(0, yaw, 0)
-  dummy.scale.set(scale, scale, scale)
+  dummy.scale.set(scale, sy ?? scale, scale)
   dummy.updateMatrix()
   mesh.setMatrixAt(index, dummy.matrix)
 }

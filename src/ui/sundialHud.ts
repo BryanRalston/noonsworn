@@ -6,6 +6,7 @@ export interface Sundial {
 export function createSundial(parent: HTMLElement): Sundial {
   const root = document.createElement('div')
   root.id = 'sundial'
+  root.hidden = true
   root.innerHTML = `
     <svg viewBox="0 0 72 72" aria-hidden="true">
       <circle cx="36" cy="36" r="28" class="dial"></circle>

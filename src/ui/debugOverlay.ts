@@ -17,6 +17,7 @@ export interface DebugStats {
   pools: string
   renderer: string
   extra: string
+  bloom: boolean
 }
 
 const TIMES = new Float32Array(120)
@@ -110,7 +111,7 @@ export function createDebugOverlay(parent: HTMLElement): DebugOverlay {
       text.textContent =
         `FPS ${stats.fps.toFixed(0)}  avg ${stats.avg.toFixed(0)}  1% ${stats.low.toFixed(0)}\n` +
         `frame ${stats.frameMs.toFixed(2)} ms\n` +
-        `tier ${stats.tier}  ratio ${stats.ratio.toFixed(2)}  dynres ${stats.dynres ? 'on' : 'off'}\n` +
+        `tier ${stats.tier}  ratio ${stats.ratio.toFixed(2)}  dynres ${stats.dynres ? 'on' : 'off'}  bloom ${stats.bloom ? 'on' : 'off'}\n` +
         `draws ${stats.calls}  tris ${stats.triangles}\n` +
         `geo ${stats.geometries}  tex ${stats.textures}\n` +
         `enemies ${stats.enemies}/${stats.cap}  exposed ${(stats.exposed * 100).toFixed(0)}%\n` +

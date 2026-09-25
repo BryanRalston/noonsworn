@@ -49,7 +49,7 @@ export interface Halo {
 export function createHalo(): Halo {
   const geo = new RingGeometry(TUNING.halo.discR * 0.62, TUNING.halo.discR, 18)
   geo.rotateX(-Math.PI / 2)
-  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: COLOR.gold }), TUNING.halo.maxDiscs)
+  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false }), TUNING.halo.maxDiscs)
   const stamps = new Float32Array(TUNING.hordeCap * TUNING.halo.maxDiscs)
   const halo: Halo = {
     mesh,

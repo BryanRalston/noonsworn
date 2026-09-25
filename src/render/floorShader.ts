@@ -51,7 +51,7 @@ void main() {
   float checker = mod(floor(p.x * 0.5) + floor(p.y * 0.5), 2.0);
   float bright = checker < 0.5 ? 0.96 : 1.04;
   vec3 sand = uSand * bright;
-  vec3 litCol = mix(sand, uSunlit, 0.62);
+  vec3 litCol = mix(sand, uSunlit, 0.28);
   vec3 shadeCol = mix(sand, uShade, 0.7);
   vec3 shCol = mix(sand, uShadeDeep, 0.82);
   vec3 col = mix(shadeCol, litCol, clamp(cone, 0.0, 1.0));
@@ -64,7 +64,8 @@ void main() {
   float edge = smoothstep(0.55, 0.0, abs((cosAng - uCosBeta) * max(dist, 0.2)));
   col += uGold * edge * clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * 0.55;
   vec3 albedo = texture(uAlbedo, p * 0.08).rgb;
-  col = mix(col, col * albedo * 1.35, uTexMix);
+  col = mix(col, col * albedo, uTexMix);
+  col *= mix(0.58, 0.46, clamp(cone, 0.0, 1.0));
   float fogF = smoothstep(40.0, 78.0, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);

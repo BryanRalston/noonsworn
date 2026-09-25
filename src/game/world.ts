@@ -1,4 +1,14 @@
-import { BoxGeometry, CircleGeometry, DoubleSide, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three'
+import {
+  BackSide,
+  BoxGeometry,
+  CircleGeometry,
+  CylinderGeometry,
+  DoubleSide,
+  Mesh,
+  MeshBasicMaterial,
+  MeshToonMaterial,
+  PlaneGeometry,
+} from 'three'
 import { mountPalette, COLOR } from '../data/palette'
 import { TUNING, type TierName } from '../data/tuning'
 import { createEvents } from '../core/events'
@@ -21,15 +31,20 @@ import { createSundial } from '../ui/sundialHud'
 import { createFloats } from '../ui/floats'
 import { createAudio } from '../audio/audio'
 import { loadArt } from '../render/art'
+import { createBloom } from '../render/bloom'
+import { toonMap } from '../render/toon'
 import { storageGet, storageSet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
-import { buildTemple } from './arena'
+import { createSela } from './actors'
+import { buildInlay, buildPillars, buildWalls, buildWallTrim } from './arena'
+import { createShards } from './shards'
+import { createBlobShadows } from './shadows'
 import { createDirector } from './director'
 import { createHorde, type HordeCtx } from './enemies/horde'
 import { CARD, createBuild, describe, grantXp, rollCards, xpToNext, type Build, type Card } from './leveling'
 import { createCut, createRibbon, resetCut, sweepCut, syncRibbon, updateCut } from './noonCut'
 import { createPickups } from './pickups'
-import { createPlayer, createPlayerView, hurtPlayer, integratePlayer, resetPlayer } from './player'
+import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
 import { createSunClock, damageAmount } from './sunClock'
 import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
@@ -101,13 +116,38 @@ export function boot(container: HTMLElement) {
   const floor = createFloorMaterial()
   const floorMesh = new Mesh(new PlaneGeometry(TUNING.arena.size, TUNING.arena.size).rotateX(-Math.PI / 2), floor.material)
   floorMesh.position.y = 0
-  const temple = new Mesh(buildTemple(), new MeshBasicMaterial({ vertexColors: true }))
-  const playerView = createPlayerView()
+  const wallMat = new MeshToonMaterial({ color: COLOR.sandstone, gradientMap: toonMap() })
+  const trimMat = new MeshToonMaterial({ color: COLOR.sandstoneDeep, gradientMap: toonMap() })
+  const pillarMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true })
+  const outerMat = new MeshToonMaterial({ color: COLOR.sandstoneMid, gradientMap: toonMap() })
+  const skyMat = new MeshBasicMaterial({ color: 0xffffff, side: BackSide, depthWrite: false, fog: false })
+  const inlayMat = new MeshBasicMaterial({
+    color: COLOR.sandstoneDeep,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  })
+  const walls = new Mesh(buildWalls(), wallMat)
+  const trim = new Mesh(buildWallTrim(), trimMat)
+  const pillars = new Mesh(buildPillars(), pillarMat)
+  const inlay = new Mesh(buildInlay(), inlayMat)
+  inlay.renderOrder = 1
+  const outer = new Mesh(new PlaneGeometry(280, 280).rotateX(-Math.PI / 2), outerMat)
+  outer.position.y = -0.06
+  const sky = new Mesh(new CylinderGeometry(140, 140, 96, 32, 1, true), skyMat)
+  sky.position.y = 20
+  sky.renderOrder = -2
+  const sela = createSela()
+  const playerView = sela.root
   const ribbon = createRibbon()
-  const marker = new Mesh(new CircleGeometry(2.4, 24), new MeshBasicMaterial({ color: COLOR.goldHot, side: DoubleSide }))
-  const pointer = new Mesh(new BoxGeometry(0.18, 0.06, 2.4), new MeshBasicMaterial({ color: COLOR.goldHot }))
+  const marker = new Mesh(new CircleGeometry(2.4, 24), new MeshBasicMaterial({ color: COLOR.goldHot, side: DoubleSide, toneMapped: false }))
+  const pointer = new Mesh(new BoxGeometry(0.18, 0.06, 2.4), new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false }))
   pointer.position.y = 0.08
-  gpu.scene.add(floorMesh, temple, playerView, ribbon, marker, pointer)
+  const shadows = createBlobShadows()
+  const shards = createShards()
+  const bloom = createBloom()
+  gpu.scene.add(sky, outer, floorMesh, walls, trim, pillars, inlay, shadows.mesh, playerView, ribbon, marker, pointer, shards.mesh)
 
   const sun = createSunClock()
   const horde = createHorde()
@@ -154,6 +194,11 @@ export function boot(container: HTMLElement) {
   container.append(toast)
   let exposePops = 0
   let toastTimer = 0
+  let xpStep = 0
+  let cutWas = false
+  let litBurst = 0
+  let litBurstAt = 0
+  const armFloatAt = new Float32Array(TUNING.hordeCap)
   const fxSeed = forcedSeed ?? 1
   let fxState = fxSeed >>> 0
   function fxRng() {
@@ -177,15 +222,27 @@ export function boot(container: HTMLElement) {
     separate: true,
     might: 0,
     isLit: (x, z) => sun.isLit(x, z),
-    onHit(x, z, amount, lit, killed) {
-      const text = lit ? `${Math.round(amount)}` : `${Math.round(amount)} shield`
-      floats.push(x, z, text, lit ? 'hot' : 'arm')
-      if (lit) audio.exposed()
-      else audio.armored()
+    onHit(x, z, amount, lit, killed, index) {
+      audio.hit()
+      if (lit) {
+        floats.push(x, z, `${Math.round(amount)}`, 'hot')
+        audio.exposed()
+      } else {
+        audio.armored()
+        if (time - (armFloatAt[index] ?? 0) >= 0.15) {
+          armFloatAt[index] = time
+          floats.push(x, z, `${Math.round(amount)} shield`, 'arm')
+        }
+      }
+      sela.swing(time)
       if (killed && lit) {
         audio.kill()
-        shakeAmp = Math.max(shakeAmp, 0.03)
-        shakeT = Math.max(shakeT, 0.12)
+        if (time - litBurstAt > 0.12) litBurst = 0
+        litBurst++
+        litBurstAt = time
+        if (litBurst >= TUNING.exposedBurst) hitStop = Math.max(hitStop, TUNING.exposedStop)
+        shakeAmp = Math.max(shakeAmp, TUNING.exposedShake)
+        shakeT = Math.max(shakeT, TUNING.shakeDecay)
       }
     },
     onExpose(x, z) {
@@ -197,10 +254,13 @@ export function boot(container: HTMLElement) {
     },
     onHurt(amount) {
       if (!hurtPlayer(player, amount)) return
-      if (time < TUNING.openSeconds) player.invuln = TUNING.openInvuln
-      shakeAmp = TUNING.hurtShake
-      shakeT = TUNING.shakeDecay
+      if (storageGet('noonsworn.shake') !== '0') {
+        shakeAmp = TUNING.hurtShake
+        shakeT = TUNING.shakeDecay
+      }
+      hitStop = Math.max(hitStop, TUNING.hurtStop)
       audio.hurt()
+      buzz(24)
       bus.emit('hurt', { amount })
     },
     onXp(x, z, value) {
@@ -209,6 +269,19 @@ export function boot(container: HTMLElement) {
     onKill() {
       kills++
     },
+    onDeath(x, z, lit) {
+      shards.burst(x, z, lit)
+    },
+  }
+
+  function buzz(ms: number) {
+    if (storageGet('noonsworn.haptics') === '0') return
+    const nav = navigator as Navigator & { vibrate?: (pattern: number) => boolean }
+    if (typeof nav.vibrate === 'function') nav.vibrate(ms)
+  }
+
+  function shakeOn(): boolean {
+    return storageGet('noonsworn.shake') !== '0'
   }
 
   function endDetail() {
@@ -220,6 +293,7 @@ export function boot(container: HTMLElement) {
 
   function applyPresentation() {
     gpu.resize(quality.ratio)
+    bloom.setSize(canvas.width, canvas.height)
     const fog = quality.tier !== 'low'
     gpu.setFog(fog)
     sun.pushUniforms(floor.uniforms, fog)
@@ -236,7 +310,13 @@ export function boot(container: HTMLElement) {
     hud.setVisible(playUi)
     sundial.root.hidden = !playUi
     if (!playUi) touchView.hide()
-    if (next === 'dead' || next === 'clear') endAt = performance.now()
+    if (next === 'dead') {
+      endAt = performance.now()
+      audio.death()
+    } else if (next === 'clear') {
+      endAt = performance.now()
+      audio.win()
+    }
     if (next !== 'level') levelUp.hide()
   }
 
@@ -255,6 +335,8 @@ export function boot(container: HTMLElement) {
   function openLevel() {
     rollCards(build, rng, shown)
     levelUp.show(shown)
+    audio.level()
+    buzz(30)
     showMode('level')
     ads.gameplayStop()
   }
@@ -273,7 +355,14 @@ export function boot(container: HTMLElement) {
     } else if (id === CARD.wide && build.wide < TUNING.wideMax) {
       build.wide++
       sun.setWide(build.wide)
-    } else {
+    } else if (id === CARD.flare) {
+      player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
+    } else if (id === CARD.bell && build.haste < TUNING.passive.max) build.haste++
+    else if (id === CARD.longday && build.wide < TUNING.wideMax) {
+      build.wide++
+      sun.setWide(build.wide)
+    } else if (id === CARD.searing && build.might < TUNING.passive.max) build.might++
+    else {
       player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
     }
     build.pending = Math.max(0, build.pending - 1)
@@ -343,8 +432,15 @@ export function boot(container: HTMLElement) {
     }
   }
 
-  screens.onPlay = () => startRun()
-  screens.onRestart = () => startRun()
+  spears.onFire = () => audio.spear()
+  screens.onPlay = () => {
+    audio.ui()
+    startRun()
+  }
+  screens.onRestart = () => {
+    audio.ui()
+    startRun()
+  }
   screens.onResume = () => {
     if (mode === 'paused') {
       showMode('playing')
@@ -353,6 +449,7 @@ export function boot(container: HTMLElement) {
   }
   screens.onFeature = () => featureMap.toggle()
   hud.onPause = () => {
+    audio.ui()
     if (mode === 'playing') {
       showMode('paused')
       ads.gameplayStop()
@@ -362,7 +459,10 @@ export function boot(container: HTMLElement) {
     }
   }
   levelUp.onPick = (index) => {
-    if (mode === 'level') applyCard(shown[index]?.id ?? CARD.heal)
+    if (mode === 'level') {
+      audio.ui()
+      applyCard(shown[index]?.id ?? CARD.heal)
+    }
   }
   debug.onTier = (tier: TierName) => quality.forceTier(tier)
   debug.onSpawn = () => spawnStress(50)
@@ -374,8 +474,15 @@ export function boot(container: HTMLElement) {
 
   sun.reset(mulberry32(forcedSeed ?? 1))
   spawnBench()
-  requestAnimationFrame(() => loadArt(floor.uniforms, (slots) => {
+  requestAnimationFrame(() => loadArt(floor.uniforms, {
+    pillar: pillarMat,
+    walls: wallMat,
+    outer: outerMat,
+    sky: skyMat,
+    inlay: inlayMat,
+  }, (slots) => {
     const base = import.meta.env.BASE_URL
+    if (slots.cards) levelUp.arm(`${base}assets/art/${slots.cards}`)
     const title = document.querySelector('#title-screen') as HTMLElement | null
     if (title && slots.keyart) {
       title.style.backgroundImage = `url(${base}assets/art/${slots.keyart})`
@@ -398,15 +505,19 @@ export function boot(container: HTMLElement) {
   window.addEventListener('keydown', (e) => {
     if (e.repeat || mode !== 'title') return
     if (e.code === 'KeyM' || e.code === 'F3' || e.code === 'Backquote') return
+    audio.unlock()
+    audio.ui()
     startRun()
     input.clearCut()
   })
   window.addEventListener('pointerdown', (e) => {
     const target = e.target
     if (!(target instanceof Element)) return
-    if (target.closest('button, #feature-map, #debug, #level-up')) return
+    if (target.closest('button, label, input, #feature-map, #debug, #level-up')) return
     if ((mode === 'dead' || mode === 'clear') && performance.now() - endAt < 800) return
     if (mode === 'title' || mode === 'dead' || mode === 'clear') {
+      audio.unlock()
+      audio.ui()
       startRun()
       input.clearCut()
     }
@@ -498,6 +609,15 @@ export function boot(container: HTMLElement) {
         usingTouch: state.usingTouch,
       }, build.haste)
       integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
+      if (cut.active && !cutWas) {
+        audio.cut()
+        buzz(16)
+        if (shakeOn()) {
+          shakeAmp = Math.max(shakeAmp, TUNING.cut.shake)
+          shakeT = Math.max(shakeT, TUNING.shakeDecay)
+        }
+      }
+      cutWas = cut.active
       if (cut.active) {
         sweepCut(cut, player, horde, build.might, ctx, () => {
           hitStop = Math.max(hitStop, TUNING.cut.hitStop)
@@ -526,6 +646,8 @@ export function boot(container: HTMLElement) {
       const before = build.pending
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, (value) => {
         xpWindow += value
+        xpStep = (xpStep + 1) % 8
+        audio.xp(xpStep)
         grantXp(build, value)
       })
       if (player.hp <= 0) {
@@ -556,11 +678,13 @@ export function boot(container: HTMLElement) {
       let sz = 0
       if (shakeT > 0) {
         shakeT -= frameSec
-        const k = Math.max(0, shakeT / TUNING.shakeDecay)
-        const amp = shakeAmp * k
-        const now = performance.now() * 0.001
-        sx = Math.sin(now * 70) * amp
-        sz = Math.cos(now * 54) * amp
+        if (shakeOn()) {
+          const k = Math.max(0, shakeT / TUNING.shakeDecay)
+          const amp = shakeAmp * k
+          const now = performance.now() * 0.001
+          sx = Math.sin(now * 70) * amp
+          sz = Math.cos(now * 54) * amp
+        }
       }
       follow.update(x, z, frameSec, sx, sz)
       const len = Math.hypot(sun.x, sun.z) || 1
@@ -576,13 +700,21 @@ export function boot(container: HTMLElement) {
       enemyTime().value = performance.now() * 0.001
       playerView.position.set(x, 0, z)
       playerView.rotation.y = yaw
+      sela.bob(performance.now() * 0.001, Math.hypot(player.vx, player.vz), cut.active || cut.fade > 0 ? 1 : 0)
       playerView.visible = player.hp > 0 && (player.invuln <= 0 || ((player.invuln * 14) | 0) % 2 === 0)
       syncRibbon(ribbon, cut, player)
       horde.sync()
       spears.sync()
       halo.sync(x, z, build.halo)
       pickups.sync()
-      gpu.renderer.render(gpu.scene, follow.camera)
+      shards.update(frameSec)
+      shadows.begin()
+      shadows.put(x, z, 1.15)
+      horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.15 : 1.7))
+      pickups.visit((gx, gz) => shadows.put(gx, gz, 0.45))
+      shadows.end()
+      if (quality.tier === 'low') gpu.renderer.render(gpu.scene, follow.camera)
+      else bloom.render(gpu.renderer, gpu.scene, follow.camera, quality.tier === 'high')
       stats = gpu.readStats()
       pushFrameSample(frameMs)
       xpWindowT += frameSec
@@ -627,12 +759,20 @@ export function boot(container: HTMLElement) {
             angle: sun.angle,
             pools: `spear ${spears.used()}/${TUNING.tiers[quality.tier].projectiles}  xp ${pickups.used()}/${TUNING.tiers[quality.tier].xp}`,
             renderer: quality.renderer || 'masked',
-            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${sun.isLit(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}`,
+            bloom: quality.tier !== 'low',
+            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${sun.isLit(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  vsync ${quality.targetMs.toFixed(2)}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}\nsfx ${sfxLine()}\ntris mite ${horde.tris.mite.toFixed(0)} hound ${horde.tris.hound.toFixed(0)} sela ${sela.tris.toFixed(0)}`,
           })
         }
       }
     },
   })
+
+  function sfxLine(): string {
+    const c = audio.counts()
+    return Object.keys(c)
+      .map((key) => `${key}:${c[key] ?? 0}`)
+      .join(' ')
+  }
 
   const api = {
     startRun,
@@ -643,6 +783,19 @@ export function boot(container: HTMLElement) {
     build: () => build,
     stats: () => stats,
     damageAmount,
+    setTime: (t: number) => {
+      time = t
+    },
+    setPlayer: (px: number, pz: number) => {
+      player.x = px
+      player.z = pz
+      player.px = px
+      player.pz = pz
+      follow.snap(px, pz)
+    },
+    audioCounts: () => audio.counts(),
+    time: () => time,
+    mode: () => mode,
   }
   window.__noonsworn = api
 }

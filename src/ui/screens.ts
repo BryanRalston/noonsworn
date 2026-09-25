@@ -1,3 +1,8 @@
+import { storageGet, storageSet } from '../platform/storage'
+
+const SHAKE = 'noonsworn.shake'
+const HAPTICS = 'noonsworn.haptics'
+
 export type ScreenMode = 'title' | 'playing' | 'paused' | 'dead' | 'clear' | 'level'
 
 export interface Screens {
@@ -14,15 +19,21 @@ export function createScreens(parent: HTMLElement): Screens {
   root.innerHTML = `
     <section id="title-screen">
       <h1>NOONSWORN</h1>
-      <p>Tap or press any key</p>
-      <button type="button" id="btn-play">Play</button>
-      <button type="button" id="btn-feature">Feature Map</button>
+      <div class="title-actions">
+        <p class="prompt">Tap or press any key</p>
+        <button type="button" id="btn-play">Play</button>
+        <button type="button" id="btn-feature">Feature Map</button>
+        <label class="toggle"><input type="checkbox" data-setting="shake"> Screen shake</label>
+        <label class="toggle"><input type="checkbox" data-setting="haptics"> Haptics</label>
+      </div>
     </section>
     <section id="pause-screen" hidden>
       <h2>PAUSED</h2>
       <button type="button" id="btn-resume">Resume</button>
       <button type="button" id="btn-pause-restart">Restart</button>
       <button type="button" id="btn-pause-feature">Feature Map</button>
+      <label class="toggle"><input type="checkbox" data-setting="shake"> Screen shake</label>
+      <label class="toggle"><input type="checkbox" data-setting="haptics"> Haptics</label>
     </section>
     <section id="end-screen" hidden>
       <h2 id="end-title">THE LIGHT FAILS</h2>
@@ -36,6 +47,22 @@ export function createScreens(parent: HTMLElement): Screens {
   const endTitle = root.querySelector('#end-title') as HTMLElement
   const endDetail = root.querySelector('#end-detail') as HTMLElement
   const endBtn = root.querySelector('#btn-end') as HTMLButtonElement
+  const boxes = root.querySelectorAll<HTMLInputElement>('input[data-setting]')
+  function sync() {
+    const shake = storageGet(SHAKE) !== '0'
+    const haptics = storageGet(HAPTICS) !== '0'
+    boxes.forEach((box) => {
+      box.checked = box.dataset.setting === 'shake' ? shake : haptics
+    })
+  }
+  sync()
+  boxes.forEach((box) => {
+    box.addEventListener('change', () => {
+      const key = box.dataset.setting === 'shake' ? SHAKE : HAPTICS
+      storageSet(key, box.checked ? '1' : '0')
+      sync()
+    })
+  })
   const screens: Screens = {
     onPlay: null,
     onRestart: null,
@@ -54,6 +81,7 @@ export function createScreens(parent: HTMLElement): Screens {
         endBtn.textContent = 'Play again'
       }
       if (detail) endDetail.textContent = detail
+      sync()
     },
   }
   root.querySelector('#btn-play')?.addEventListener('click', () => screens.onPlay?.())
