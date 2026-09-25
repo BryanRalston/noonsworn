@@ -2,6 +2,9 @@ import { storageGet, storageSet } from '../platform/storage'
 
 const SHAKE = 'noonsworn.shake'
 const HAPTICS = 'noonsworn.haptics'
+const MUTE = 'noonsworn.mute'
+const MUSIC = 'noonsworn.music'
+const SFX = 'noonsworn.sfx'
 
 export type ScreenMode = 'title' | 'playing' | 'paused' | 'dead' | 'clear' | 'level'
 
@@ -25,6 +28,9 @@ export function createScreens(parent: HTMLElement): Screens {
         <button type="button" id="btn-feature">Feature Map</button>
         <label class="toggle"><input type="checkbox" data-setting="shake"> Screen shake</label>
         <label class="toggle"><input type="checkbox" data-setting="haptics"> Haptics</label>
+        <label class="slider">Music <input type="range" min="0" max="100" data-audio="music" value="45"></label>
+        <label class="slider">SFX <input type="range" min="0" max="100" data-audio="sfx" value="90"></label>
+        <label class="toggle"><input type="checkbox" data-setting="mute"> Mute</label>
       </div>
     </section>
     <section id="pause-screen" hidden>
@@ -34,6 +40,9 @@ export function createScreens(parent: HTMLElement): Screens {
       <button type="button" id="btn-pause-feature">Feature Map</button>
       <label class="toggle"><input type="checkbox" data-setting="shake"> Screen shake</label>
       <label class="toggle"><input type="checkbox" data-setting="haptics"> Haptics</label>
+      <label class="slider">Music <input type="range" min="0" max="100" data-audio="music" value="45"></label>
+      <label class="slider">SFX <input type="range" min="0" max="100" data-audio="sfx" value="90"></label>
+      <label class="toggle"><input type="checkbox" data-setting="mute"> Mute</label>
     </section>
     <section id="end-screen" hidden>
       <h2 id="end-title">THE LIGHT FAILS</h2>
@@ -48,18 +57,36 @@ export function createScreens(parent: HTMLElement): Screens {
   const endDetail = root.querySelector('#end-detail') as HTMLElement
   const endBtn = root.querySelector('#btn-end') as HTMLButtonElement
   const boxes = root.querySelectorAll<HTMLInputElement>('input[data-setting]')
+  const sliders = root.querySelectorAll<HTMLInputElement>('input[data-audio]')
   function sync() {
     const shake = storageGet(SHAKE) !== '0'
     const haptics = storageGet(HAPTICS) !== '0'
+    const mute = storageGet(MUTE) === '1'
     boxes.forEach((box) => {
-      box.checked = box.dataset.setting === 'shake' ? shake : haptics
+      if (box.dataset.setting === 'shake') box.checked = shake
+      else if (box.dataset.setting === 'haptics') box.checked = haptics
+      else box.checked = mute
+    })
+    sliders.forEach((slider) => {
+      const key = slider.dataset.audio === 'music' ? MUSIC : SFX
+      const fallback = slider.dataset.audio === 'music' ? '45' : '90'
+      slider.value = storageGet(key) ?? fallback
     })
   }
   sync()
   boxes.forEach((box) => {
     box.addEventListener('change', () => {
-      const key = box.dataset.setting === 'shake' ? SHAKE : HAPTICS
-      storageSet(key, box.checked ? '1' : '0')
+      const setting = box.dataset.setting
+      const key = setting === 'shake' ? SHAKE : setting === 'haptics' ? HAPTICS : MUTE
+      const on = setting === 'mute' ? box.checked : box.checked
+      storageSet(key, setting === 'mute' ? (on ? '1' : '0') : on ? '1' : '0')
+      sync()
+    })
+  })
+  sliders.forEach((slider) => {
+    slider.addEventListener('input', () => {
+      const key = slider.dataset.audio === 'music' ? MUSIC : SFX
+      storageSet(key, slider.value)
       sync()
     })
   })

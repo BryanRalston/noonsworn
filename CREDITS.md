@@ -1,5 +1,9 @@
 # Credits
 
-Noonsworn M2 uses procedural geometry, a procedural WebAudio synth, and original Lapis Noon illustrations generated for this project.
+Noonsworn uses procedural geometry and original Lapis Noon illustrations generated for this project.
 
-No CC0 model packs (Quaternius, KayKit, Kenney) are included in this build. Palette and layout follow the Noonsworn spec. Three.js is MIT.
+Sound effects: Kenney (kenney.nl) Impact, Interface, Music Jingles, and RPG Audio; artisticdude, StarNinjas, Fupi, PWL, and SketchMan3 via OpenGameArt.org. All CC0 1.0.
+Music: "Desert Loop (Lo-Fi Remaster)" by iamoneabe, via OpenGameArt.org. CC0 1.0.
+See audio-src/LICENSES.md for the file map.
+
+No CC0 model packs are included. Palette and layout follow the Noonsworn spec. Three.js is MIT.

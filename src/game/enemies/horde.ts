@@ -64,6 +64,8 @@ export interface Horde {
   onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
   onExpose: ((x: number, z: number) => void) | null
   visit: (fn: (x: number, z: number, kind: number) => void) => void
+  radial: (x: number, z: number, radius: number, amount: number, ctx: HordeCtx) => void
+  slow: (x: number, z: number, radius: number, seconds: number) => void
   tris: { mite: number; hound: number }
 }
 
@@ -79,6 +81,7 @@ export interface HordeCtx {
   vulnerable: () => boolean
   separate: boolean
   might: number
+  searing: number
   isLit: (x: number, z: number) => boolean
   onHurt: (amount: number) => void
   onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
@@ -86,6 +89,7 @@ export interface HordeCtx {
   onXp: (x: number, z: number, value: number) => void
   onKill: () => void
   onDeath: (x: number, z: number, lit: boolean) => void
+  onEmber: (x: number, z: number) => void
 }
 
 export function createHorde(): Horde {
@@ -95,6 +99,8 @@ export function createHorde(): Horde {
   const yaw = new Float32Array(MAX)
   const phase = new Float32Array(MAX)
   const flash = new Float32Array(MAX)
+  const slowT = new Float32Array(MAX)
+  const burnT = new Float32Array(MAX)
   const scale = new Float32Array(MAX)
   const stateT = new Float32Array(MAX)
   const contact = new Float32Array(MAX)
@@ -170,6 +176,8 @@ export function createHorde(): Horde {
     litKnown[i] = 0
     alive[i] = 1
     bench[i] = isBench ? 1 : 0
+    slowT[i] = 0
+    burnT[i] = 0
   }
 
   function kill(i: number, ctx: HordeCtx) {
@@ -267,6 +275,32 @@ export function createHorde(): Horde {
     tris: {
       mite: miteGeo.getAttribute('position').count / 3,
       hound: houndGeo.getAttribute('position').count / 3,
+    },
+    radial(cx, cz, radius, amount, hitCtx) {
+      const r2 = radius * radius
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || state[i] === DYING || bench[i]) continue
+        const dx = (x[i] ?? 0) - cx
+        const dz = (z[i] ?? 0) - cz
+        if (dx * dx + dz * dz > r2) continue
+        const litNow = lit[i] === 1
+        const dealt = amount * (litNow ? 2 : 1)
+        hp[i] = (hp[i] ?? 0) - dealt
+        flash[i] = TUNING.hitFlash
+        const killed = (hp[i] ?? 0) <= 0
+        horde.onHit?.(x[i] ?? 0, z[i] ?? 0, dealt, litNow, killed, i)
+        if (killed) kill(i, hitCtx)
+      }
+    },
+    slow(cx, cz, radius, seconds) {
+      const r2 = radius * radius
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || state[i] === DYING) continue
+        const dx = (x[i] ?? 0) - cx
+        const dz = (z[i] ?? 0) - cz
+        if (dx * dx + dz * dz > r2) continue
+        slowT[i] = Math.max(slowT[i] ?? 0, seconds)
+      }
     },
     visit(fn) {
       for (let i = 0; i < MAX; i++) {
@@ -390,7 +424,16 @@ export function createHorde(): Horde {
         }
         const sl = Math.hypot(sx, sz) || 1
         const spec = type[i] === 0 ? TUNING.mite : TUNING.hound
-        const spd = spec.speed * (lit[i] ? TUNING.exposedSpeed : 1)
+        if ((burnT[i] ?? 0) > 0) {
+          burnT[i] = (burnT[i] ?? 0) - ctx.dt
+          hp[i] = (hp[i] ?? 0) - 4 * ctx.dt
+          if ((hp[i] ?? 0) <= 0) kill(i, ctx)
+        } else if (ctx.searing > 0 && lit[i] && state[i] !== DYING) {
+          burnT[i] = 2
+          ctx.onEmber(x[i] ?? 0, z[i] ?? 0)
+        }
+        if ((slowT[i] ?? 0) > 0) slowT[i] = (slowT[i] ?? 0) - ctx.dt
+        const spd = spec.speed * (lit[i] ? TUNING.exposedSpeed : 1) * ((slowT[i] ?? 0) > 0 ? 0.6 : 1)
         x[i] = (x[i] ?? 0) + (sx / sl) * spd * ctx.dt
         z[i] = (z[i] ?? 0) + (sz / sl) * spd * ctx.dt
         const slid = resolveCircle(x[i] ?? 0, z[i] ?? 0, spec.radius)

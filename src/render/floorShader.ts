@@ -56,21 +56,18 @@ void main() {
   vec3 shCol = mix(sand, uShadeDeep, 0.82);
   vec3 col = mix(shadeCol, litCol, clamp(cone, 0.0, 1.0));
   col = mix(shCol, col, clamp(shadow, 0.0, 1.0));
-  float ang = atan(p.y, p.x);
-  float frac = abs(fract(ang / (3.14159265 / 6.0) + 0.5) - 0.5);
-  float radial = length(p);
-  float hour = (1.0 - smoothstep(0.0, 0.015, frac)) * smoothstep(0.6, 1.8, radial) * (1.0 - smoothstep(22.0, 24.0, radial));
-  col = mix(col, uGold, hour * 0.9);
-  float edge = smoothstep(0.55, 0.0, abs((cosAng - uCosBeta) * max(dist, 0.2)));
-  col += uGold * edge * clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * 0.55;
+  float edge = smoothstep(4.2, 0.0, abs((cosAng - uCosBeta) * max(dist, 0.35)));
+  col += uGold * edge * clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * 0.22;
   vec3 albedo = texture(uAlbedo, p * 0.08).rgb;
   col = mix(col, col * albedo, uTexMix);
-  col *= mix(0.58, 0.46, clamp(cone, 0.0, 1.0));
+  col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));
   float fogF = smoothstep(40.0, 78.0, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
+  float viewN = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  gl_FragColor.rgb += (viewN - 0.5) * 0.055;
 }
 `
 
@@ -118,7 +115,7 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
     uShade: { value: COLOR.shade.clone() },
     uShadeDeep: { value: COLOR.shadeDeep.clone() },
     uGold: { value: COLOR.gold.clone() },
-    uFogColor: { value: COLOR.shadeDeep.clone() },
+    uFogColor: { value: COLOR.horizon.clone() },
     uFog: { value: 0 },
     uAlbedo: { value: whiteTex() },
     uTexMix: { value: 0 },

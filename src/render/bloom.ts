@@ -1,18 +1,19 @@
 import {
+  HalfFloatType,
   LinearFilter,
+  LinearSRGBColorSpace,
   Mesh,
-  NoColorSpace,
   OrthographicCamera,
   PlaneGeometry,
   RGBAFormat,
   Scene,
   ShaderMaterial,
-  UnsignedByteType,
   Vector2,
   WebGLRenderTarget,
   type Camera,
   type WebGLRenderer,
 } from 'three'
+import { TUNING } from '../data/tuning'
 
 const quadGeo = new PlaneGeometry(2, 2)
 const quadCam = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
@@ -30,26 +31,12 @@ const extractFrag = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D tScene;
-uniform vec2 uTexel;
 uniform float uThreshold;
 void main() {
-  vec3 acc = vec3(0.0);
-  float w0 = 0.227;
-  float w1 = 0.316;
-  float w2 = 0.070;
-  vec2 o1 = uTexel * 1.384;
-  vec2 o2 = uTexel * 3.230;
-  acc += texture(tScene, vUv).rgb * w0;
-  acc += texture(tScene, vUv + o1).rgb * w1;
-  acc += texture(tScene, vUv - o1).rgb * w1;
-  acc += texture(tScene, vUv + o2).rgb * w2;
-  acc += texture(tScene, vUv - o2).rgb * w2;
-  float luma = dot(acc, vec3(0.2126, 0.7152, 0.0722));
-  float chroma = max(acc.r, max(acc.g, acc.b)) - min(acc.r, min(acc.g, acc.b));
-  float hot = smoothstep(uThreshold, 1.0, luma) * smoothstep(0.14, 0.32, chroma);
-  float gold = smoothstep(0.78, 0.96, acc.r) * smoothstep(0.6, 0.9, acc.g) * step(0.18, acc.r - acc.b);
-  float gem = smoothstep(0.5, 0.8, acc.g) * smoothstep(0.5, 0.85, acc.b) * (1.0 - smoothstep(0.25, 0.55, acc.r));
-  gl_FragColor = vec4(acc * max(hot, max(gold, gem)), 1.0);
+  vec3 c = texture(tScene, vUv).rgb;
+  float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float k = smoothstep(uThreshold, uThreshold + 0.18, luma);
+  gl_FragColor = vec4(c * k, 1.0);
 }
 `
 
@@ -78,6 +65,10 @@ void main() {
   vec3 scene = texture(tScene, vUv).rgb;
   vec3 bloom = texture(tBloom, vUv).rgb;
   gl_FragColor = vec4(scene + bloom * uStrength, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  float viewN = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  gl_FragColor.rgb += (viewN - 0.5) * 0.055;
 }
 `
 
@@ -86,17 +77,18 @@ function rt(w: number, h: number, depth: boolean): WebGLRenderTarget {
     minFilter: LinearFilter,
     magFilter: LinearFilter,
     format: RGBAFormat,
-    type: UnsignedByteType,
+    type: HalfFloatType,
     depthBuffer: depth,
     stencilBuffer: false,
   })
-  target.texture.colorSpace = NoColorSpace
+  target.texture.colorSpace = LinearSRGBColorSpace
   return target
 }
 
 export interface Bloom {
-  render: (renderer: WebGLRenderer, scene: Scene, camera: Camera, full: boolean) => void
+  render: (renderer: WebGLRenderer, scene: Scene, camera: Camera) => void
   setSize: (width: number, height: number) => void
+  setStrength: (strength: number) => void
 }
 
 export function createBloom(): Bloom {
@@ -109,13 +101,13 @@ export function createBloom(): Bloom {
   const extract = new ShaderMaterial({
     uniforms: {
       tScene: { value: sceneTarget.texture },
-      uTexel: { value: new Vector2(1, 0) },
-      uThreshold: { value: 0.85 },
+      uThreshold: { value: TUNING.look.bloomThreshold },
     },
     vertexShader: blurVert,
     fragmentShader: extractFrag,
     depthTest: false,
     depthWrite: false,
+    toneMapped: false,
   })
   const blur = new ShaderMaterial({
     uniforms: {
@@ -126,12 +118,13 @@ export function createBloom(): Bloom {
     fragmentShader: blurFrag,
     depthTest: false,
     depthWrite: false,
+    toneMapped: false,
   })
   const composite = new ShaderMaterial({
     uniforms: {
       tScene: { value: sceneTarget.texture },
       tBloom: { value: pong.texture },
-      uStrength: { value: 0.35 },
+      uStrength: { value: TUNING.look.bloomStrength },
     },
     vertexShader: blurVert,
     fragmentShader: compositeFrag,
@@ -142,12 +135,10 @@ export function createBloom(): Bloom {
   mesh.frustumCulled = false
   quadScene.add(mesh)
 
-  function resizeBuffers(full: boolean) {
-    const bw = Math.max(1, full ? width : Math.floor(width / 2))
-    const bh = Math.max(1, full ? height : Math.floor(height / 2))
-    if (sceneTarget.width !== width || sceneTarget.height !== height) {
-      sceneTarget.setSize(width, height)
-    }
+  function resizeBuffers() {
+    const bw = Math.max(1, Math.floor(width / 2))
+    const bh = Math.max(1, Math.floor(height / 2))
+    if (sceneTarget.width !== width || sceneTarget.height !== height) sceneTarget.setSize(width, height)
     if (ping.width !== bw || ping.height !== bh) {
       ping.setSize(bw, bh)
       pong.setSize(bw, bh)
@@ -159,8 +150,11 @@ export function createBloom(): Bloom {
       width = Math.max(2, w)
       height = Math.max(2, h)
     },
-    render(renderer, scene, camera, full) {
-      resizeBuffers(full)
+    setStrength(strength) {
+      composite.uniforms.uStrength!.value = strength
+    },
+    render(renderer, scene, camera) {
+      resizeBuffers()
       extract.uniforms.tScene!.value = sceneTarget.texture
       composite.uniforms.tScene!.value = sceneTarget.texture
       const prevTarget = renderer.getRenderTarget()
@@ -171,16 +165,19 @@ export function createBloom(): Bloom {
       const bw = ping.width
       const bh = ping.height
       mesh.material = extract
-      extract.uniforms.uTexel!.value.set(1 / bw, 0)
       renderer.setRenderTarget(ping)
       renderer.render(quadScene, quadCam)
       mesh.material = blur
       blur.uniforms.tDiffuse!.value = ping.texture
-      texel.set(0, 1 / bh)
+      texel.set(1 / bw, 0)
       renderer.setRenderTarget(pong)
       renderer.render(quadScene, quadCam)
+      blur.uniforms.tDiffuse!.value = pong.texture
+      texel.set(0, 1 / bh)
+      renderer.setRenderTarget(ping)
+      renderer.render(quadScene, quadCam)
       mesh.material = composite
-      composite.uniforms.tBloom!.value = pong.texture
+      composite.uniforms.tBloom!.value = ping.texture
       renderer.setRenderTarget(null)
       renderer.render(quadScene, quadCam)
       renderer.setRenderTarget(prevTarget)

@@ -24,12 +24,16 @@ export interface Director {
 }
 
 export function createDirector(): Director {
+  let forcedHound = false
+  let forcedRing = false
   const director: Director = {
     acc: 0,
     hour: 0,
     reset() {
       director.acc = 0
       director.hour = 0
+      forcedHound = false
+      forcedRing = false
     },
     update(dt, time, horde, px, pz, cap, rng, camX, camZ) {
       if (time >= TUNING.runLength) return
@@ -44,6 +48,19 @@ export function createDirector(): Director {
         for (let i = 0; i < wave.pack; i++) {
           const a = base + (i / wave.pack - 0.5) * TUNING.packArc
           horde.spawn(0, px + Math.cos(a) * TUNING.packRadius, pz + Math.sin(a) * TUNING.packRadius, false, cap, px, pz)
+        }
+      }
+      if (!forcedHound && time >= 18) {
+        forcedHound = true
+        const spot = pickSpawn(px, pz, TUNING.hound.radius, rng, camX, camZ)
+        horde.spawn(1, spot.x, spot.z, false, cap, px, pz)
+      }
+      if (!forcedRing && time >= 25) {
+        forcedRing = true
+        const base = rng() * Math.PI * 2
+        for (let i = 0; i < 12; i++) {
+          const a = base + (i / 12) * Math.PI * 2
+          horde.spawn(0, px + Math.cos(a) * 8, pz + Math.sin(a) * 8, false, cap, px, pz)
         }
       }
       let spawned = 0

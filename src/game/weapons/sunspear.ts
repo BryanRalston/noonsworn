@@ -65,7 +65,7 @@ export interface Sunspear {
 export function createSunspear(): Sunspear {
   const mesh = makeCrowd(
     new BoxGeometry(0.12, 0.12, 1.05),
-    new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false }),
+    new MeshBasicMaterial({ color: COLOR.goldHot.clone().multiplyScalar(TUNING.look.emissiveGain), toneMapped: false }),
     MAX,
   )
   const x = new Float32Array(MAX)

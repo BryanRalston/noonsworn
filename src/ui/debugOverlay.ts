@@ -2,6 +2,8 @@ export interface DebugStats {
   fps: number
   avg: number
   low: number
+  window: number
+  frames: number
   frameMs: number
   tier: string
   ratio: number
@@ -20,27 +22,36 @@ export interface DebugStats {
   bloom: boolean
 }
 
-const TIMES = new Float32Array(120)
-const SORT = new Float32Array(120)
+const CAP = 2048
+const TIMES = new Float32Array(CAP)
+const STAMPS = new Float32Array(CAP)
+const SORT = new Float32Array(CAP)
 let count = 0
 let head = 0
+let clock = 0
 
 export function pushFrameSample(ms: number) {
+  clock += ms / 1000
   TIMES[head] = ms
-  head = (head + 1) % TIMES.length
-  if (count < TIMES.length) count++
+  STAMPS[head] = clock
+  head = (head + 1) % CAP
+  if (count < CAP) count++
 }
 
-export function frameSummary(latest: number): { fps: number; avg: number; low: number } {
+export function frameSummary(latest: number): { fps: number; avg: number; low: number; window: number; frames: number } {
   const fps = latest > 0.01 ? 1000 / latest : 0
-  let sum = 0
   let n = 0
-  for (let i = 0; i < count && sum < 1000; i++) {
-    const idx = (head - 1 - i + TIMES.length * 4) % TIMES.length
+  let sum = 0
+  let oldest = clock
+  for (let i = 0; i < count; i++) {
+    const idx = (head - 1 - i + CAP) % CAP
+    const stamp = STAMPS[idx] ?? 0
+    if (clock - stamp > 10) break
     const ms = TIMES[idx] ?? 0
     SORT[n] = ms
     sum += ms
     n++
+    oldest = stamp
   }
   const avg = n > 0 ? 1000 / (sum / n) : 0
   for (let i = 1; i < n; i++) {
@@ -52,9 +63,12 @@ export function frameSummary(latest: number): { fps: number; avg: number; low: n
     }
     SORT[j + 1] = v
   }
-  const lowIndex = n > 1 ? Math.min(n - 1, Math.max(0, Math.ceil(n * 0.99) - 1)) : 0
-  const lowMs = n > 0 ? (SORT[lowIndex] ?? latest) : latest
-  return { fps, avg, low: lowMs > 0.01 ? 1000 / lowMs : 0 }
+  const slowCount = Math.max(1, Math.ceil(n * 0.01))
+  let slowSum = 0
+  for (let i = 0; i < slowCount; i++) slowSum += SORT[n - 1 - i] ?? latest
+  const lowMs = n > 0 ? slowSum / slowCount : latest
+  const window = n > 1 ? clock - oldest : 0
+  return { fps, avg, low: lowMs > 0.01 ? 1000 / lowMs : 0, window, frames: n }
 }
 
 export interface DebugOverlay {
@@ -109,7 +123,7 @@ export function createDebugOverlay(parent: HTMLElement): DebugOverlay {
       dynBtn.textContent = stats.dynres ? 'Dynres on' : 'Dynres off'
       freezeBtn.textContent = stats.extra.includes('frozen') ? 'Sun frozen' : 'Freeze sun'
       text.textContent =
-        `FPS ${stats.fps.toFixed(0)}  avg ${stats.avg.toFixed(0)}  1% ${stats.low.toFixed(0)}\n` +
+        `FPS ${stats.fps.toFixed(0)}  avg ${stats.avg.toFixed(0)}  1% ${stats.low.toFixed(0)}  win ${stats.window.toFixed(1)}s/${stats.frames}\n` +
         `frame ${stats.frameMs.toFixed(2)} ms\n` +
         `tier ${stats.tier}  ratio ${stats.ratio.toFixed(2)}  dynres ${stats.dynres ? 'on' : 'off'}  bloom ${stats.bloom ? 'on' : 'off'}\n` +
         `draws ${stats.calls}  tris ${stats.triangles}\n` +

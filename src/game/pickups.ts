@@ -1,5 +1,4 @@
-import { InstancedMesh, MeshBasicMaterial, OctahedronGeometry } from 'three'
-import { COLOR } from '../data/palette'
+import { IcosahedronGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
 import { TUNING } from '../data/tuning'
 import { FreeList } from '../core/pool'
 import { makeCrowd, writeInstance } from '../render/instancing'
@@ -17,7 +16,9 @@ export interface Pickups {
 }
 
 export function createPickups(): Pickups {
-  const mesh = makeCrowd(new OctahedronGeometry(0.18, 0), new MeshBasicMaterial({ color: COLOR.xp, toneMapped: false }), MAX)
+  const gem = new MeshBasicMaterial({ color: 0xb6ffe6, toneMapped: false })
+  gem.color.multiplyScalar(TUNING.look.emissiveGain)
+  const mesh = makeCrowd(new IcosahedronGeometry(0.16, 0), gem, MAX)
   const x = new Float32Array(MAX)
   const z = new Float32Array(MAX)
   const value = new Float32Array(MAX)

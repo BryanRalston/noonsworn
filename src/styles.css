@@ -106,12 +106,20 @@ button.card, #btn-feature, #btn-pause-feature, #feature-close {
   border-radius: 8px;
   padding: 6px 12px;
 }
-.toggle {
+.toggle, .slider {
   display: flex;
   gap: 8px;
   align-items: center;
   color: var(--linen);
   font: 600 14px/1.2 system-ui, sans-serif;
+}
+.slider input { width: 120px; }
+.float.spark {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  background: #b7b7c8;
 }
 h1, h2, h3 { font-family: system-ui, "Segoe UI", sans-serif; letter-spacing: 0.14em; margin: 0; }
 h1 { color: var(--goldHot); font-size: 40px; }
@@ -275,7 +283,12 @@ h1 { color: var(--goldHot); font-size: 40px; }
   background-position: calc(var(--i) * 100% / 12) center;
   image-rendering: auto;
 }
-.card.new { border-color: var(--goldHot); box-shadow: inset 0 0 0 2px var(--telegraph); }
+.card {
+  border: 2px solid var(--gold);
+  background: color-mix(in srgb, var(--ink) 88%, var(--gold));
+}
+.card.new { border-color: var(--goldHot); box-shadow: inset 0 0 0 2px var(--telegraph); background: color-mix(in srgb, var(--ink) 82%, var(--telegraph)); }
+.card-icon { background-color: transparent; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--shade); }
 .card:hover, .card:focus-visible { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
 .card em { color: var(--gold); font-style: normal; font-size: 12px; }
 #feature-map header { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -307,6 +320,8 @@ h1 { color: var(--goldHot); font-size: 40px; }
 }
 @media (max-width: 420px) {
   .card-icon { width: 48px; height: 48px; }
+  .hp-wrap { width: min(38vw, 132px); }
+  #sundial { transform: scale(0.78); transform-origin: top center; }
 }
 @media (max-height: 480px) {
   #screens #title-screen {

@@ -21,6 +21,12 @@ export function createFollowCamera(): FollowCamera {
   let focusZ = 0
   const velX = { v: 0 }
   const velZ = { v: 0 }
+  let leadX = 0
+  let leadZ = 0
+  const leadVX = { v: 0 }
+  const leadVZ = { v: 0 }
+  let prevX = 0
+  let prevZ = 0
   let offX = 0
   let offY = 0
   let offZ = 0
@@ -62,11 +68,29 @@ export function createFollowCamera(): FollowCamera {
     camera.updateProjectionMatrix()
   }
 
+  function slide(x: number, z: number) {
+    const half = TUNING.arena.size / 2
+    const band = TUNING.camera.slideBand
+    const shift = (v: number) => {
+      const over = Math.abs(v) - (half - band)
+      if (over <= 0) return v
+      const t = Math.min(1, over / band)
+      return v - Math.sign(v) * t * TUNING.camera.slide
+    }
+    return { x: shift(x), z: shift(z) }
+  }
+
   function snap(x: number, z: number) {
     focusX = x
     focusZ = z
+    prevX = x
+    prevZ = z
+    leadX = 0
+    leadZ = 0
     velX.v = 0
     velZ.v = 0
+    leadVX.v = 0
+    leadVZ.v = 0
     place(0, 0)
   }
   snap(0, 0)
@@ -88,11 +112,24 @@ export function createFollowCamera(): FollowCamera {
       const aspect = camera.aspect || 1
       const wantPortrait = aspect < 1
       if (wantPortrait !== portrait) fit(aspect)
-      const limit = TUNING.arena.size / 2 + TUNING.camera.overshoot
-      focusX = smoothDamp(focusX, x, velX, TUNING.camera.smooth, dt)
-      focusZ = smoothDamp(focusZ, z, velZ, TUNING.camera.smooth, dt)
-      focusX = Math.max(-limit, Math.min(limit, focusX))
-      focusZ = Math.max(-limit, Math.min(limit, focusZ))
+      const dx = x - prevX
+      const dz = z - prevZ
+      prevX = x
+      prevZ = z
+      const step = Math.hypot(dx, dz)
+      let aimX = 0
+      let aimZ = 0
+      if (step > 1e-5 && dt > 1e-5) {
+        const speed = step / dt
+        const lead = Math.min(TUNING.camera.lead, speed * TUNING.camera.leadTime)
+        aimX = (dx / step) * lead
+        aimZ = (dz / step) * lead
+      }
+      leadX = smoothDamp(leadX, aimX, leadVX, TUNING.camera.leadSmooth, dt)
+      leadZ = smoothDamp(leadZ, aimZ, leadVZ, TUNING.camera.leadSmooth, dt)
+      const slid = slide(x + leadX, z + leadZ)
+      focusX = smoothDamp(focusX, slid.x, velX, TUNING.camera.smooth, dt)
+      focusZ = smoothDamp(focusZ, slid.z, velZ, TUNING.camera.smooth, dt)
       place(shakeX, shakeZ)
     },
     snap,

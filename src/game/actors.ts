@@ -2,21 +2,23 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
-  CircleGeometry,
   ConeGeometry,
   Group,
   IcosahedronGeometry,
   LatheGeometry,
+  DoubleSide,
   Mesh,
+  MeshBasicMaterial,
   MeshToonMaterial,
   RingGeometry,
   SphereGeometry,
+  TorusGeometry,
   Vector2,
+  type Camera,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { COLOR } from '../data/palette'
 import { toonMap } from '../render/toon'
-import { whiteRim } from '../render/instancing'
 
 function stamp(geo: BufferGeometry, eye: number, leg: number): BufferGeometry {
   const flat = geo.index ? geo.toNonIndexed() : geo
@@ -80,10 +82,12 @@ export function miteGeometry(): BufferGeometry {
 }
 
 export function houndGeometry(): BufferGeometry {
-  const body = new BoxGeometry(0.42, 0.26, 0.72)
-  body.translate(0, 0.34, 0.02)
-  const head = new BoxGeometry(0.22, 0.18, 0.36)
-  head.translate(0, 0.4, -0.5)
+  const body = new BoxGeometry(1.05, 0.42, 1.2)
+  body.translate(0, 0.4, 0.02)
+  const ridge = new BoxGeometry(0.28, 0.16, 0.9)
+  ridge.translate(0, 0.66, 0.02)
+  const head = new BoxGeometry(0.32, 0.24, 0.42)
+  head.translate(0, 0.48, -0.58)
   const headPos = head.getAttribute('position')
   for (let i = 0; i < headPos.count; i++) {
     if (headPos.getZ(i) < -0.62) {
@@ -105,8 +109,8 @@ export function houndGeometry(): BufferGeometry {
   for (let i = 0; i < spots.length; i++) {
     const s = spots[i]
     if (!s) continue
-    const leg = new BoxGeometry(0.07, 0.18, 0.07)
-    leg.translate(s[0], s[1], s[2])
+    const leg = new BoxGeometry(0.12, 0.28, 0.12)
+    leg.translate(s[0] * 1.6, 0.14, s[2])
     legs.push(stamp(leg, 0, i < 2 ? 1 : -1))
   }
   const eyeL = new BoxGeometry(0.06, 0.04, 0.04)
@@ -115,6 +119,7 @@ export function houndGeometry(): BufferGeometry {
   eyeR.translate(0.06, 0.42, -0.66)
   return mergeParts([
     stamp(body, 0, 0),
+    stamp(ridge, 0, 0),
     stamp(head, 0, 0),
     stamp(chest, 0, 0),
     stamp(tail, 0, 0),
@@ -126,35 +131,52 @@ export function houndGeometry(): BufferGeometry {
 
 export interface SelaView {
   root: Group
+  halo: Mesh
   blade: Mesh
   tris: number
   bob: (time: number, speed: number, cutting: number) => void
   swing: (time: number) => void
+  placeHalo: (camera: Camera, x: number, z: number) => void
 }
 
 export function createSela(): SelaView {
   const pts = [
-    new Vector2(0.16, 0.02),
-    new Vector2(0.78, 0.08),
-    new Vector2(0.62, 0.5),
-    new Vector2(0.34, 1.05),
-    new Vector2(0.24, 1.38),
+    new Vector2(0.2, 0.02),
+    new Vector2(0.98, 0.05),
+    new Vector2(0.9, 0.42),
+    new Vector2(0.78, 0.95),
+    new Vector2(0.46, 1.28),
+    new Vector2(0.28, 1.52),
+    new Vector2(0.18, 1.66),
   ]
-  const linen = new MeshToonMaterial({ color: COLOR.linen, gradientMap: toonMap() })
-  whiteRim(linen)
+  const linen = new MeshToonMaterial({ color: COLOR.linen.clone().multiplyScalar(0.48), gradientMap: toonMap() })
+  linen.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.2);
+outgoingLight += vec3(fres * 0.18);
+#include <opaque_fragment>`,
+    )
+  }
   const robeGeo = new LatheGeometry(pts, 12)
-  const hoodGeo = new SphereGeometry(0.22, 8, 6)
-  hoodGeo.translate(0, 1.58, 0.02)
-  const robe = new Mesh(mergeParts([robeGeo, hoodGeo]), linen)
-  const haloMat = new MeshToonMaterial({
-    color: COLOR.gold,
-    gradientMap: toonMap(),
-    emissive: COLOR.goldHot,
-    emissiveIntensity: 0.55,
-  })
-  const halo = new Mesh(new CircleGeometry(0.62, 18), haloMat)
-  halo.position.set(0, 1.6, 0.18)
-  halo.rotation.x = -Math.PI / 2
+  const hoodGeo = new SphereGeometry(0.34, 8, 6)
+  hoodGeo.scale(1.12, 0.92, 1.18)
+  hoodGeo.translate(0, 1.78, 0.06)
+  const cowl = new SphereGeometry(0.22, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.55)
+  cowl.scale(1.05, 0.7, 1.05)
+  cowl.translate(0, 1.72, 0.2)
+  const robe = new Mesh(mergeParts([robeGeo, hoodGeo, cowl]), linen)
+  const halo = new Mesh(
+    new TorusGeometry(0.3, 0.022, 4, 12),
+    new MeshBasicMaterial({ color: COLOR.gold, toneMapped: false, side: DoubleSide }),
+  )
+  halo.position.set(0, 1.86, -0.04)
+  const face = new Mesh(
+    new SphereGeometry(0.11, 8, 6),
+    new MeshToonMaterial({ color: COLOR.umbral, gradientMap: toonMap() }),
+  )
+  face.position.set(0, 1.8, 0.3)
+  face.scale.set(1.35, 0.5, 0.4)
   const blade = new Mesh(
     new BoxGeometry(0.16, 0.05, 2.45),
     new MeshToonMaterial({ color: COLOR.bronze, gradientMap: toonMap(), emissive: COLOR.gold, emissiveIntensity: 0.2 }),
@@ -168,16 +190,22 @@ export function createSela(): SelaView {
   ring.rotation.x = -Math.PI / 2
   ring.position.y = 0.04
   const root = new Group()
-  root.scale.setScalar(1.35)
-  root.add(ring, robe, halo, blade)
+  root.scale.setScalar(1.45)
+  root.add(ring, robe, face, blade, halo)
   let swingUntil = 0
-  const tris = trisOf(robe.geometry) + trisOf(halo.geometry) + trisOf(blade.geometry) + trisOf(ring.geometry)
+  const tris = trisOf(robe.geometry) + trisOf(halo.geometry) + trisOf(blade.geometry) + trisOf(ring.geometry) + trisOf(face.geometry)
   return {
     root,
+    halo,
     blade,
     tris,
     swing(time) {
       swingUntil = time + 0.22
+    },
+    placeHalo(camera, x, z) {
+      void camera
+      void x
+      void z
     },
     bob(time, speed, cutting) {
       const moving = Math.min(1, speed / 3)

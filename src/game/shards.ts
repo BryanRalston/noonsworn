@@ -1,5 +1,6 @@
 import { BoxGeometry, Color, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, Object3D } from 'three'
 import { COLOR } from '../data/palette'
+import { TUNING } from '../data/tuning'
 import { makeCrowd } from '../render/instancing'
 
 const MAX = 240
@@ -56,9 +57,10 @@ export function createShards(): Shards {
         vy[i] = 2.4 + h2 * 2.8
         life[i] = 0.32 + h * 0.18
         spin[i] = ang
-        cr[i] = c.r
-        cg[i] = c.g
-        cb[i] = c.b
+        const gain = lit ? TUNING.look.emissiveGain : 1
+        cr[i] = c.r * gain
+        cg[i] = c.g * gain
+        cb[i] = c.b * gain
       }
     },
     update(dt) {

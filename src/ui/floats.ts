@@ -9,7 +9,7 @@ interface Live {
 }
 
 export interface Floats {
-  push: (x: number, z: number, text: string, kind: 'hot' | 'arm' | 'pop') => void
+  push: (x: number, z: number, text: string, kind: 'hot' | 'spark' | 'pop') => void
   sync: (camera: Camera, width: number, height: number, dt: number) => void
 }
 
@@ -30,6 +30,7 @@ export function createFloats(parent: HTMLElement, cap: number): Floats {
   let cursor = 0
   return {
     push(x, z, text, kind) {
+      if (live.length >= 12) return
       const el = pool[cursor]
       if (!el) return
       cursor = (cursor + 1) % pool.length
@@ -45,6 +46,9 @@ export function createFloats(parent: HTMLElement, cap: number): Floats {
       } else live.push({ el, x, y: 1.2, z, t: 0.7 })
     },
     sync(camera, width, height, dt) {
+      const modal = document.querySelector('#level-up') as HTMLElement | null
+      const blocked = !!modal && !modal.hidden
+      root.hidden = blocked
       for (let i = live.length - 1; i >= 0; i--) {
         const row = live[i]
         if (!row) continue

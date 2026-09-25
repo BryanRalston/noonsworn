@@ -37,7 +37,8 @@ export function loadArt(uniforms: FloorUniforms, bind: ArtBind, onReady: (slots:
           bind.walls.needsUpdate = true
           const dune = tex.clone()
           dune.needsUpdate = true
-          bind.outer.map = tiling(dune, 8, 8)
+          bind.outer.map = tiling(dune, 1.4, 1.4)
+          bind.outer.color.setRGB(0.72, 0.66, 0.55)
           bind.outer.needsUpdate = true
         })
       }

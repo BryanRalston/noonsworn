@@ -15,6 +15,10 @@ export interface Build {
   vitality: number
   lodestone: number
   wide: number
+  flare: number
+  bell: number
+  longday: number
+  searing: number
 }
 
 export interface Card {
@@ -42,7 +46,7 @@ export const CARD = {
 } as const
 
 export function createBuild(): Build {
-  return { level: 1, xp: 0, pending: 0, spear: 1, halo: 0, might: 0, haste: 0, swift: 0, vitality: 0, lodestone: 0, wide: 0 }
+  return { level: 1, xp: 0, pending: 0, spear: 1, halo: 0, might: 0, haste: 0, swift: 0, vitality: 0, lodestone: 0, wide: 0, flare: 0, bell: 0, longday: 0, searing: 0 }
 }
 
 export function xpToNext(level: number): number {
@@ -65,10 +69,10 @@ export function rollCards(build: Build, rng: Rng, out: Card[]): number {
   if (build.lodestone < TUNING.passive.max) pool[n++] = CARD.lodestone
   if (build.wide < TUNING.wideMax) pool[n++] = CARD.wide
   if (build.level >= 4) {
-    pool[n++] = CARD.flare
-    if (build.haste < TUNING.passive.max) pool[n++] = CARD.bell
-    if (build.wide < TUNING.wideMax) pool[n++] = CARD.longday
-    if (build.might < TUNING.passive.max) pool[n++] = CARD.searing
+    if (build.flare < TUNING.passive.max) pool[n++] = CARD.flare
+    if (build.bell < TUNING.passive.max) pool[n++] = CARD.bell
+    if (build.longday < TUNING.passive.max) pool[n++] = CARD.longday
+    if (build.searing < TUNING.passive.max) pool[n++] = CARD.searing
   }
   if (n === 0) pool[n++] = CARD.heal
   for (let i = n - 1; i > 0; i--) {
@@ -124,16 +128,16 @@ export function describe(build: Build, id: number): Card {
     return { id, name: 'Wide Noon', text: 'the sun\'s beam gets wider', from: `${build.wide}/2`, to: `${build.wide + 1}/2` }
   }
   if (id === CARD.flare) {
-    return { id, name: 'Solar Flare', text: 'A flare of noon restores 30 HP', from: 'new', to: '+30' }
+    return { id, name: 'Solar Flare', text: 'A sun burst every 6s, doubled in light', from: rank(build.flare, 5), to: rank(Math.min(5, build.flare + 1), 5) }
   }
   if (id === CARD.bell) {
-    return { id, name: 'Noon Bell', text: 'The bell quickens cooldowns', from: rank(build.haste, 5), to: rank(Math.min(5, build.haste + 1), 5) }
+    return { id, name: 'Noon Bell', text: 'A toll slows nearby shade', from: rank(build.bell, 5), to: rank(Math.min(5, build.bell + 1), 5) }
   }
   if (id === CARD.longday) {
-    return { id, name: 'Long Day', text: 'The noon beam runs wider', from: `${build.wide}/2`, to: `${Math.min(2, build.wide + 1)}/2` }
+    return { id, name: 'Long Day', text: 'The sun turns 12% slower', from: rank(build.longday, 5), to: rank(Math.min(5, build.longday + 1), 5) }
   }
   if (id === CARD.searing) {
-    return { id, name: 'Searing Light', text: 'Heat bites deeper', from: rank(build.might, 5), to: rank(Math.min(5, build.might + 1), 5) }
+    return { id, name: 'Searing Light', text: 'Lit enemies burn for 2s', from: rank(build.searing, 5), to: rank(Math.min(5, build.searing + 1), 5) }
   }
   return { id: CARD.heal, name: 'Heal 30', text: 'Restore 30 HP', from: 'now', to: '+30' }
 }

@@ -35,7 +35,7 @@ export function createBlobShadows(): BlobShadows {
       map: blobTexture(),
       color: 0x000000,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.55,
       depthWrite: false,
     }),
     MAX,

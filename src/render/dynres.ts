@@ -70,7 +70,8 @@ export function createDynres(start: number) {
       }
       const span = clock - oldest
       const ringFull = count >= CAP
-      if (n < 8 || (span < TUNING.quality.dynWindow * 0.85 && !ringFull)) {
+      const hot = frameMs > targetMs * 1.4
+      if (n < 6 || (!hot && span < 0.35 && !ringFull)) {
         return { changed: false, dropTier: false }
       }
       for (let i = 1; i < n; i++) {
@@ -84,6 +85,7 @@ export function createDynres(start: number) {
       }
       const avg = sum / n
       const p90 = order[Math.min(n - 1, Math.max(0, Math.ceil(n * 0.9) - 1))] ?? avg
+      const worst = order[n - 1] ?? avg
       const step = TUNING.quality.dynStep
       if (avg > targetMs * TUNING.quality.dynDown) {
         arm = 0
@@ -93,7 +95,7 @@ export function createDynres(start: number) {
         if (next !== ratio) {
           ratio = next
           overHold = 0
-          settle = TUNING.quality.dynSettle
+          settle = avg > targetMs * 1.4 ? 0.12 : TUNING.quality.dynSettle
           count = 0
           return { changed: true, dropTier: false }
         }
@@ -104,12 +106,12 @@ export function createDynres(start: number) {
         }
       } else {
         overHold = 0
-        const clean = clock - lastDrop >= 3 && p90 <= targetMs * 1.05
+        const clean = clock - lastDrop >= 3 && p90 <= targetMs * 1.05 && worst <= targetMs * 1.8
         if (clean) {
           arm += frameSec
           // The 3s clean window is already required. Climb in short steps so a
           // multi-step drop can return to the tier max inside the 8s proof.
-          const need = climbing ? TUNING.quality.dynClimb : 0.35
+          const need = climbing ? TUNING.quality.dynClimb : 0.2
           if (arm >= need) {
             arm = 0
             const next = Math.round(Math.min(max, ratio + step) * 100) / 100

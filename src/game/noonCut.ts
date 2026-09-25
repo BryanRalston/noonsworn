@@ -183,6 +183,6 @@ export function syncRibbon(mesh: Mesh, cut: CutState, player: Player) {
   mesh.scale.set(TUNING.cut.radius * 2, 1, len)
   const mat = mesh.material as MeshBasicMaterial
   const k = cut.active ? 1 : Math.max(0, cut.fade / TUNING.cut.ribbonFade)
-  mat.color.copy(COLOR.gold).lerp(COLOR.goldHot, cut.active ? Math.min(1, cut.time / TUNING.cut.duration) : 1)
+  mat.color.copy(COLOR.gold).lerp(COLOR.goldHot, cut.active ? Math.min(1, cut.time / TUNING.cut.duration) : 1).multiplyScalar(TUNING.look.emissiveGain)
   mat.opacity = 0.35 + 0.65 * k
 }

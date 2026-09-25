@@ -144,6 +144,32 @@ export function buildPillars(): BufferGeometry {
   return merged
 }
 
+export function buildRubble(): BufferGeometry {
+  const spots: Array<[number, number, number]> = [
+    [58, 12, 0.6],
+    [-62, 28, 1.1],
+    [18, -64, 0.3],
+    [-54, -36, 0.9],
+    [70, -22, 0.2],
+    [-24, 68, 1.4],
+    [40, 70, 0.5],
+    [-72, 8, 0.8],
+  ]
+  const parts: BufferGeometry[] = []
+  for (let i = 0; i < spots.length; i++) {
+    const s = spots[i]
+    if (!s) continue
+    const shaft = new CylinderGeometry(0.85, 1.25, 5.4, 6)
+    shaft.rotateZ(0.7 + s[2] * 0.35)
+    shaft.translate(s[0], 1.15, s[1])
+    parts.push(shaft)
+  }
+  const merged = mergeGeometries(parts, false)
+  for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
+  if (!merged) throw new Error('rubble merge failed')
+  return merged
+}
+
 export function buildInlay(): BufferGeometry {
   const medallion = new CircleGeometry(7.5, 40)
   medallion.rotateX(-Math.PI / 2)

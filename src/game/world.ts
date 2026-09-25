@@ -8,6 +8,8 @@ import {
   MeshBasicMaterial,
   MeshToonMaterial,
   PlaneGeometry,
+  RingGeometry,
+  SphereGeometry,
 } from 'three'
 import { mountPalette, COLOR } from '../data/palette'
 import { TUNING, type TierName } from '../data/tuning'
@@ -36,7 +38,7 @@ import { toonMap } from '../render/toon'
 import { storageGet, storageSet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
-import { buildInlay, buildPillars, buildWalls, buildWallTrim } from './arena'
+import { buildInlay, buildPillars, buildRubble, buildWalls, buildWallTrim } from './arena'
 import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector } from './director'
@@ -116,28 +118,77 @@ export function boot(container: HTMLElement) {
   const floor = createFloorMaterial()
   const floorMesh = new Mesh(new PlaneGeometry(TUNING.arena.size, TUNING.arena.size).rotateX(-Math.PI / 2), floor.material)
   floorMesh.position.y = 0
+  const dither = `
+float viewN = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+gl_FragColor.rgb += (viewN - 0.5) * 0.055;`
+  const addDither = (material: MeshToonMaterial) => {
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
+    }
+  }
   const wallMat = new MeshToonMaterial({ color: COLOR.sandstone, gradientMap: toonMap() })
   const trimMat = new MeshToonMaterial({ color: COLOR.sandstoneDeep, gradientMap: toonMap() })
   const pillarMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true })
+  addDither(wallMat)
+  addDither(trimMat)
+  addDither(pillarMat)
   const outerMat = new MeshToonMaterial({ color: COLOR.sandstoneMid, gradientMap: toonMap() })
+  outerMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vDune;')
+      .replace('#include <project_vertex>', 'vDune = (modelMatrix * vec4(transformed, 1.0)).xz;\n#include <project_vertex>')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vDune;')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+float dune = sin(vDune.x * 0.05) * sin(vDune.y * 0.041);
+diffuseColor.rgb *= vec3(0.86, 0.8, 0.7);
+diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
+      )
+      .replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
+  }
   const skyMat = new MeshBasicMaterial({ color: 0xffffff, side: BackSide, depthWrite: false, fog: false })
+  skyMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
+  }
   const inlayMat = new MeshBasicMaterial({
-    color: COLOR.sandstoneDeep,
+    color: COLOR.sandstone,
     transparent: true,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -2,
   })
+  inlayMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
+  }
   const walls = new Mesh(buildWalls(), wallMat)
   const trim = new Mesh(buildWallTrim(), trimMat)
   const pillars = new Mesh(buildPillars(), pillarMat)
   const inlay = new Mesh(buildInlay(), inlayMat)
   inlay.renderOrder = 1
-  const outer = new Mesh(new PlaneGeometry(280, 280).rotateX(-Math.PI / 2), outerMat)
-  outer.position.y = -0.06
-  const sky = new Mesh(new CylinderGeometry(140, 140, 96, 32, 1, true), skyMat)
-  sky.position.y = 20
+  const outer = new Mesh(new PlaneGeometry(900, 900).rotateX(-Math.PI / 2), outerMat)
+  outer.position.y = -0.05
+  const skyHeight = 140
+  const skyHorizonV = 0.36
+  const sky = new Mesh(new CylinderGeometry(110, 110, skyHeight, 36, 1, true), skyMat)
+  const skyCap = new Mesh(new SphereGeometry(110, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.45), skyMat)
+  sky.add(skyCap)
+  skyCap.position.y = skyHeight * 0.5 - 8
   sky.renderOrder = -2
+  const rubble = new Mesh(buildRubble(), trimMat)
+  const flareRing = new Mesh(
+    new RingGeometry(0.85, 1.05, 40),
+    new MeshBasicMaterial({ color: COLOR.goldHot, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: DoubleSide }),
+  )
+  flareRing.rotation.x = -Math.PI / 2
+  flareRing.visible = false
+  const bellRing = new Mesh(
+    new RingGeometry(0.9, 1.15, 40),
+    new MeshBasicMaterial({ color: COLOR.gold, transparent: true, opacity: 0.65, depthWrite: false, toneMapped: false, side: DoubleSide }),
+  )
+  bellRing.rotation.x = -Math.PI / 2
+  bellRing.visible = false
   const sela = createSela()
   const playerView = sela.root
   const ribbon = createRibbon()
@@ -147,7 +198,7 @@ export function boot(container: HTMLElement) {
   const shadows = createBlobShadows()
   const shards = createShards()
   const bloom = createBloom()
-  gpu.scene.add(sky, outer, floorMesh, walls, trim, pillars, inlay, shadows.mesh, playerView, ribbon, marker, pointer, shards.mesh)
+  gpu.scene.add(sky, outer, rubble, floorMesh, walls, trim, pillars, inlay, shadows.mesh, playerView, ribbon, marker, pointer, shards.mesh, flareRing, bellRing)
 
   const sun = createSunClock()
   const horde = createHorde()
@@ -198,6 +249,11 @@ export function boot(container: HTMLElement) {
   let cutWas = false
   let litBurst = 0
   let litBurstAt = 0
+  let flareCd = 6
+  let bellCd = 10
+  let flareShow = 0
+  let bellShow = 0
+  let flareR = 3.5
   const armFloatAt = new Float32Array(TUNING.hordeCap)
   const fxSeed = forcedSeed ?? 1
   let fxState = fxSeed >>> 0
@@ -221,6 +277,7 @@ export function boot(container: HTMLElement) {
     vulnerable: () => player.iframe <= 0 && player.invuln <= 0,
     separate: true,
     might: 0,
+    searing: 0,
     isLit: (x, z) => sun.isLit(x, z),
     onHit(x, z, amount, lit, killed, index) {
       audio.hit()
@@ -231,12 +288,12 @@ export function boot(container: HTMLElement) {
         audio.armored()
         if (time - (armFloatAt[index] ?? 0) >= 0.15) {
           armFloatAt[index] = time
-          floats.push(x, z, `${Math.round(amount)} shield`, 'arm')
+          floats.push(x, z, '', 'spark')
         }
       }
       sela.swing(time)
+      if (killed) audio.kill(lit)
       if (killed && lit) {
-        audio.kill()
         if (time - litBurstAt > 0.12) litBurst = 0
         litBurst++
         litBurstAt = time
@@ -268,6 +325,9 @@ export function boot(container: HTMLElement) {
     },
     onKill() {
       kills++
+    },
+    onEmber(x, z) {
+      shards.burst(x, z, true)
     },
     onDeath(x, z, lit) {
       shards.burst(x, z, lit)
@@ -330,6 +390,7 @@ export function boot(container: HTMLElement) {
     ctx.invuln = player.invuln
     ctx.separate = tick % (quality.tier === 'low' ? 2 : 1) === 0
     ctx.might = build.might
+    ctx.searing = build.searing
   }
 
   function openLevel() {
@@ -355,13 +416,10 @@ export function boot(container: HTMLElement) {
     } else if (id === CARD.wide && build.wide < TUNING.wideMax) {
       build.wide++
       sun.setWide(build.wide)
-    } else if (id === CARD.flare) {
-      player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
-    } else if (id === CARD.bell && build.haste < TUNING.passive.max) build.haste++
-    else if (id === CARD.longday && build.wide < TUNING.wideMax) {
-      build.wide++
-      sun.setWide(build.wide)
-    } else if (id === CARD.searing && build.might < TUNING.passive.max) build.might++
+    } else if (id === CARD.flare && build.flare < TUNING.passive.max) build.flare++
+    else if (id === CARD.bell && build.bell < TUNING.passive.max) build.bell++
+    else if (id === CARD.longday && build.longday < TUNING.passive.max) build.longday++
+    else if (id === CARD.searing && build.searing < TUNING.passive.max) build.searing++
     else {
       player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
     }
@@ -411,6 +469,9 @@ export function boot(container: HTMLElement) {
     shakeT = 0
     follow.snap(0, 0)
     exposePops = 0
+    flareCd = 6
+    bellCd = 10
+    audio.startMusic()
     const seen = Number(storageGet('noonsworn.runs') ?? '0')
     if (seen < 2) {
       showToast(seen === 0 ? 'Fight in the SUN — enemies take ×2' : 'Space / Cut button to dash-slash')
@@ -525,7 +586,7 @@ export function boot(container: HTMLElement) {
   window.addEventListener('pointerdown', () => audio.unlock())
   window.addEventListener('keydown', () => audio.unlock())
   document.addEventListener('visibilitychange', () => {
-    audio.setMuted(document.hidden)
+    audio.setMuted(document.hidden || storageGet('noonsworn.mute') === '1')
     if (document.hidden && mode === 'playing') {
       showMode('paused')
       ads.gameplayStop()
@@ -572,7 +633,6 @@ export function boot(container: HTMLElement) {
           ads.gameplayStart()
         }
       }
-      if (mode === 'title' && !sun.frozen) sun.advance(frameSec)
       if (hitStop > 0) {
         hitStop -= frameSec
         if (hitStop < 0) hitStop = 0
@@ -591,7 +651,27 @@ export function boot(container: HTMLElement) {
         bus.emit('runEnd', { victory: true, time, kills, level: build.level })
         return false
       }
+      sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
+      if (build.flare > 0) {
+        flareCd -= dt
+        if (flareCd <= 0) {
+          flareCd = 6
+          const radius = 3.5 + (build.flare - 1)
+          horde.radial(player.x, player.z, radius, 16, ctx)
+          flareR = radius
+          flareShow = 0.4
+        }
+      }
+      if (build.bell > 0) {
+        bellCd -= dt
+        if (bellCd <= 0) {
+          bellCd = 10
+          horde.slow(player.x, player.z, 5, 1.2)
+          audio.bell()
+          bellShow = 0.45
+        }
+      }
       time += dt
       const wishX = basis.rx * state.moveX + basis.fx * state.moveY
       const wishZ = basis.rz * state.moveX + basis.fz * state.moveY
@@ -698,10 +778,14 @@ export function boot(container: HTMLElement) {
       pointer.rotation.y = Math.atan2(-sun.x, -sun.z)
       sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
       enemyTime().value = performance.now() * 0.001
+      if (!document.hidden) audio.setMuted(storageGet('noonsworn.mute') === '1')
+      audio.setMusic(Number(storageGet('noonsworn.music') ?? '45') / 100)
+      audio.setSfx(Number(storageGet('noonsworn.sfx') ?? '90') / 100)
       playerView.position.set(x, 0, z)
       playerView.rotation.y = yaw
       sela.bob(performance.now() * 0.001, Math.hypot(player.vx, player.vz), cut.active || cut.fade > 0 ? 1 : 0)
       playerView.visible = player.hp > 0 && (player.invuln <= 0 || ((player.invuln * 14) | 0) % 2 === 0)
+      sela.halo.visible = playerView.visible
       syncRibbon(ribbon, cut, player)
       horde.sync()
       spears.sync()
@@ -709,12 +793,30 @@ export function boot(container: HTMLElement) {
       pickups.sync()
       shards.update(frameSec)
       shadows.begin()
-      shadows.put(x, z, 1.15)
-      horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.15 : 1.7))
-      pickups.visit((gx, gz) => shadows.put(gx, gz, 0.45))
+      shadows.put(x, z, 1.5)
+      horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.5 : 2.2))
+      pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6))
+      sela.placeHalo(follow.camera, x, z)
+      if (flareShow > 0) {
+        flareShow = Math.max(0, flareShow - frameSec)
+        const k = 1 - flareShow / 0.4
+        flareRing.visible = flareShow > 0
+        flareRing.position.set(x, 0.08, z)
+        flareRing.scale.setScalar(Math.max(0.2, flareR * k))
+        ;(flareRing.material as MeshBasicMaterial).opacity = 0.75 * (1 - k)
+      } else flareRing.visible = false
+      if (bellShow > 0) {
+        bellShow = Math.max(0, bellShow - frameSec)
+        const k = 1 - bellShow / 0.45
+        bellRing.visible = bellShow > 0
+        bellRing.position.set(x, 0.1, z)
+        bellRing.scale.setScalar(Math.max(0.2, 5 * k))
+        ;(bellRing.material as MeshBasicMaterial).opacity = 0.7 * (1 - k)
+      } else bellRing.visible = false
       shadows.end()
+      sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
       if (quality.tier === 'low') gpu.renderer.render(gpu.scene, follow.camera)
-      else bloom.render(gpu.renderer, gpu.scene, follow.camera, quality.tier === 'high')
+      else bloom.render(gpu.renderer, gpu.scene, follow.camera)
       stats = gpu.readStats()
       pushFrameSample(frameMs)
       xpWindowT += frameSec
@@ -741,10 +843,13 @@ export function boot(container: HTMLElement) {
         if (debugClock >= 0.25) {
           debugClock = 0
           const summary = frameSummary(frameMs)
+          const heard = audio.meter()
           debug.setText({
             fps: summary.fps,
             avg: summary.avg,
             low: summary.low,
+            window: summary.window,
+            frames: summary.frames,
             frameMs,
             tier: quality.tier,
             ratio: quality.ratio,
@@ -760,7 +865,7 @@ export function boot(container: HTMLElement) {
             pools: `spear ${spears.used()}/${TUNING.tiers[quality.tier].projectiles}  xp ${pickups.used()}/${TUNING.tiers[quality.tier].xp}`,
             renderer: quality.renderer || 'masked',
             bloom: quality.tier !== 'low',
-            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${sun.isLit(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  vsync ${quality.targetMs.toFixed(2)}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}\nsfx ${sfxLine()}\ntris mite ${horde.tris.mite.toFixed(0)} hound ${horde.tris.hound.toFixed(0)} sela ${sela.tris.toFixed(0)}`,
+            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${sun.isLit(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  vsync ${quality.targetMs.toFixed(2)}  peak ${heard.peak.toFixed(1)}dB  voices ${heard.voices}  clip ${heard.clipped}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}\nsfx ${sfxLine()}\ntris mite ${horde.tris.mite.toFixed(0)} hound ${horde.tris.hound.toFixed(0)} sela ${sela.tris.toFixed(0)}`,
           })
         }
       }

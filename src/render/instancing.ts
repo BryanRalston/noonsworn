@@ -58,15 +58,15 @@ if (vEye > 0.5) {
   outgoingLight = mix(vec3(0.82, 0.7, 1.0), uGold, vLit);
 } else if (vLit > 0.5) {
   float band = floor(clamp(luma, 0.0, 0.999) * 3.0);
-  outgoingLight = uGold * (0.5 + band * 0.12);
-  outgoingLight += vec3(0.1, 0.07, 0.02);
-  float crack = step(0.82, fract(sin(dot(vLocal.xz, vec2(19.1, 73.7)) + vLocal.y * 4.0) * 43758.5));
-  outgoingLight += uGold * crack * 0.45;
-  outgoingLight *= mix(0.32, 1.0, facing);
+  outgoingLight = vec3(0.16, 0.09, 0.04) * (0.55 + band * 0.2);
+  float crack = step(0.72, fract(sin(dot(vLocal.xz, vec2(19.1, 73.7)) + vLocal.y * 4.0) * 43758.5));
+  outgoingLight += uGold * crack * 1.15;
+  outgoingLight *= mix(0.2, 1.0, facing);
 } else {
   outgoingLight = max(outgoingLight, uUmbral * 0.92);
   outgoingLight += uRim * fres * 1.1;
 }
+if (vLocal.y > 0.58) outgoingLight = mix(outgoingLight, uRim, 0.92);
 outgoingLight = mix(outgoingLight, uGold * 1.8, vFlash);
 #include <opaque_fragment>`,
       )
@@ -79,7 +79,7 @@ export function whiteRim(material: MeshToonMaterial) {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <opaque_fragment>',
       `float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.0);
-outgoingLight += vec3(fres * 0.28);
+outgoingLight += vec3(fres * 0.55);
 #include <opaque_fragment>`,
     )
   }

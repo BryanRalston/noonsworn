@@ -17,6 +17,7 @@ export const HEX = {
   xp: '#35D6C4',
   linen: '#FBF6EC',
   ink: '#141225',
+  horizon: '#E4C7A2',
 } as const
 
 function c(hex: string): Color {
@@ -40,6 +41,7 @@ export const COLOR = {
   xp: c(HEX.xp),
   linen: c(HEX.linen),
   ink: c(HEX.ink),
+  horizon: c(HEX.horizon),
 }
 
 export function mountPalette(target: HTMLElement) {

@@ -16,6 +16,7 @@ export interface SunClock {
   cosBeta: number
   beta: number
   frozen: boolean
+  timeScale: number
   reset: (rng: Rng) => void
   setWide: (stacks: number) => void
   advance: (dt: number) => void
@@ -36,6 +37,7 @@ export function createSunClock(): SunClock {
     cosBeta: Math.cos((TUNING.beamDeg * Math.PI) / 180),
     beta: (TUNING.beamDeg * Math.PI) / 180,
     frozen: false,
+    timeScale: 1,
     reset(rng) {
       sun.theta0 = rng() * Math.PI * 2
       sun.dir = rng() < 0.5 ? -1 : 1
@@ -50,7 +52,7 @@ export function createSunClock(): SunClock {
     },
     advance(dt) {
       if (sun.frozen) return
-      sun.time += dt
+      sun.time += dt * sun.timeScale
       place()
     },
     isLit(x, z) {

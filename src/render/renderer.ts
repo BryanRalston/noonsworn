@@ -30,18 +30,18 @@ export function createGpu(canvas: HTMLCanvasElement, camera: PerspectiveCamera, 
   })
   renderer.outputColorSpace = 'srgb'
   renderer.toneMapping = ACESFilmicToneMapping
-  renderer.toneMappingExposure = 0.92
+  renderer.toneMappingExposure = TUNING.look.exposure
   renderer.shadowMap.enabled = false
   renderer.info.autoReset = false
-  renderer.setClearColor(HEX.shadeDeep, 1)
+  renderer.setClearColor(HEX.horizon, 1)
   const scene = new Scene()
-  scene.background = COLOR.shadeDeep
+  scene.background = COLOR.horizon
   const fill = new HemisphereLight(HEX.sandstone, HEX.shadeDeep, 0.62)
   const sunLight = new DirectionalLight(HEX.sunlit, 1.2)
   sunLight.position.set(12, 10, 4)
   scene.add(fill, sunLight, sunLight.target)
   let fogOn = false
-  const fog = new Fog(HEX.shadeDeep, TUNING.arena.fogNear, TUNING.arena.fogFar)
+  const fog = new Fog(HEX.horizon, TUNING.arena.fogNear, TUNING.arena.fogFar)
 
   function resize(ratio: number) {
     const w = Math.max(1, window.innerWidth)

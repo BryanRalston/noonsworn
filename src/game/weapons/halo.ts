@@ -49,7 +49,7 @@ export interface Halo {
 export function createHalo(): Halo {
   const geo = new RingGeometry(TUNING.halo.discR * 0.62, TUNING.halo.discR, 18)
   geo.rotateX(-Math.PI / 2)
-  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false }), TUNING.halo.maxDiscs)
+  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: COLOR.goldHot.clone().multiplyScalar(TUNING.look.emissiveGain), toneMapped: false }), TUNING.halo.maxDiscs)
   const stamps = new Float32Array(TUNING.hordeCap * TUNING.halo.maxDiscs)
   const halo: Halo = {
     mesh,
@@ -95,7 +95,10 @@ export function createHalo(): Halo {
       }
       for (let d = 0; d < stats.count; d++) {
         const a = halo.angle + (d * Math.PI * 2) / stats.count
-        writeFlat(mesh, d, px + Math.cos(a) * stats.orbit, pz + Math.sin(a) * stats.orbit, 0, 1, 1)
+        const limit = TUNING.arena.size / 2 - 1.2
+        const hx = Math.max(-limit, Math.min(limit, px + Math.cos(a) * stats.orbit))
+        const hz = Math.max(-limit, Math.min(limit, pz + Math.sin(a) * stats.orbit))
+        writeFlat(mesh, d, hx, hz, 0, 1, 1)
       }
       mesh.count = stats.count
       mesh.visible = true
