@@ -1,5 +1,5 @@
 LIVE URL: https://bryanralston.github.io/noonsworn/
-REPO (SHA): filled in after the commit is created
+REPO (SHA): 955da54533f22dfc47b5879229c1d4585580ba43
 LOCAL PATH: C:\Users\bryma\dev\noonsworn
 REPORT FILE: qa/m2_2/REPORT.md
 
