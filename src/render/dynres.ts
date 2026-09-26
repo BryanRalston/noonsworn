@@ -84,9 +84,10 @@ export function createDynres(start: number) {
       }
       const avg = sum / n
       const p95 = order[Math.min(n - 1, Math.max(0, Math.ceil(n * 0.95) - 1))] ?? avg
+      const step = TUNING.quality.dynStep
       if (avg > targetMs * TUNING.quality.dynDown) {
         if (clock - lastDown >= 0.4) {
-          const next = Math.round(Math.max(min, ratio - 0.1) * 100) / 100
+          const next = Math.round(Math.max(min, ratio - step) * 100) / 100
           if (next !== ratio) {
             ratio = next
             lastDown = clock
@@ -103,9 +104,8 @@ export function createDynres(start: number) {
         }
       } else {
         overHold = 0
-        // 0.1 covers a full 1.0 drop inside 8 s at one step per 0.5 s. 0.05 cannot.
         if (p95 <= targetMs && clock - lastUp >= 0.5) {
-          const next = Math.round(Math.min(max, ratio + 0.1) * 100) / 100
+          const next = Math.round(Math.min(max, ratio + step) * 100) / 100
           if (next !== ratio) {
             ratio = next
             lastUp = clock
