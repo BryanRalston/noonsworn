@@ -88,6 +88,7 @@ export function createAudio(fxRng: () => number): AudioBus {
   let hitBurst = 0
   let hitBurstAt = 0
   let hitClustered = false
+  let shimmerAt = 0
 
   function ensure(): AudioContext {
     if (!ctx) {
@@ -377,6 +378,9 @@ export function createAudio(fxRng: () => number): AudioBus {
       one(hurts, 0.5, 'hurt')
     },
     shimmer() {
+      const now = performance.now()
+      if (now - shimmerAt < 125) return
+      shimmerAt = now
       mark('shimmer')
       one(['shimmer_ding'], 0.18, 'shimmer')
     },

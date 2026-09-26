@@ -37,7 +37,7 @@ import { toonMap } from '../render/toon'
 import { storageGet, storageSet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
-import { buildInlay, buildPillars, buildShell, createScatter, createSunMark } from './arena'
+import { buildInlay, buildPillars, buildShell, createScatter, createSunPip } from './arena'
 import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector } from './director'
@@ -186,7 +186,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const sky = new Mesh(skyGeo, skyMat)
   sky.renderOrder = -2
   const scatter = createScatter(scatterMat)
-  const sunMark = createSunMark()
+  const sunPip = createSunPip()
   const flareRing = new Mesh(
     new RingGeometry(0.85, 1.05, 40),
     new MeshBasicMaterial({ color: COLOR.goldHot, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: DoubleSide }),
@@ -205,7 +205,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const shadows = createBlobShadows()
   const shards = createShards()
   const bloom = createBloom()
-  gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, ribbon, sunMark.mesh, shards.mesh, flareRing, bellRing)
+  gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, ribbon, shards.mesh, flareRing, bellRing)
 
   const sun = createSunClock()
   const horde = createHorde()
@@ -256,8 +256,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let cutWas = false
   let litBurst = 0
   let stepAcc = 0
-  const camRight = [0, 0, 0]
-  const camUp = [0, 0, 0]
   let litBurstAt = 0
   let flareCd = 6
   let bellCd = 10
@@ -791,16 +789,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       const len = Math.hypot(sun.x, sun.z) || 1
       gpu.sunLight.position.set(x + (sun.x / len) * 16, 11, z + (sun.z / len) * 16)
       gpu.sunLight.target.position.set(x, 0, z)
-      const mx = (sun.x / len) * TUNING.arena.markerRadius
-      const mz = (sun.z / len) * TUNING.arena.markerRadius
-      const camE = follow.camera.matrixWorld.elements
-      camRight[0] = camE[0] ?? 0
-      camRight[1] = camE[1] ?? 0
-      camRight[2] = camE[2] ?? 0
-      camUp[0] = camE[4] ?? 0
-      camUp[1] = camE[5] ?? 0
-      camUp[2] = camE[6] ?? 0
-      sunMark.place(camRight, camUp, mx, TUNING.arena.markerHeight + 8, mz, (sun.x / len) * 22, (sun.z / len) * 22, Math.atan2(-sun.x, -sun.z))
       const lookDist = follow.lookDistance()
       const fogNear = lookDist + TUNING.arena.fogAhead
       const fogFar = lookDist + TUNING.arena.fogSpan
@@ -859,6 +847,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
       if (quality.tier === 'low') gpu.renderer.render(gpu.scene, follow.camera)
       else bloom.render(gpu.renderer, gpu.scene, follow.camera)
+      sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)
       stats = gpu.readStats()
       pushFrameSample(frameMs)
       xpWindowT += frameSec

@@ -4,15 +4,19 @@ import {
   BufferGeometry,
   CircleGeometry,
   CylinderGeometry,
-  DoubleSide,
   Float32BufferAttribute,
   InstancedMesh,
   Mesh,
-  MeshBasicMaterial,
   MeshToonMaterial,
   Object3D,
+  OrthographicCamera,
   PlaneGeometry,
+  Scene,
+  ShaderMaterial,
   SphereGeometry,
+  Vector3,
+  type Camera,
+  type WebGLRenderer,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { COLOR } from '../data/palette'
@@ -219,62 +223,76 @@ export function createScatter(material: MeshToonMaterial): InstancedMesh {
   return mesh
 }
 
-export function createSunMark(): {
-  mesh: Mesh
-  place: (right: ArrayLike<number>, up: ArrayLike<number>, mx: number, my: number, mz: number, px: number, pz: number, yaw: number) => void
+const sunPipVert = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`
+const sunPipFrag = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vec2 p = vUv * 2.0 - 1.0;
+  float r = length(p);
+  if (r > 1.0) discard;
+  float ang = atan(p.y, p.x);
+  float rays = pow(max(abs(cos(ang * 6.0)), 0.0), 18.0);
+  rays *= smoothstep(0.28, 0.48, r) * (1.0 - smoothstep(0.72, 0.96, r));
+  float ring = smoothstep(0.58, 0.68, r) * (1.0 - smoothstep(0.82, 0.94, r));
+  float core = 1.0 - smoothstep(0.08, 0.5, r);
+  vec3 body = mix(vec3(0.42, 0.24, 0.06), vec3(0.78, 0.52, 0.16), core);
+  vec3 rim = vec3(0.93, 0.72, 0.30);
+  vec3 col = mix(body, rim, clamp(ring + rays * 0.85, 0.0, 1.0));
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
+export function createSunPip(): {
+  render: (renderer: WebGLRenderer, camera: Camera, px: number, pz: number, sunX: number, sunZ: number, cssHeight: number) => void
 } {
-  const disc = flatGeo(new CircleGeometry(2.4, 20))
-  const beam = flatGeo(new BoxGeometry(0.18, 0.06, 2.4))
-  const discAttr = disc.getAttribute('position')
-  const beamAttr = beam.getAttribute('position')
-  const discN = discAttr.count
-  const beamN = beamAttr.count
-  const discLocal = new Float32Array(discN * 3)
-  const beamLocal = new Float32Array(beamN * 3)
-  for (let i = 0; i < discN; i++) {
-    discLocal[i * 3] = discAttr.getX(i)
-    discLocal[i * 3 + 1] = discAttr.getY(i)
-    discLocal[i * 3 + 2] = discAttr.getZ(i)
-  }
-  for (let i = 0; i < beamN; i++) {
-    beamLocal[i * 3] = beamAttr.getX(i)
-    beamLocal[i * 3 + 1] = beamAttr.getY(i)
-    beamLocal[i * 3 + 2] = beamAttr.getZ(i)
-  }
-  const merged = mergeGeometries([disc, beam], false)
-  disc.dispose()
-  beam.dispose()
-  if (!merged) throw new Error('sun mark merge failed')
-  const pos = merged.getAttribute('position')
   const mesh = new Mesh(
-    merged,
-    new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false, side: DoubleSide }),
+    new CircleGeometry(1, 28),
+    new ShaderMaterial({
+      vertexShader: sunPipVert,
+      fragmentShader: sunPipFrag,
+      depthTest: false,
+      depthWrite: false,
+      transparent: false,
+      toneMapped: false,
+      fog: false,
+    }),
   )
   mesh.frustumCulled = false
+  const scene = new Scene()
+  scene.add(mesh)
+  const cam = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  const pt = new Vector3()
   return {
-    mesh,
-    place(right, up, mx, my, mz, px, pz, yaw) {
-      const cy = Math.cos(yaw)
-      const sy = Math.sin(yaw)
-      for (let i = 0; i < discN; i++) {
-        const lx = discLocal[i * 3] ?? 0
-        const ly = discLocal[i * 3 + 1] ?? 0
-        pos.setXYZ(
-          i,
-          mx + (right[0] ?? 0) * lx + (up[0] ?? 0) * ly,
-          my + (right[1] ?? 0) * lx + (up[1] ?? 0) * ly,
-          mz + (right[2] ?? 0) * lx + (up[2] ?? 0) * ly,
-        )
+    render(renderer, camera, px, pz, sunX, sunZ, cssHeight) {
+      const len = Math.hypot(sunX, sunZ) || 1
+      pt.set(px + (sunX / len) * 48, 1.4, pz + (sunZ / len) * 48)
+      pt.project(camera)
+      let nx = pt.x
+      let ny = pt.y
+      if (pt.z > 1) {
+        nx = -nx
+        ny = -ny
       }
-      for (let i = 0; i < beamN; i++) {
-        const lx = beamLocal[i * 3] ?? 0
-        const ly = beamLocal[i * 3 + 1] ?? 0
-        const lz = beamLocal[i * 3 + 2] ?? 0
-        const rx = lx * cy + lz * sy
-        const rz = -lx * sy + lz * cy
-        pos.setXYZ(discN + i, px + rx, 0.08 + ly, pz + rz)
-      }
-      pos.needsUpdate = true
+      const span = Math.max(Math.abs(nx), Math.abs(ny), 1e-4)
+      nx /= span
+      ny /= span
+      const diameter = Math.min(48 / Math.max(cssHeight, 1), 0.14)
+      const inset = 1 - diameter * 0.62
+      mesh.position.set(nx * inset, ny * inset, 0)
+      mesh.scale.set(diameter, diameter, 1)
+      const prevAuto = renderer.autoClear
+      const prevTarget = renderer.getRenderTarget()
+      renderer.setRenderTarget(null)
+      renderer.autoClear = false
+      renderer.render(scene, cam)
+      renderer.setRenderTarget(prevTarget)
+      renderer.autoClear = prevAuto
     },
   }
 }

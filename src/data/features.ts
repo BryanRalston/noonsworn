@@ -40,6 +40,7 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Graphics/Performance', feature: 'M2 camera, move look-ahead, dune ring and haze', status: 'shipped', since: 'M2.2' },
   { area: 'Graphics/Performance', feature: '10s 1% low and dynres step-down under load', status: 'shipped', since: 'M2.2' },
   { area: 'Graphics/Performance', feature: 'Camera-scaled fog, dune noise, and outer rubble', status: 'shipped', since: 'M2.3' },
+  { area: 'Graphics/Performance', feature: 'Edge sun glyph and dynres step-down to the floor', status: 'shipped', since: 'M2.4' },
   { area: 'Graphics/Performance', feature: 'Sela scale 1.15 with a billboard halo; quadruped hound', status: 'shipped', since: 'M2.3' },
   { area: 'Platform/Ads', feature: 'Sampled audio limiter, duck bus, and AAC fallback', status: 'shipped', since: 'M2.3' },
   { area: 'Combat & Weapons', feature: 'Solar Flare, Noon Bell, Long Day, and Searing Light', status: 'shipped', since: 'M2.2' },

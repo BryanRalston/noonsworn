@@ -21,6 +21,9 @@ export function createDynres(start: number) {
     head = 0
     overHold = 0
     clock = 0
+    settle = 0
+    lastDown = -10
+    lastUp = -10
   }
 
   return {
@@ -81,15 +84,14 @@ export function createDynres(start: number) {
       }
       const avg = sum / n
       const p95 = order[Math.min(n - 1, Math.max(0, Math.ceil(n * 0.95) - 1))] ?? avg
-      const step = TUNING.quality.dynStep
       if (avg > targetMs * TUNING.quality.dynDown) {
-        if (clock - lastDown >= 2) {
-          const next = Math.round(Math.max(min, ratio - step) * 100) / 100
+        if (clock - lastDown >= 0.4) {
+          const next = Math.round(Math.max(min, ratio - 0.1) * 100) / 100
           if (next !== ratio) {
             ratio = next
             lastDown = clock
             overHold = 0
-            settle = 0.2
+            settle = 0.05
             count = 0
             return { changed: true, dropTier: false }
           }
