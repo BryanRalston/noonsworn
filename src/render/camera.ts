@@ -11,6 +11,7 @@ export interface FollowCamera {
   basis: (out: { fx: number; fz: number; rx: number; rz: number }) => void
   update: (x: number, z: number, dt: number, shakeX: number, shakeZ: number) => void
   snap: (x: number, z: number) => void
+  lookDistance: () => number
 }
 
 export function createFollowCamera(): FollowCamera {
@@ -31,6 +32,7 @@ export function createFollowCamera(): FollowCamera {
   let offY = 0
   let offZ = 0
   let portrait = false
+  let aimDist: number = TUNING.camera.distance
 
   function placeRig(dist: number) {
     const horiz = dist * Math.cos(pitch)
@@ -44,6 +46,7 @@ export function createFollowCamera(): FollowCamera {
     camera.position.set(focusX + offX + sx, offY, focusZ + offZ + sz)
     camera.lookAt(focusX + sx, TUNING.camera.lookHeight, focusZ + sz)
     camera.updateMatrixWorld()
+    aimDist = Math.hypot(offX, offY - TUNING.camera.lookHeight, offZ)
   }
 
   function groundShort(dist: number, fovDeg: number, aspect: number): number {
@@ -63,7 +66,7 @@ export function createFollowCamera(): FollowCamera {
     const fov = portrait ? 42 : TUNING.camera.fov
     let dist = portrait ? 40 : TUNING.camera.distance
     for (let i = 0; i < 14 && groundShort(dist, fov, aspect) < TUNING.camera.shortSpan; i++) dist += 3
-    camera.fov = fov
+    camera.fov = portrait ? TUNING.camera.fovPortrait : TUNING.camera.fov
     placeRig(dist)
     camera.updateProjectionMatrix()
   }
@@ -133,5 +136,8 @@ export function createFollowCamera(): FollowCamera {
       place(shakeX, shakeZ)
     },
     snap,
+    lookDistance() {
+      return aimDist
+    },
   }
 }

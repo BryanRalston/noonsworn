@@ -27,7 +27,7 @@ export function createEnemyMaterial(): MeshToonMaterial {
     shader.uniforms.uUmbral = { value: COLOR.umbral }
     shader.uniforms.uRim = { value: COLOR.umbralRim }
     shader.vertexShader =
-      'attribute float iFlash;\nattribute float iLit;\nattribute float iPhase;\nattribute float iMove;\nattribute float aEye;\nattribute float aLeg;\nvarying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nuniform float uTime;\n' +
+      'attribute float iFlash;\nattribute float iLit;\nattribute float iPhase;\nattribute float iMove;\nattribute float iTele;\nattribute float aEye;\nattribute float aLeg;\nattribute float aTele;\nvarying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nvarying float vTele;\nvarying float vITele;\nuniform float uTime;\n' +
       shader.vertexShader.replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
@@ -35,6 +35,8 @@ vLocal = position;
 vEye = aEye;
 vLit = iLit;
 vFlash = iFlash;
+vTele = aTele;
+vITele = iTele;
 float wave = sin(uTime * 9.0 + iPhase);
 float body = step(abs(aLeg), 0.01);
 float hop = body * wave;
@@ -48,13 +50,16 @@ transformed.x += aLeg * swing * iMove * 0.1;
 transformed.z += aLeg * cos(uTime * 12.0 + iPhase) * iMove * 0.05;`,
       )
     shader.fragmentShader =
-      'varying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nuniform vec3 uGold;\nuniform vec3 uUmbral;\nuniform vec3 uRim;\n' +
+      'varying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nvarying float vTele;\nvarying float vITele;\nuniform vec3 uGold;\nuniform vec3 uUmbral;\nuniform vec3 uRim;\n' +
       shader.fragmentShader.replace(
         '#include <opaque_fragment>',
         `float facing = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
 float fres = pow(1.0 - facing, 2.0);
 float luma = dot(outgoingLight, vec3(0.299, 0.587, 0.114));
-if (vEye > 0.5) {
+if (vTele > 0.5) {
+  if (vITele < 0.5) discard;
+  outgoingLight = vec3(1.0, 0.24, 0.55);
+} else if (vEye > 0.5) {
   outgoingLight = mix(vec3(0.82, 0.7, 1.0), uGold, vLit);
 } else if (vLit > 0.5) {
   float band = floor(clamp(luma, 0.0, 0.999) * 3.0);

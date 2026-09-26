@@ -25,6 +25,8 @@ uniform vec3 uShadeDeep;
 uniform vec3 uGold;
 uniform vec3 uFogColor;
 uniform float uFog;
+uniform float uFogNear;
+uniform float uFogFar;
 uniform sampler2D uAlbedo;
 uniform float uTexMix;
 
@@ -61,13 +63,11 @@ void main() {
   vec3 albedo = texture(uAlbedo, p * 0.08).rgb;
   col = mix(col, col * albedo, uTexMix);
   col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));
-  float fogF = smoothstep(40.0, 78.0, length(cameraPosition - vWorld)) * uFog;
+  float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-  float viewN = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  gl_FragColor.rgb += (viewN - 0.5) * 0.055;
 }
 `
 
@@ -83,6 +83,8 @@ export interface FloorUniforms {
   uGold: { value: Color }
   uFogColor: { value: Color }
   uFog: { value: number }
+  uFogNear: { value: number }
+  uFogFar: { value: number }
   uAlbedo: { value: Texture }
   uTexMix: { value: number }
 }
@@ -117,6 +119,8 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
     uGold: { value: COLOR.gold.clone() },
     uFogColor: { value: COLOR.horizon.clone() },
     uFog: { value: 0 },
+    uFogNear: { value: TUNING.camera.distance + TUNING.arena.fogAhead },
+    uFogFar: { value: TUNING.camera.distance + TUNING.arena.fogSpan },
     uAlbedo: { value: whiteTex() },
     uTexMix: { value: 0 },
   }

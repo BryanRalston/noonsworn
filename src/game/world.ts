@@ -1,7 +1,5 @@
 import {
   BackSide,
-  BoxGeometry,
-  CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   Mesh,
@@ -11,6 +9,7 @@ import {
   RingGeometry,
   SphereGeometry,
 } from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { mountPalette, COLOR } from '../data/palette'
 import { TUNING, type TierName } from '../data/tuning'
 import { createEvents } from '../core/events'
@@ -38,7 +37,7 @@ import { toonMap } from '../render/toon'
 import { storageGet, storageSet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
-import { buildInlay, buildPillars, buildRubble, buildWalls, buildWallTrim } from './arena'
+import { buildInlay, buildPillars, buildShell, createScatter, createSunMark } from './arena'
 import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector } from './director'
@@ -118,40 +117,52 @@ export function boot(container: HTMLElement) {
   const floor = createFloorMaterial()
   const floorMesh = new Mesh(new PlaneGeometry(TUNING.arena.size, TUNING.arena.size).rotateX(-Math.PI / 2), floor.material)
   floorMesh.position.y = 0
-  const dither = `
-float viewN = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-gl_FragColor.rgb += (viewN - 0.5) * 0.055;`
-  const addDither = (material: MeshToonMaterial) => {
-    material.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
-    }
-  }
-  const wallMat = new MeshToonMaterial({ color: COLOR.sandstone, gradientMap: toonMap() })
-  const trimMat = new MeshToonMaterial({ color: COLOR.sandstoneDeep, gradientMap: toonMap() })
+  const wallMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true })
   const pillarMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true })
-  addDither(wallMat)
-  addDither(trimMat)
-  addDither(pillarMat)
+  const scatterMat = new MeshToonMaterial({ color: COLOR.sandstoneDeep, gradientMap: toonMap() })
   const outerMat = new MeshToonMaterial({ color: COLOR.sandstoneMid, gradientMap: toonMap() })
   outerMat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vDune;')
       .replace('#include <project_vertex>', 'vDune = (modelMatrix * vec4(transformed, 1.0)).xz;\n#include <project_vertex>')
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vDune;')
+      .replace('#include <common>', `#include <common>
+varying vec2 vDune;
+float duneHash(vec2 p) {
+  p = fract(p * vec2(0.3183099, 0.3678794));
+  p += dot(p, p.yx + 19.19);
+  return fract(p.x * p.y);
+}
+float duneNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = duneHash(i);
+  float b = duneHash(i + vec2(1.0, 0.0));
+  float c = duneHash(i + vec2(0.0, 1.0));
+  float d = duneHash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}`)
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-float dune = sin(vDune.x * 0.05) * sin(vDune.y * 0.041);
-diffuseColor.rgb *= vec3(0.86, 0.8, 0.7);
-diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
+float n12 = duneNoise(vDune / 12.0);
+float n40 = duneNoise(vDune / 40.0);
+float n3 = duneNoise(vDune / 3.0);
+float n1 = duneNoise(vDune / 1.2);
+float dune = n12 * 0.20 + n40 * 0.10 + n3 * 0.35 + n1 * 0.35;
+float wall = 25.0;
+float band = smoothstep(wall - 1.0, wall + 2.0, length(vDune)) * (1.0 - smoothstep(wall + 5.0, wall + 12.0, length(vDune)));
+vec3 duneLo = vec3(0.38, 0.24, 0.12);
+vec3 duneHi = vec3(0.95, 0.72, 0.42);
+diffuseColor.rgb *= mix(duneLo, duneHi, dune);
+float ripNear = abs(fract(vDune.x * 0.55 + vDune.y * 0.31) - 0.5);
+float ripFar = abs(fract(vDune.x * 0.16 + vDune.y * 0.09) - 0.5);
+diffuseColor.rgb *= mix(0.68, 1.28, ripNear * 0.62 + ripFar * 0.38);
+diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       )
-      .replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
   }
   const skyMat = new MeshBasicMaterial({ color: 0xffffff, side: BackSide, depthWrite: false, fog: false })
-  skyMat.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
-  }
   const inlayMat = new MeshBasicMaterial({
     color: COLOR.sandstone,
     transparent: true,
@@ -159,11 +170,7 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
     polygonOffset: true,
     polygonOffsetFactor: -2,
   })
-  inlayMat.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>\n${dither}`)
-  }
-  const walls = new Mesh(buildWalls(), wallMat)
-  const trim = new Mesh(buildWallTrim(), trimMat)
+  const shell = new Mesh(buildShell(), wallMat)
   const pillars = new Mesh(buildPillars(), pillarMat)
   const inlay = new Mesh(buildInlay(), inlayMat)
   inlay.renderOrder = 1
@@ -171,12 +178,15 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
   outer.position.y = -0.05
   const skyHeight = 140
   const skyHorizonV = 0.36
-  const sky = new Mesh(new CylinderGeometry(110, 110, skyHeight, 36, 1, true), skyMat)
-  const skyCap = new Mesh(new SphereGeometry(110, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.45), skyMat)
-  sky.add(skyCap)
-  skyCap.position.y = skyHeight * 0.5 - 8
+  const skyCapGeo = new SphereGeometry(110, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.45)
+  skyCapGeo.translate(0, skyHeight * 0.5 - 8, 0)
+  const skyTube = new CylinderGeometry(110, 110, skyHeight, 24, 1, true)
+  const skyGeo = mergeGeometries([skyTube.index ? skyTube.toNonIndexed() : skyTube, skyCapGeo.index ? skyCapGeo.toNonIndexed() : skyCapGeo], false)
+  if (!skyGeo) throw new Error('sky merge failed')
+  const sky = new Mesh(skyGeo, skyMat)
   sky.renderOrder = -2
-  const rubble = new Mesh(buildRubble(), trimMat)
+  const scatter = createScatter(scatterMat)
+  const sunMark = createSunMark()
   const flareRing = new Mesh(
     new RingGeometry(0.85, 1.05, 40),
     new MeshBasicMaterial({ color: COLOR.goldHot, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: DoubleSide }),
@@ -192,13 +202,10 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
   const sela = createSela()
   const playerView = sela.root
   const ribbon = createRibbon()
-  const marker = new Mesh(new CircleGeometry(2.4, 24), new MeshBasicMaterial({ color: COLOR.goldHot, side: DoubleSide, toneMapped: false }))
-  const pointer = new Mesh(new BoxGeometry(0.18, 0.06, 2.4), new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false }))
-  pointer.position.y = 0.08
   const shadows = createBlobShadows()
   const shards = createShards()
   const bloom = createBloom()
-  gpu.scene.add(sky, outer, rubble, floorMesh, walls, trim, pillars, inlay, shadows.mesh, playerView, ribbon, marker, pointer, shards.mesh, flareRing, bellRing)
+  gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, ribbon, sunMark.mesh, shards.mesh, flareRing, bellRing)
 
   const sun = createSunClock()
   const horde = createHorde()
@@ -206,7 +213,7 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
   const halo = createHalo()
   const pickups = createPickups()
   const director = createDirector()
-  gpu.scene.add(horde.miteMesh, horde.houndMesh, horde.teleMesh, spears.mesh, halo.mesh, pickups.mesh)
+  gpu.scene.add(horde.miteMesh, horde.houndMesh, spears.mesh, halo.mesh, pickups.mesh)
 
   const bus = createEvents()
   const player = createPlayer()
@@ -248,6 +255,9 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
   let xpStep = 0
   let cutWas = false
   let litBurst = 0
+  let stepAcc = 0
+  const camRight = [0, 0, 0]
+  const camUp = [0, 0, 0]
   let litBurstAt = 0
   let flareCd = 6
   let bellCd = 10
@@ -509,6 +519,17 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
     }
   }
   screens.onFeature = () => featureMap.toggle()
+  function applyStoredAudio() {
+    audio.setMuted(document.hidden || storageGet('noonsworn.mute') === '1')
+    audio.setMusic(Number(storageGet('noonsworn.music') ?? '45') / 100)
+    audio.setSfx(Number(storageGet('noonsworn.sfx') ?? '90') / 100)
+  }
+  applyStoredAudio()
+  screens.onAudio = (which, value) => {
+    if (which === 'music') audio.setMusic(value / 100)
+    else if (which === 'sfx') audio.setSfx(value / 100)
+    else audio.setMuted(value === 1 || document.hidden)
+  }
   hud.onPause = () => {
     audio.ui()
     if (mode === 'playing') {
@@ -701,7 +722,7 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
       if (cut.active) {
         sweepCut(cut, player, horde, build.might, ctx, () => {
           hitStop = Math.max(hitStop, TUNING.cut.hitStop)
-          shakeAmp = TUNING.cut.shake
+          shakeAmp = Math.max(shakeAmp, TUNING.cut.shake)
           shakeT = TUNING.shakeDecay
         })
         if (cut.time >= TUNING.cut.duration) {
@@ -772,15 +793,36 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
       gpu.sunLight.target.position.set(x, 0, z)
       const mx = (sun.x / len) * TUNING.arena.markerRadius
       const mz = (sun.z / len) * TUNING.arena.markerRadius
-      marker.position.set(mx, TUNING.arena.markerHeight + 8, mz)
-      marker.quaternion.copy(follow.camera.quaternion)
-      pointer.position.set((sun.x / len) * 22, 0.08, (sun.z / len) * 22)
-      pointer.rotation.y = Math.atan2(-sun.x, -sun.z)
+      const camE = follow.camera.matrixWorld.elements
+      camRight[0] = camE[0] ?? 0
+      camRight[1] = camE[1] ?? 0
+      camRight[2] = camE[2] ?? 0
+      camUp[0] = camE[4] ?? 0
+      camUp[1] = camE[5] ?? 0
+      camUp[2] = camE[6] ?? 0
+      sunMark.place(camRight, camUp, mx, TUNING.arena.markerHeight + 8, mz, (sun.x / len) * 22, (sun.z / len) * 22, Math.atan2(-sun.x, -sun.z))
+      const lookDist = follow.lookDistance()
+      const fogNear = lookDist + TUNING.arena.fogAhead
+      const fogFar = lookDist + TUNING.arena.fogSpan
+      gpu.setFogRange(fogNear, fogFar)
+      floor.uniforms.uFogNear.value = fogNear
+      floor.uniforms.uFogFar.value = fogFar
+      const farNeed = lookDist + TUNING.arena.farPad
+      if (follow.camera.far < farNeed) {
+        follow.camera.far = farNeed
+        follow.camera.updateProjectionMatrix()
+      }
       sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
       enemyTime().value = performance.now() * 0.001
-      if (!document.hidden) audio.setMuted(storageGet('noonsworn.mute') === '1')
-      audio.setMusic(Number(storageGet('noonsworn.music') ?? '45') / 100)
-      audio.setSfx(Number(storageGet('noonsworn.sfx') ?? '90') / 100)
+      audio.sample()
+      const moving = Math.hypot(player.vx, player.vz)
+      if (mode === 'playing' && moving > 0.8) {
+        stepAcc += frameSec
+        if (stepAcc >= 0.38) {
+          stepAcc = 0
+          audio.step()
+        }
+      } else stepAcc = 0
       playerView.position.set(x, 0, z)
       playerView.rotation.y = yaw
       sela.bob(performance.now() * 0.001, Math.hypot(player.vx, player.vz), cut.active || cut.fade > 0 ? 1 : 0)
@@ -793,10 +835,10 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
       pickups.sync()
       shards.update(frameSec)
       shadows.begin()
-      shadows.put(x, z, 1.5)
-      horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.5 : 2.2))
-      pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6))
-      sela.placeHalo(follow.camera, x, z)
+      shadows.put(x, z, 1.5 * 1.3)
+      horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3))
+      pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
+      sela.placeHalo(follow.camera)
       if (flareShow > 0) {
         flareShow = Math.max(0, flareShow - frameSec)
         const k = 1 - flareShow / 0.4
@@ -899,6 +941,7 @@ diffuseColor.rgb *= 0.9 + 0.16 * (dune * 0.5 + 0.5);`,
       follow.snap(px, pz)
     },
     audioCounts: () => audio.counts(),
+    meter: () => audio.meter(),
     time: () => time,
     mode: () => mode,
   }

@@ -8,6 +8,7 @@ export interface Gpu {
   sunLight: DirectionalLight
   resize: (ratio: number) => void
   setFog: (on: boolean) => void
+  setFogRange: (near: number, far: number) => void
   readStats: () => { calls: number; triangles: number; geometries: number; textures: number }
 }
 
@@ -41,7 +42,7 @@ export function createGpu(canvas: HTMLCanvasElement, camera: PerspectiveCamera, 
   sunLight.position.set(12, 10, 4)
   scene.add(fill, sunLight, sunLight.target)
   let fogOn = false
-  const fog = new Fog(HEX.horizon, TUNING.arena.fogNear, TUNING.arena.fogFar)
+  const fog = new Fog(HEX.horizon, TUNING.camera.distance + TUNING.arena.fogAhead, TUNING.camera.distance + TUNING.arena.fogSpan)
 
   function resize(ratio: number) {
     const w = Math.max(1, window.innerWidth)
@@ -61,6 +62,10 @@ export function createGpu(canvas: HTMLCanvasElement, camera: PerspectiveCamera, 
     setFog(on: boolean) {
       fogOn = on
       scene.fog = fogOn ? fog : null
+    },
+    setFogRange(near: number, far: number) {
+      fog.near = near
+      fog.far = far
     },
     readStats() {
       const calls = renderer.info.render.calls

@@ -159,7 +159,7 @@ export function createQuality(): QualityController {
     },
     onChange: null,
     sample(frameMs, frameSec, playing) {
-      if (!vsyncReady && frameMs > 0 && frameMs <= TUNING.quality.ignoreFrameMs) {
+      if (!mobile && !vsyncReady && frameMs > 0 && frameMs <= TUNING.quality.ignoreFrameMs) {
         vsync.push(frameMs)
         if (vsync.length >= 60) {
           const sorted = vsync.slice().sort((a, b) => a - b)

@@ -105,8 +105,11 @@ export const TUNING = {
     pillarAt: 9,
     checker: 2,
     aoMix: 0.35,
-    fogNear: 40,
-    fogFar: 78,
+    // Fog starts past the camera so a 64 m portrait rig is not inside the haze.
+    // near = lookDistance + fogAhead, far = lookDistance + fogSpan. Haze sits beyond the walls.
+    fogAhead: 8,
+    fogSpan: 45,
+    farPad: 60,
     markerRadius: 26.5,
     markerHeight: 6,
   },
@@ -151,7 +154,7 @@ export const TUNING = {
     levelOrbit: 0.4,
     reachPad: 0.55,
   },
-  xp: { fly: 12, collect: 0.45, base: 5, lin: 6, quad: 0.9, merge: 3, early1: 5, early2: 9, early3: 14 },
+  xp: { fly: 12, collect: 0.45, base: 5, lin: 6, quad: 0.9, merge: 3, early1: 3, early2: 9, early3: 14 },
   touch: { stick: 60, deadzone: 0.12, cut: 96, left: 0.6, flickPx: 40, flickMs: 180, recenter: 1.5 },
   designCap: 240,
   openSeconds: 30,
@@ -180,6 +183,7 @@ export const TUNING = {
     tierDropHold: 3,
     ignoreFrameMs: 100,
     desktopTarget: 16.6,
+    // Phones aim for 30 fps. 16.6 ms makes dynres drop the buffer on ordinary frames.
     mobileTarget: 33.3,
     storageKey: 'noonsworn.quality.v3',
   },

@@ -1,14 +1,8 @@
 import {
-  BufferAttribute,
-  DoubleSide,
-  BufferGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
   InstancedMesh,
-  MeshBasicMaterial,
-  Object3D,
 } from 'three'
-import { COLOR } from '../../data/palette'
 import { TUNING, type DamageSource } from '../../data/tuning'
 import { FreeList } from '../../core/pool'
 import { yawFromDirection } from '../../core/math'
@@ -32,15 +26,18 @@ function attrs(mesh: InstancedMesh) {
   const lit = new InstancedBufferAttribute(new Float32Array(MAX), 1)
   const phase = new InstancedBufferAttribute(new Float32Array(MAX), 1)
   const move = new InstancedBufferAttribute(new Float32Array(MAX), 1)
+  const tele = new InstancedBufferAttribute(new Float32Array(MAX), 1)
   flash.setUsage(DynamicDrawUsage)
   lit.setUsage(DynamicDrawUsage)
   phase.setUsage(DynamicDrawUsage)
   move.setUsage(DynamicDrawUsage)
+  tele.setUsage(DynamicDrawUsage)
   mesh.geometry.setAttribute('iFlash', flash)
   mesh.geometry.setAttribute('iLit', lit)
   mesh.geometry.setAttribute('iPhase', phase)
   mesh.geometry.setAttribute('iMove', move)
-  return { flash, lit, phase, move }
+  mesh.geometry.setAttribute('iTele', tele)
+  return { flash, lit, phase, move, tele }
 }
 
 export interface Horde {
@@ -49,7 +46,6 @@ export interface Horde {
   alive: Uint8Array
   miteMesh: InstancedMesh
   houndMesh: InstancedMesh
-  teleMesh: InstancedMesh
   count: () => number
   exposed: () => number
   capLive: () => number
@@ -108,6 +104,7 @@ export function createHorde(): Horde {
   const aimX = new Float32Array(MAX)
   const aimZ = new Float32Array(MAX)
   const travelled = new Float32Array(MAX)
+  let bonusMites = 0
   const type = new Uint8Array(MAX)
   const state = new Uint8Array(MAX)
   const lit = new Uint8Array(MAX)
@@ -122,39 +119,6 @@ export function createHorde(): Horde {
   const houndMesh = makeCrowd(houndGeo, material, MAX)
   const miteA = attrs(miteMesh)
   const houndA = attrs(houndMesh)
-  const lineGeo = new BufferGeometry()
-  const linePos = new Float32Array([
-    -0.72, 0.04, 0.08, 0.72, 0.04, 0.08, 0.72, 0.04, -1.08,
-    -0.72, 0.04, 0.08, 0.72, 0.04, -1.08, -0.72, 0.04, -1.08,
-    -0.4, 0.07, 0, 0.4, 0.07, 0, 0.4, 0.07, -1,
-    -0.4, 0.07, 0, 0.4, 0.07, -1, -0.4, 0.07, -1,
-  ])
-  const lineCol = new Float32Array(12 * 3)
-  for (let i = 0; i < 6; i++) {
-    lineCol[i * 3] = 0.08
-    lineCol[i * 3 + 1] = 0.04
-    lineCol[i * 3 + 2] = 0.12
-  }
-  for (let i = 6; i < 12; i++) {
-    lineCol[i * 3] = COLOR.telegraph.r
-    lineCol[i * 3 + 1] = COLOR.telegraph.g
-    lineCol[i * 3 + 2] = COLOR.telegraph.b
-  }
-  lineGeo.setAttribute('position', new BufferAttribute(linePos, 3))
-  lineGeo.setAttribute('color', new BufferAttribute(lineCol, 3))
-  const teleMesh = makeCrowd(
-    lineGeo,
-    new MeshBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.92,
-      depthWrite: false,
-      side: DoubleSide,
-    }),
-    8,
-  )
-  teleMesh.renderOrder = 3
-
   function occupy(i: number, kind: 0 | 1, sx: number, sz: number, isBench: boolean) {
     const spec = kind === 0 ? TUNING.mite : TUNING.hound
     x[i] = sx
@@ -185,7 +149,11 @@ export function createHorde(): Horde {
     state[i] = DYING
     stateT[i] = TUNING.deathTime
     scale[i] = 1
-    const value = type[i] === 0 ? TUNING.mite.xp : TUNING.hound.xp
+    let value: number = type[i] === 0 ? TUNING.mite.xp : TUNING.hound.xp
+    if (type[i] === 0 && bonusMites < 15) {
+      bonusMites++
+      value = 2
+    }
     ctx.onXp(x[i] ?? 0, z[i] ?? 0, value)
     ctx.onKill()
     ctx.onDeath(x[i] ?? 0, z[i] ?? 0, lit[i] === 1)
@@ -197,7 +165,6 @@ export function createHorde(): Horde {
     alive,
     miteMesh,
     houndMesh,
-    teleMesh,
     count() {
       let n = 0
       for (let i = 0; i < MAX; i++) if (alive[i] && state[i] !== DYING) n++
@@ -246,6 +213,7 @@ export function createHorde(): Horde {
       alive.fill(0)
       state.fill(0)
       bench.fill(0)
+      bonusMites = 0
       free.reset()
     },
     cullTo(cap, px, pz) {
@@ -478,7 +446,6 @@ export function createHorde(): Horde {
     sync() {
       let mites = 0
       let hounds = 0
-      let lines = 0
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
         const s = Math.max(0.001, scale[i] ?? 1)
@@ -492,42 +459,26 @@ export function createHorde(): Horde {
           mites++
         } else {
           const crouch = state[i] === TELE ? 0.62 : 1
-          writeInstance(houndMesh, hounds, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s * 1.35, s * 1.35 * crouch)
+          writeInstance(houndMesh, hounds, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s, s * crouch)
           houndA.flash.setX(hounds, (flash[i] ?? 0) > 0 ? 1 : 0)
           houndA.lit.setX(hounds, lit[i] ?? 0)
           houndA.phase.setX(hounds, phase[i] ?? 0)
           houndA.move.setX(hounds, moving)
+          houndA.tele.setX(hounds, state[i] === TELE ? 1 : 0)
           hounds++
-          if (state[i] === TELE && lines < 8) {
-            writeTele(teleMesh, lines, x[i] ?? 0, z[i] ?? 0, yaw[i] ?? 0)
-            lines++
-          }
         }
       }
       finish(miteMesh, mites, miteA)
       finish(houndMesh, hounds, houndA)
-      teleMesh.count = lines
-      teleMesh.visible = lines > 0
-      if (lines > 0) teleMesh.instanceMatrix.needsUpdate = true
     },
   }
   return horde
 }
 
-const teleDummy = new Object3D()
-
-function writeTele(mesh: InstancedMesh, index: number, x: number, z: number, yaw: number) {
-  teleDummy.position.set(x, 0, z)
-  teleDummy.rotation.set(0, yaw, 0)
-  teleDummy.scale.set(0.55, 1, TUNING.hound.line)
-  teleDummy.updateMatrix()
-  mesh.setMatrixAt(index, teleDummy.matrix)
-}
-
 function finish(
   mesh: InstancedMesh,
   count: number,
-  a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute; phase: InstancedBufferAttribute; move: InstancedBufferAttribute },
+  a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute; phase: InstancedBufferAttribute; move: InstancedBufferAttribute; tele: InstancedBufferAttribute },
 ) {
   mesh.count = count
   mesh.visible = count > 0
@@ -537,5 +488,6 @@ function finish(
     a.lit.needsUpdate = true
     a.phase.needsUpdate = true
     a.move.needsUpdate = true
+    a.tele.needsUpdate = true
   }
 }

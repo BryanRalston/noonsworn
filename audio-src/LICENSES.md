@@ -2,7 +2,7 @@
 
 Every file here is **CC0 1.0 (public domain dedication)**: free for commercial use, no attribution required (credit is courteous and is listed in CREDITS.md below). The license was verified on each source page on Sep 25, 2026 (page snapshots are in `src_license_pages/`, plus the Kenney `License.txt` files).
 
-Processing: mono (music is stereo), 44.1 kHz, silence trimmed, loudness normalized (SFX -18 LUFS / -2 dBTP, wind -28 LUFS, music -22 LUFS), Ogg Vorbis. Browsers without Ogg (older Safari/iOS below 17) need an M4A/AAC copy; transcode with `ffmpeg -i x.ogg -c:a aac -b:a 64k x.m4a`.
+Processing: mono (music is stereo), 44.1 kHz. Every shipped sample is peak-normalized to −3 dBFS or below (`ffmpeg` volume, checked with `volumedetect` after the Vorbis and AAC encode). `cut_blade_1-3` are low-passed at 6 kHz. `hit_stone_1-3` include a short 2.2 kHz click. Shaded kills use `kill_shatter` at −6 dB; `kill_soft_1/2` are kept here and are not shipped. Each shipped file has an AAC `.m4a` twin. The game picks Ogg when `canPlayType('audio/ogg; codecs=vorbis')` is non-empty, otherwise M4A.
 
 | File | Suggested event | Bytes | Duration (s) | Original file | Source pack | License |
 |---|---|---|---|---|---|---|

@@ -4,7 +4,13 @@ import {
   BufferGeometry,
   CircleGeometry,
   CylinderGeometry,
+  DoubleSide,
   Float32BufferAttribute,
+  InstancedMesh,
+  Mesh,
+  MeshBasicMaterial,
+  MeshToonMaterial,
+  Object3D,
   PlaneGeometry,
   SphereGeometry,
 } from 'three'
@@ -142,6 +148,135 @@ export function buildPillars(): BufferGeometry {
   for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
   if (!merged) throw new Error('pillar merge failed')
   return merged
+}
+
+function flatGeo(geo: BufferGeometry): BufferGeometry {
+  return geo.index ? geo.toNonIndexed() : geo
+}
+
+export function buildShell(): BufferGeometry {
+  const walls = flatGeo(buildWalls())
+  paint(walls, COLOR.sandstone.r, COLOR.sandstone.g, COLOR.sandstone.b)
+  const trim = flatGeo(buildWallTrim())
+  paint(trim, COLOR.sandstoneDeep.r, COLOR.sandstoneDeep.g, COLOR.sandstoneDeep.b)
+  const merged = mergeGeometries([walls, trim], false)
+  walls.dispose()
+  trim.dispose()
+  if (!merged) throw new Error('shell merge failed')
+  return merged
+}
+
+export function createScatter(material: MeshToonMaterial): InstancedMesh {
+  const column = flatGeo(new CylinderGeometry(0.38, 0.5, 3.2, 6))
+  column.rotateZ(Math.PI / 2.4)
+  column.translate(0, 0.42, 0)
+  const rock = flatGeo(new BoxGeometry(0.9, 0.55, 0.7))
+  rock.translate(1.15, 0.28, 0.15)
+  const geo = mergeGeometries([column, rock], false)
+  column.dispose()
+  rock.dispose()
+  if (!geo) throw new Error('scatter merge failed')
+  const mesh = new InstancedMesh(geo, material, 16)
+  mesh.count = 16
+  mesh.frustumCulled = false
+  const dummy = new Object3D()
+  const half = TUNING.arena.size / 2 + TUNING.arena.wallThick
+  const outs = [5, 8, 11, 13]
+  let n = 0
+  for (let s = 0; s < 4; s++) {
+    for (let i = 0; i < 4; i++) {
+      const along = -16 + i * 11
+      const out = outs[i] ?? 6
+      let x = 0
+      let z = 0
+      let yaw = 0.35 * i
+      if (s === 0) {
+        x = along
+        z = half + out
+      } else if (s === 1) {
+        x = along
+        z = -(half + out)
+        yaw += 1.2
+      } else if (s === 2) {
+        x = half + out
+        z = along
+        yaw += 2.1
+      } else {
+        x = -(half + out)
+        z = along
+        yaw += 0.7
+      }
+      dummy.position.set(x, 0, z)
+      dummy.rotation.set(0, yaw, 0)
+      const scale = 0.85 + (i % 3) * 0.18
+      dummy.scale.set(scale, scale, scale)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(n, dummy.matrix)
+      n++
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true
+  return mesh
+}
+
+export function createSunMark(): {
+  mesh: Mesh
+  place: (right: ArrayLike<number>, up: ArrayLike<number>, mx: number, my: number, mz: number, px: number, pz: number, yaw: number) => void
+} {
+  const disc = flatGeo(new CircleGeometry(2.4, 20))
+  const beam = flatGeo(new BoxGeometry(0.18, 0.06, 2.4))
+  const discAttr = disc.getAttribute('position')
+  const beamAttr = beam.getAttribute('position')
+  const discN = discAttr.count
+  const beamN = beamAttr.count
+  const discLocal = new Float32Array(discN * 3)
+  const beamLocal = new Float32Array(beamN * 3)
+  for (let i = 0; i < discN; i++) {
+    discLocal[i * 3] = discAttr.getX(i)
+    discLocal[i * 3 + 1] = discAttr.getY(i)
+    discLocal[i * 3 + 2] = discAttr.getZ(i)
+  }
+  for (let i = 0; i < beamN; i++) {
+    beamLocal[i * 3] = beamAttr.getX(i)
+    beamLocal[i * 3 + 1] = beamAttr.getY(i)
+    beamLocal[i * 3 + 2] = beamAttr.getZ(i)
+  }
+  const merged = mergeGeometries([disc, beam], false)
+  disc.dispose()
+  beam.dispose()
+  if (!merged) throw new Error('sun mark merge failed')
+  const pos = merged.getAttribute('position')
+  const mesh = new Mesh(
+    merged,
+    new MeshBasicMaterial({ color: COLOR.goldHot, toneMapped: false, side: DoubleSide }),
+  )
+  mesh.frustumCulled = false
+  return {
+    mesh,
+    place(right, up, mx, my, mz, px, pz, yaw) {
+      const cy = Math.cos(yaw)
+      const sy = Math.sin(yaw)
+      for (let i = 0; i < discN; i++) {
+        const lx = discLocal[i * 3] ?? 0
+        const ly = discLocal[i * 3 + 1] ?? 0
+        pos.setXYZ(
+          i,
+          mx + (right[0] ?? 0) * lx + (up[0] ?? 0) * ly,
+          my + (right[1] ?? 0) * lx + (up[1] ?? 0) * ly,
+          mz + (right[2] ?? 0) * lx + (up[2] ?? 0) * ly,
+        )
+      }
+      for (let i = 0; i < beamN; i++) {
+        const lx = beamLocal[i * 3] ?? 0
+        const ly = beamLocal[i * 3 + 1] ?? 0
+        const lz = beamLocal[i * 3 + 2] ?? 0
+        const rx = lx * cy + lz * sy
+        const rz = -lx * sy + lz * cy
+        pos.setXYZ(discN + i, px + rx, 0.08 + ly, pz + rz)
+      }
+      pos.needsUpdate = true
+    },
+  }
 }
 
 export function buildRubble(): BufferGeometry {

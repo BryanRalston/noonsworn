@@ -13,16 +13,13 @@ export function createDynres(start: number) {
   let enabled = true
   let clock = 0
   let settle = 0
-  let lastDrop = -10
-  let arm = 0
-  let climbing = false
+  let lastDown = -10
+  let lastUp = -10
 
   function reset() {
     count = 0
     head = 0
     overHold = 0
-    arm = 0
-    climbing = false
     clock = 0
   }
 
@@ -51,7 +48,6 @@ export function createDynres(start: number) {
         return { changed: false, dropTier: false }
       }
       clock += frameSec
-      if (frameMs > targetMs * TUNING.quality.dropGap) lastDrop = clock
       times[head] = frameMs
       stamps[head] = clock
       head = (head + 1) % CAP
@@ -84,49 +80,37 @@ export function createDynres(start: number) {
         order[j + 1] = v
       }
       const avg = sum / n
-      const p90 = order[Math.min(n - 1, Math.max(0, Math.ceil(n * 0.9) - 1))] ?? avg
-      const worst = order[n - 1] ?? avg
+      const p95 = order[Math.min(n - 1, Math.max(0, Math.ceil(n * 0.95) - 1))] ?? avg
       const step = TUNING.quality.dynStep
       if (avg > targetMs * TUNING.quality.dynDown) {
-        arm = 0
-        climbing = false
-        lastDrop = clock
-        const next = Math.round(Math.max(min, ratio - step) * 100) / 100
-        if (next !== ratio) {
-          ratio = next
-          overHold = 0
-          settle = avg > targetMs * 1.4 ? 0.12 : TUNING.quality.dynSettle
-          count = 0
-          return { changed: true, dropTier: false }
+        if (clock - lastDown >= 2) {
+          const next = Math.round(Math.max(min, ratio - step) * 100) / 100
+          if (next !== ratio) {
+            ratio = next
+            lastDown = clock
+            overHold = 0
+            settle = 0.2
+            count = 0
+            return { changed: true, dropTier: false }
+          }
         }
         overHold += frameSec
-        if (overHold >= TUNING.quality.tierDropHold) {
+        if (overHold >= TUNING.quality.tierDropHold && ratio <= min + 0.001) {
           overHold = 0
           return { changed: false, dropTier: true }
         }
       } else {
         overHold = 0
-        const clean = clock - lastDrop >= 3 && p90 <= targetMs * 1.05 && worst <= targetMs * 1.8
-        if (clean) {
-          arm += frameSec
-          // The 3s clean window is already required. Climb in short steps so a
-          // multi-step drop can return to the tier max inside the 8s proof.
-          const need = climbing ? TUNING.quality.dynClimb : 0.2
-          if (arm >= need) {
-            arm = 0
-            const next = Math.round(Math.min(max, ratio + step) * 100) / 100
-            if (next !== ratio) {
-              ratio = next
-              climbing = true
-              settle = TUNING.quality.dynUpSettle
-              count = 0
-              return { changed: true, dropTier: false }
-            }
-            climbing = false
+        // 0.1 covers a full 1.0 drop inside 8 s at one step per 0.5 s. 0.05 cannot.
+        if (p95 <= targetMs && clock - lastUp >= 0.5) {
+          const next = Math.round(Math.min(max, ratio + 0.1) * 100) / 100
+          if (next !== ratio) {
+            ratio = next
+            lastUp = clock
+            settle = 0.2
+            count = 0
+            return { changed: true, dropTier: false }
           }
-        } else if (p90 > targetMs * 1.05) {
-          arm = 0
-          climbing = false
         }
       }
       return { changed: false, dropTier: false }

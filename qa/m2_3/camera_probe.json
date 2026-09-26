@@ -1,0 +1,5 @@
+{
+  "method": "WebGL uniformMatrix4fv. Projection is the matrix with m11=-1 and m15=0. View is the most frequent m15=1 matrix.",
+  "desktop_1280x720": { "pitch": 54.3318, "yaw": -135, "fov": 35.0, "lookDistance": 29.5105 },
+  "portrait_412x915": { "pitch": 54.6895, "yaw": -135, "fov": 45.0, "lookDistance": 63.5094, "playerDistance": 64.0, "fogNear": 71.5094, "fogFar": 108.5094, "fogAtPlayer": 0 }
+}

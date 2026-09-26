@@ -14,6 +14,7 @@ export interface Screens {
   onRestart: (() => void) | null
   onResume: (() => void) | null
   onFeature: (() => void) | null
+  onAudio: ((which: 'music' | 'sfx' | 'mute', value: number) => void) | null
 }
 
 export function createScreens(parent: HTMLElement): Screens {
@@ -74,12 +75,14 @@ export function createScreens(parent: HTMLElement): Screens {
     })
   }
   sync()
+  let notify: ((which: 'music' | 'sfx' | 'mute', value: number) => void) | null = null
   boxes.forEach((box) => {
     box.addEventListener('change', () => {
       const setting = box.dataset.setting
       const key = setting === 'shake' ? SHAKE : setting === 'haptics' ? HAPTICS : MUTE
       const on = setting === 'mute' ? box.checked : box.checked
       storageSet(key, setting === 'mute' ? (on ? '1' : '0') : on ? '1' : '0')
+      if (setting === 'mute') notify?.('mute', box.checked ? 1 : 0)
       sync()
     })
   })
@@ -87,6 +90,7 @@ export function createScreens(parent: HTMLElement): Screens {
     slider.addEventListener('input', () => {
       const key = slider.dataset.audio === 'music' ? MUSIC : SFX
       storageSet(key, slider.value)
+      notify?.(slider.dataset.audio === 'music' ? 'music' : 'sfx', Number(slider.value))
       sync()
     })
   })
@@ -95,6 +99,7 @@ export function createScreens(parent: HTMLElement): Screens {
     onRestart: null,
     onResume: null,
     onFeature: null,
+    onAudio: null,
     setMode(mode, detail) {
       title.hidden = mode !== 'title'
       pause.hidden = mode !== 'paused'
@@ -111,6 +116,7 @@ export function createScreens(parent: HTMLElement): Screens {
       sync()
     },
   }
+  notify = (which, value) => screens.onAudio?.(which, value)
   root.querySelector('#btn-play')?.addEventListener('click', () => screens.onPlay?.())
   root.querySelector('#btn-feature')?.addEventListener('click', (e) => {
     e.stopPropagation()

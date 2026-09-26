@@ -68,7 +68,7 @@ void main() {
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   float viewN = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  gl_FragColor.rgb += (viewN - 0.5) * 0.055;
+  gl_FragColor.rgb += (viewN - 0.5) * (1.0 / 255.0);
 }
 `
 
