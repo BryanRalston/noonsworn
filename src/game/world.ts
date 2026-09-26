@@ -1,12 +1,10 @@
 import {
   BackSide,
   CylinderGeometry,
-  DoubleSide,
   Mesh,
   MeshBasicMaterial,
   MeshToonMaterial,
   PlaneGeometry,
-  RingGeometry,
   SphereGeometry,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -14,6 +12,7 @@ import { mountPalette, COLOR } from '../data/palette'
 import { TUNING, type TierName } from '../data/tuning'
 import { createEvents } from '../core/events'
 import { startLoop } from '../core/loop'
+import { yawFromDirection } from '../core/math'
 import { mulberry32, type Rng } from '../core/rng'
 import { NoopAds } from '../platform/ads'
 import { createFollowCamera } from '../render/camera'
@@ -43,12 +42,13 @@ import { createBlobShadows } from './shadows'
 import { createDirector } from './director'
 import { createHorde, type HordeCtx } from './enemies/horde'
 import { CARD, createBuild, describe, grantXp, rollCards, xpToNext, type Build, type Card } from './leveling'
-import { createCut, createRibbon, resetCut, sweepCut, syncRibbon, updateCut } from './noonCut'
+import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
 import { createSunClock, damageAmount } from './sunClock'
 import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
+import { FX, createWeaponFx } from './weapons/fx'
 
 function blankInput(): InputState {
   return {
@@ -72,6 +72,18 @@ function blankInput(): InputState {
 export function boot(container: HTMLElement) {
   mountPalette(document.documentElement)
   const params = new URLSearchParams(location.search)
+  const previewWeapon = import.meta.env.DEV ? params.get('m25a') : null
+  const previewRank = Number(params.get('rank') ?? '1')
+  const previewTier = params.get('tier')
+  const previewHold = params.get('hold') === '1'
+  let previewCutIn = 0.4
+  let cutMark = -1
+  let teleGate = 0
+  let hitPreview = 0.2
+  let litAx = 10.2
+  let litAz = 1.4
+  let shadeAx = 18
+  let shadeAz = 3
   const forced = params.get('seed')
   const forcedSeed = forced != null && Number.isFinite(Number(forced)) ? Number(forced) : null
   const ads = new NoopAds(params.get('ads') === 'fake')
@@ -187,30 +199,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   sky.renderOrder = -2
   const scatter = createScatter(scatterMat)
   const sunPip = createSunPip()
-  const flareRing = new Mesh(
-    new RingGeometry(0.85, 1.05, 40),
-    new MeshBasicMaterial({ color: COLOR.goldHot, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: DoubleSide }),
-  )
-  flareRing.rotation.x = -Math.PI / 2
-  flareRing.visible = false
-  const bellRing = new Mesh(
-    new RingGeometry(0.9, 1.15, 40),
-    new MeshBasicMaterial({ color: COLOR.gold, transparent: true, opacity: 0.65, depthWrite: false, toneMapped: false, side: DoubleSide }),
-  )
-  bellRing.rotation.x = -Math.PI / 2
-  bellRing.visible = false
+  const fx = createWeaponFx()
   const sela = createSela()
   const playerView = sela.root
-  const ribbon = createRibbon()
   const shadows = createBlobShadows()
   const shards = createShards()
   const bloom = createBloom()
-  gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, ribbon, shards.mesh, flareRing, bellRing)
+  gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
 
   const sun = createSunClock()
   const horde = createHorde()
-  const spears = createSunspear()
-  const halo = createHalo()
+  const spears = createSunspear(fx)
+  const halo = createHalo(fx)
   const pickups = createPickups()
   const director = createDirector()
   gpu.scene.add(horde.miteMesh, horde.houndMesh, spears.mesh, halo.mesh, pickups.mesh)
@@ -259,9 +259,16 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let litBurstAt = 0
   let flareCd = 6
   let bellCd = 10
-  let flareShow = 0
-  let bellShow = 0
-  let flareR = 3.5
+  let previewSweepX = 0
+  let previewSweepZ = -1
+  let previewSweepN = 0
+  let profHorde = 0
+  let profSpear = 0
+  let profHalo = 0
+  let profFx = 0
+  let profBloom = 0
+  let profSync = 0
+  let sparkVis = 0
   const armFloatAt = new Float32Array(TUNING.hordeCap)
   const fxSeed = forcedSeed ?? 1
   let fxState = fxSeed >>> 0
@@ -289,15 +296,13 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     isLit: (x, z) => sun.isLit(x, z),
     onHit(x, z, amount, lit, killed, index) {
       audio.hit()
-      if (lit) {
-        floats.push(x, z, `${Math.round(amount)}`, 'hot')
-        audio.exposed()
-      } else {
-        audio.armored()
-        if (time - (armFloatAt[index] ?? 0) >= 0.15) {
-          armFloatAt[index] = time
-          floats.push(x, z, '', 'spark')
-        }
+      const bigHit = amount >= TUNING.cut.damage
+      const crit = killed && lit
+      if (lit) audio.exposed()
+      else audio.armored()
+      if ((bigHit || crit) && (lit || time - (armFloatAt[index] ?? 0) >= 0.35)) {
+        if (!lit) armFloatAt[index] = time
+        floats.push(x, z, `${Math.round(amount)}`, lit ? 'hot' : 'arm')
       }
       sela.swing(time)
       if (killed) audio.kill(lit)
@@ -336,6 +341,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
     onEmber(x, z) {
       shards.burst(x, z, true)
+      const big = build.searing >= 5
+      const size = big ? 1.7 : 1.2
+      fx.scorch(x, z, 0, size, size, 0.7, big)
+      fx.ember(x, z, false)
+    },
+    onSpark(x, z, lit) {
+      sparkVis++
+      if (sparkVis > 4) return
+      fx.ember(x, z, lit && build.searing >= 5)
     },
     onDeath(x, z, lit) {
       shards.burst(x, z, lit)
@@ -365,7 +379,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     const fog = quality.tier !== 'low'
     gpu.setFog(fog)
     sun.pushUniforms(floor.uniforms, fog)
-    horde.cullTo(quality.cap, player.x, player.z)
+    if (!(previewWeapon && previewHold)) horde.cullTo(quality.cap, player.x, player.z)
     featureMap.refresh()
   }
   quality.onChange = () => applyPresentation()
@@ -470,6 +484,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     spears.clear()
     halo.clear()
     pickups.clear()
+    fx.clear()
     time = 0
     kills = 0
     tick = 0
@@ -490,6 +505,75 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     showMode('playing')
     ads.gameplayStart()
     swallow = true
+    if (previewWeapon) armPreview()
+  }
+
+  function armPreview() {
+    const rank = Math.max(1, Math.min(5, previewRank))
+    const all = previewWeapon === 'all'
+    const use = (name: string) => all || previewWeapon === name
+    build.spear = use('sunspear') ? rank : 0
+    build.halo = use('halo') ? rank : 0
+    build.flare = use('flare') ? rank : 0
+    build.bell = use('bell') ? rank : 0
+    build.searing = use('searing') ? rank : 0
+    if (all) {
+      build.spear = 5
+      build.halo = 5
+      build.flare = 5
+      build.bell = 5
+      build.searing = 5
+    }
+    if (previewWeapon === 'hits') {
+      build.spear = 3
+      build.halo = 3
+      build.flare = 0
+      build.bell = 0
+      build.searing = 0
+      player.x = 12
+      player.z = 0
+      player.px = 12
+      player.pz = 0
+      follow.snap(12, 0)
+    }
+    sun.theta0 = -Math.PI / 2
+    sun.dir = 1
+    sun.time = 0
+    sun.frozen = false
+    sun.advance(0)
+    sun.frozen = true
+    player.iframe = 40
+    player.yaw = 0
+    const tierName = previewTier === 'low' || previewTier === 'med' || previewTier === 'high' ? previewTier : 'high'
+    quality.forceTier(tierName)
+    quality.setDynresEnabled(false)
+    const heavy = all || params.get('bench') === '1'
+    const requested = Number(params.get('n') ?? (heavy ? '400' : '90'))
+    let swarm = Number.isFinite(requested) ? requested : heavy ? 400 : 90
+    swarm = heavy ? Math.max(1, Math.min(400, swarm)) : Math.max(60, Math.min(120, swarm))
+    if (previewWeapon === 'hits') {
+      litAx = 8.6
+      litAz = 0.2
+      shadeAx = 15.4
+      shadeAz = -0.2
+      for (let i = 0; i < 8; i++) {
+        const z = ((i % 4) - 1.5) * 0.7
+        const row = Math.floor(i / 4)
+        horde.spawn(0, 8.2 + row * 0.4, z, false, 400, 12, 0)
+        horde.spawn(0, 15.1 + row * 0.35, z, false, 400, 12, 0)
+      }
+    } else {
+      for (let i = 0; i < swarm; i++) {
+        const ang = i * 2.399963
+        const dist = heavy ? 6 + (i % 12) * 0.5 : 6 + (i % 8) * 0.75
+        horde.spawn(i % 14 === 0 ? 1 : 0, Math.cos(ang) * dist, Math.sin(ang) * dist, false, 400, 0, 0)
+      }
+    }
+    flareCd = 0.15
+    bellCd = 0.35
+    previewCutIn = 0.2
+    cutMark = -1
+    hitPreview = 0.15
   }
 
   function spawnStress(n: number) {
@@ -581,6 +665,43 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     }
   }))
   if (params.get('debug') === '1') debug.open()
+  if (previewWeapon) {
+    const hook = window as unknown as {
+      __ns?: () => {
+        calls: number
+        fx: number
+        hot: number
+        spears: number
+        enemies: number
+        kills: number
+        cut: number
+        halo: number
+        hordeMs: number
+        spearMs: number
+        haloMs: number
+        fxMs: number
+        bloomMs: number
+        syncMs: number
+      }
+    }
+    hook.__ns = () => ({
+      calls: stats.calls,
+      fx: fx.mesh.count,
+      hot: fx.hot.count,
+      spears: spears.mesh.count,
+      enemies: horde.count(),
+      kills,
+      cut: cut.active ? 1 : 0,
+      halo: halo.mesh.count,
+      hordeMs: Math.round(profHorde * 100) / 100,
+      spearMs: Math.round(profSpear * 100) / 100,
+      haloMs: Math.round(profHalo * 100) / 100,
+      fxMs: Math.round(profFx * 100) / 100,
+      bloomMs: Math.round(profBloom * 100) / 100,
+      syncMs: Math.round(profSync * 100) / 100,
+    })
+    requestAnimationFrame(() => startRun())
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat || mode !== 'title') return
@@ -617,6 +738,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
 
   startLoop({
     beginFrame(frameSec) {
+      profHorde = 0
+      profSpear = 0
+      profHalo = 0
       follow.basis(basis)
       input.readInto(frame, follow.camera)
       if (swallow) {
@@ -664,6 +788,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       return mode === 'playing'
     },
     step(dt, first) {
+      sparkVis = 0
       const state = first ? frame : held
       if (time >= TUNING.runLength) {
         showMode('clear')
@@ -678,8 +803,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           flareCd = 6
           const radius = 3.5 + (build.flare - 1)
           horde.radial(player.x, player.z, radius, 16, ctx)
-          flareR = radius
-          flareShow = 0.4
+          audio.exposed()
+          const big = build.flare >= 5
+          fx.ring(player.x, player.z, radius, FX.orange, 1.2)
+          if (big) fx.ring(player.x, player.z, radius * 0.62, FX.orange, 1.2)
+          const bits = big ? 7 : 4
+          for (let i = 0; i < bits; i++) {
+            const a = (i / bits) * Math.PI * 2
+            fx.ember(player.x + Math.cos(a) * radius * 0.4, player.z + Math.sin(a) * radius * 0.4, big)
+          }
         }
       }
       if (build.bell > 0) {
@@ -688,12 +820,73 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           bellCd = 10
           horde.slow(player.x, player.z, 5, 1.2)
           audio.bell()
-          bellShow = 0.45
+          const big = build.bell >= 5
+          fx.shell(player.x, player.z, big ? 6.4 : 5.2, 1.45)
+          if (big) fx.shell(player.x, player.z, 4.4, 1.45)
         }
       }
       time += dt
-      const wishX = basis.rx * state.moveX + basis.fx * state.moveY
-      const wishZ = basis.rz * state.moveX + basis.fz * state.moveY
+      if (previewWeapon === 'flare' || previewWeapon === 'all') {
+        if (flareCd > 0.9) flareCd = 0.9
+      }
+      if (previewWeapon === 'bell' || previewWeapon === 'all') {
+        if (bellCd > 1.15) bellCd = 1.15
+      }
+      if (previewWeapon === 'cut' || previewWeapon === 'all') {
+        previewCutIn -= dt
+        if (previewCutIn <= 0) {
+          previewCutIn = 0.8
+          let tx = 0
+          let tz = 0
+          let n = 0
+          for (let i = 0; i < horde.alive.length; i++) {
+            if (!horde.alive[i]) continue
+            const dx = (horde.x[i] ?? 0) - player.x
+            const dz = (horde.z[i] ?? 0) - player.z
+            if (dx * dx + dz * dz > 144) continue
+            tx += dx
+            tz += dz
+            n++
+          }
+          const len = Math.hypot(tx, tz)
+          const fx = len > 0.2 ? tx / len : 0
+          const fz = len > 0.2 ? tz / len : -1
+          const side = (previewSweepN % 2 === 0 ? 1 : -1) * 0.65
+          previewSweepN++
+          const sx = fx - fz * side
+          const sz = fz + fx * side
+          const sl = Math.hypot(sx, sz) || 1
+          previewSweepX = sx / sl
+          previewSweepZ = sz / sl
+          // Same step as the timer. A press queued for the next frame is wiped
+          // when that frame has no 60 Hz step.
+          state.cutPressed = true
+          state.cutDirX = previewSweepX
+          state.cutDirZ = previewSweepZ
+        }
+      }
+      let wishX = basis.rx * state.moveX + basis.fx * state.moveY
+      let wishZ = basis.rz * state.moveX + basis.fz * state.moveY
+      if (previewWeapon === 'hits') {
+        wishX = 0
+        wishZ = 0
+      } else if (previewWeapon) {
+        const t = time * 0.8
+        const ax = Math.sin(t) * 5.2
+        const az = Math.sin(t * 2) * 2.4
+        wishX = ax - player.x
+        wishZ = az - player.z
+        const mag = Math.hypot(wishX, wishZ) || 1
+        const step = Math.min(1, mag)
+        wishX = (wishX / mag) * step
+        wishZ = (wishZ / mag) * step
+      }
+      if ((previewWeapon === 'cut' || previewWeapon === 'all') && state.cutPressed) {
+        wishX = previewSweepX
+        wishZ = previewSweepZ
+        state.cutDirX = previewSweepX
+        state.cutDirZ = previewSweepZ
+      }
       const speed = TUNING.player.speed * (1 + TUNING.passive.swift * build.swift)
       fillCtx(dt)
       updateCut(cut, player, dt, {
@@ -707,8 +900,22 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         mouseIdle: state.mouseIdle,
         usingTouch: state.usingTouch,
       }, build.haste)
+      if ((previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
+      if (previewWeapon === 'hits') {
+        player.x = 12
+        player.z = 0
+        player.vx = 0
+        player.vz = 0
+      }
+      if (previewWeapon) player.iframe = Math.max(player.iframe, 30)
       if (cut.active && !cutWas) {
+        cutMark = -1
+        const slashYaw = yawFromDirection(cut.dirX, cut.dirZ)
+        const midX = cut.sx + cut.dirX * TUNING.cut.distance * 0.5
+        const midZ = cut.sz + cut.dirZ * TUNING.cut.distance * 0.5
+        fx.scorch(midX, midZ, slashYaw, TUNING.cut.distance, 1.7, 1, false)
+        fx.crescent(midX, midZ, slashYaw, false)
         audio.cut()
         buzz(16)
         if (shakeOn()) {
@@ -720,9 +927,20 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (cut.active) {
         sweepCut(cut, player, horde, build.might, ctx, () => {
           hitStop = Math.max(hitStop, TUNING.cut.hitStop)
-          shakeAmp = Math.max(shakeAmp, TUNING.cut.shake)
+          shakeAmp = Math.max(shakeAmp, Math.min(TUNING.hurtShake, TUNING.cut.shake + 0.03))
           shakeT = TUNING.shakeDecay
+          const slashYaw = yawFromDirection(cut.dirX, cut.dirZ)
+          fx.scorch(cut.sx + cut.dirX * TUNING.cut.distance * 0.5, cut.sz + cut.dirZ * TUNING.cut.distance * 0.5, slashYaw, TUNING.cut.distance, 1.7, 1, true)
+          fx.crescent(player.x + cut.dirX * 1.6, player.z + cut.dirZ * 1.6, slashYaw, true)
+        }, (hx, hz, lit) => {
+          fx.hit(hx, hz, lit)
         })
+        if (cut.time - cutMark >= 0.04) {
+          cutMark = cut.time
+          const yaw = yawFromDirection(cut.dirX, cut.dirZ)
+          const big = cut.boomed || cut.hits >= TUNING.cut.bigHits
+          fx.crescent(player.x + cut.dirX * 1.6, player.z + cut.dirZ * 1.6, yaw, big)
+        }
         if (cut.time >= TUNING.cut.duration) {
           cut.active = false
           cut.fade = TUNING.cut.ribbonFade
@@ -739,9 +957,26 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       fillCtx(dt)
       const cam = follow.camera.position
       director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z)
+      const hordeT = performance.now()
       horde.update(ctx)
+      profHorde += performance.now() - hordeT
+      if (previewWeapon === 'hits') {
+        hitPreview -= dt
+        if (hitPreview <= 0) {
+          hitPreview = 0.4
+          const litSpot: [number, number] = sun.isLit(litAx, litAz) ? [litAx, litAz] : [player.x - 4.5, player.z]
+          const shadeSpot: [number, number] = sun.isLit(shadeAx, shadeAz) ? [player.x + 4.5, player.z] : [shadeAx, shadeAz]
+          fx.hit(litSpot[0], litSpot[1], true, 2.5)
+          fx.hit(shadeSpot[0], shadeSpot[1], false, 2.6)
+        }
+      }
+      fx.setTier(quality.tier)
+      const spearT = performance.now()
       spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
+      profSpear += performance.now() - spearT
+      const haloT = performance.now()
       halo.update(dt, player.x, player.z, horde, build.halo, build.might, time, ctx)
+      profHalo += performance.now() - haloT
       const before = build.pending
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, (value) => {
         xpWindow += value
@@ -760,8 +995,21 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         return false
       }
       if (build.pending > before) {
-        openLevel()
-        return false
+        if (previewWeapon) build.pending = before
+        else {
+          openLevel()
+          return false
+        }
+      }
+      if (previewWeapon && params.get('bench') === '1') {
+        const want = Math.max(1, Math.min(400, Number(params.get('n') ?? '400') || 400))
+        let guard = 0
+        while (horde.count() < want && guard < 80) {
+          const ang = guard * 2.399 + time
+          const dist = 8 + (guard % 10) * 0.7
+          horde.spawn(guard % 14 === 0 ? 1 : 0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, 400, player.x, player.z)
+          guard++
+        }
       }
       tick++
       return hitStop <= 0
@@ -816,37 +1064,38 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sela.bob(performance.now() * 0.001, Math.hypot(player.vx, player.vz), cut.active || cut.fade > 0 ? 1 : 0)
       playerView.visible = player.hp > 0 && (player.invuln <= 0 || ((player.invuln * 14) | 0) % 2 === 0)
       sela.halo.visible = playerView.visible
-      syncRibbon(ribbon, cut, player)
+      const syncT = performance.now()
       horde.sync()
+      profSync = performance.now() - syncT
+      teleGate -= frameSec
+      if (teleGate <= 0 && horde.telegraphs.length > 0) {
+        teleGate = 0.12
+        const lines = horde.telegraphs
+        const shownLines = Math.min(lines.length, 8)
+        for (let i = 0; i < shownLines; i++) {
+          const mark = lines[i]
+          if (!mark) continue
+          fx.tele(mark.x, mark.z, mark.yaw)
+        }
+      }
       spears.sync()
       halo.sync(x, z, build.halo)
-      pickups.sync()
+      pickups.sync((gx, gz) => sun.isLit(gx, gz))
       shards.update(frameSec)
+      const fxT = performance.now()
+      fx.update(frameSec)
+      profFx = performance.now() - fxT
       shadows.begin()
       shadows.put(x, z, 1.5 * 1.3)
       horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3))
       pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
       sela.placeHalo(follow.camera)
-      if (flareShow > 0) {
-        flareShow = Math.max(0, flareShow - frameSec)
-        const k = 1 - flareShow / 0.4
-        flareRing.visible = flareShow > 0
-        flareRing.position.set(x, 0.08, z)
-        flareRing.scale.setScalar(Math.max(0.2, flareR * k))
-        ;(flareRing.material as MeshBasicMaterial).opacity = 0.75 * (1 - k)
-      } else flareRing.visible = false
-      if (bellShow > 0) {
-        bellShow = Math.max(0, bellShow - frameSec)
-        const k = 1 - bellShow / 0.45
-        bellRing.visible = bellShow > 0
-        bellRing.position.set(x, 0.1, z)
-        bellRing.scale.setScalar(Math.max(0.2, 5 * k))
-        ;(bellRing.material as MeshBasicMaterial).opacity = 0.7 * (1 - k)
-      } else bellRing.visible = false
       shadows.end()
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
+      const bloomT = performance.now()
       if (quality.tier === 'low') gpu.renderer.render(gpu.scene, follow.camera)
       else bloom.render(gpu.renderer, gpu.scene, follow.camera)
+      profBloom = performance.now() - bloomT
       sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)
       stats = gpu.readStats()
       pushFrameSample(frameMs)

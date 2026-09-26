@@ -63,6 +63,7 @@ export interface Horde {
   radial: (x: number, z: number, radius: number, amount: number, ctx: HordeCtx) => void
   slow: (x: number, z: number, radius: number, seconds: number) => void
   tris: { mite: number; hound: number }
+  telegraphs: { x: number; z: number; yaw: number }[]
 }
 
 export interface HordeCtx {
@@ -86,6 +87,7 @@ export interface HordeCtx {
   onKill: () => void
   onDeath: (x: number, z: number, lit: boolean) => void
   onEmber: (x: number, z: number) => void
+  onSpark: (x: number, z: number, lit: boolean) => void
 }
 
 export function createHorde(): Horde {
@@ -97,6 +99,7 @@ export function createHorde(): Horde {
   const flash = new Float32Array(MAX)
   const slowT = new Float32Array(MAX)
   const burnT = new Float32Array(MAX)
+  const burnVis = new Float32Array(MAX)
   const scale = new Float32Array(MAX)
   const stateT = new Float32Array(MAX)
   const contact = new Float32Array(MAX)
@@ -142,6 +145,7 @@ export function createHorde(): Horde {
     bench[i] = isBench ? 1 : 0
     slowT[i] = 0
     burnT[i] = 0
+    burnVis[i] = 0
   }
 
   function kill(i: number, ctx: HordeCtx) {
@@ -159,6 +163,7 @@ export function createHorde(): Horde {
     ctx.onDeath(x[i] ?? 0, z[i] ?? 0, lit[i] === 1)
   }
 
+  const telegraphs: { x: number; z: number; yaw: number }[] = []
   const horde: Horde = {
     x,
     z,
@@ -240,6 +245,7 @@ export function createHorde(): Horde {
     },
     onHit: null,
     onExpose: null,
+    telegraphs,
     tris: {
       mite: miteGeo.getAttribute('position').count / 3,
       hound: houndGeo.getAttribute('position').count / 3,
@@ -395,6 +401,11 @@ export function createHorde(): Horde {
         if ((burnT[i] ?? 0) > 0) {
           burnT[i] = (burnT[i] ?? 0) - ctx.dt
           hp[i] = (hp[i] ?? 0) - 4 * ctx.dt
+          burnVis[i] = (burnVis[i] ?? 0) - ctx.dt
+          if ((burnVis[i] ?? 0) <= 0) {
+            burnVis[i] = ctx.searing >= 5 ? 0.22 : 0.4
+            ctx.onSpark(x[i] ?? 0, z[i] ?? 0, lit[i] === 1)
+          }
           if ((hp[i] ?? 0) <= 0) kill(i, ctx)
         } else if (ctx.searing > 0 && lit[i] && state[i] !== DYING) {
           burnT[i] = 2
@@ -446,6 +457,7 @@ export function createHorde(): Horde {
     sync() {
       let mites = 0
       let hounds = 0
+      telegraphs.length = 0
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
         const s = Math.max(0.001, scale[i] ?? 1)
@@ -465,6 +477,7 @@ export function createHorde(): Horde {
           houndA.phase.setX(hounds, phase[i] ?? 0)
           houndA.move.setX(hounds, moving)
           houndA.tele.setX(hounds, state[i] === TELE ? 1 : 0)
+          if (state[i] === TELE) telegraphs.push({ x: x[i] ?? 0, z: z[i] ?? 0, yaw: yaw[i] ?? 0 })
           hounds++
         }
       }

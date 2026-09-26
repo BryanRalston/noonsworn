@@ -44,6 +44,7 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Graphics/Performance', feature: 'Sela scale 1.15 with a billboard halo; quadruped hound', status: 'shipped', since: 'M2.3' },
   { area: 'Platform/Ads', feature: 'Sampled audio limiter, duck bus, and AAC fallback', status: 'shipped', since: 'M2.3' },
   { area: 'Combat & Weapons', feature: 'Solar Flare, Noon Bell, Long Day, and Searing Light', status: 'shipped', since: 'M2.2' },
+  { area: 'Combat & Weapons', feature: 'Gold blades, a thin flare, and a bronze bell', status: 'shipped', since: 'M2.5a' },
   { area: 'Controls', feature: 'Screen shake and haptics settings', status: 'shipped', since: 'M2.1' },
   { area: 'Platform/Ads', feature: 'Feature Map and GitHub Pages', status: 'shipped', since: 'M1' },
   { area: 'Platform/Ads', feature: 'Ads provider interface (Noop only)', status: 'partial', since: 'M1' },

@@ -1,5 +1,5 @@
-import { BoxGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
-import { COLOR } from '../../data/palette'
+import { ConeGeometry, CylinderGeometry, InstancedMesh, MeshLambertMaterial } from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { TUNING } from '../../data/tuning'
 import { FreeList } from '../../core/pool'
 import { makeCrowd, writeInstance } from '../../render/instancing'
@@ -7,6 +7,7 @@ import { yawFromDirection } from '../../core/math'
 import { hashQuery } from '../spatialHash'
 import { resolveCircle } from '../collision'
 import type { Horde, HordeCtx } from '../enemies/horde'
+import { FX, type WeaponFx } from './fx'
 
 const MAX = TUNING.tiers.high.projectiles
 const QUERY = new Int16Array(32)
@@ -45,6 +46,7 @@ export function spearText(level: number): string {
 export interface Sunspear {
   mesh: InstancedMesh
   cooldown: number
+  rank: number
   update: (
     dt: number,
     px: number,
@@ -60,12 +62,27 @@ export interface Sunspear {
   clear: () => void
   used: () => number
   onFire: (() => void) | null
+  onImpact: ((x: number, z: number, lit: boolean) => void) | null
 }
 
-export function createSunspear(): Sunspear {
+function spearGeometry() {
+  const shaft = new CylinderGeometry(0.035, 0.05, 0.82, 6)
+  shaft.rotateX(Math.PI / 2)
+  shaft.translate(0, 0, -0.05)
+  const tip = new ConeGeometry(0.09, 0.32, 5)
+  tip.rotateX(Math.PI / 2)
+  tip.translate(0, 0, 0.5)
+  const merged = mergeGeometries([shaft, tip], false)
+  shaft.dispose()
+  tip.dispose()
+  if (!merged) throw new Error('spear geometry failed')
+  return merged
+}
+
+export function createSunspear(fx: WeaponFx): Sunspear {
   const mesh = makeCrowd(
-    new BoxGeometry(0.12, 0.12, 1.05),
-    new MeshBasicMaterial({ color: COLOR.goldHot.clone().multiplyScalar(TUNING.look.emissiveGain), toneMapped: false }),
+    spearGeometry(),
+    new MeshLambertMaterial({ color: 0xc88820, emissive: 0x4a3010, emissiveIntensity: 0.35 }),
     MAX,
   )
   const x = new Float32Array(MAX)
@@ -77,6 +94,7 @@ export function createSunspear(): Sunspear {
   const dmg = new Float32Array(MAX)
   const alive = new Uint8Array(MAX)
   const hits = new Int16Array(MAX * 4)
+  const trailAt = new Float32Array(MAX)
   const free = new FreeList(MAX)
 
   function launch(px: number, pz: number, ang: number, damage: number, pierceLeft: number, cap: number) {
@@ -93,6 +111,7 @@ export function createSunspear(): Sunspear {
     pierce[i] = pierceLeft
     dmg[i] = damage
     alive[i] = 1
+    trailAt[i] = 0
     const base = i * 4
     hits[base] = -1
     hits[base + 1] = -1
@@ -105,6 +124,8 @@ export function createSunspear(): Sunspear {
     cooldown: 0.35,
     used: () => free.used,
     onFire: null,
+    onImpact: null,
+    rank: 1,
     clear() {
       alive.fill(0)
       life.fill(0)
@@ -112,6 +133,7 @@ export function createSunspear(): Sunspear {
       spear.cooldown = 0.35
     },
     update(dt, px, pz, horde, level, haste, might, cap, ctx) {
+      spear.rank = level
       spear.cooldown -= dt
       if (level > 0 && spear.cooldown <= 0) {
         const target = horde.nearest(px, pz, TUNING.spear.range)
@@ -142,6 +164,19 @@ export function createSunspear(): Sunspear {
         }
         x[i] = nx
         z[i] = nz
+        const big = level >= 5
+        trailAt[i] = (trailAt[i] ?? 0) - dt
+        if ((trailAt[i] ?? 0) <= 0) {
+          trailAt[i] = 0.1
+          const spd = Math.hypot(vx[i] ?? 0, vz[i] ?? 0) || 1
+          const fxDir = (vx[i] ?? 0) / spd
+          const fzDir = (vz[i] ?? 0) / spd
+          const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1)
+          const len = big ? 1.7 : 1.55
+          fx.streak(nx - fxDir * len * 0.35, 0.55, nz - fzDir * len * 0.35, yaw, len, 0.22, 0.24, FX.goldBlade)
+          fx.streak(nx - fxDir * len * 0.85, 0.4, nz - fzDir * len * 0.85, yaw, 0.55, 0.1, 0.2, FX.gold)
+          fx.glint(nx + fxDir * 0.45, 0.7, nz + fzDir * 0.45, big ? 0.36 : 0.32)
+        }
         life[i] = (life[i] ?? 0) - dt
         if ((life[i] ?? 0) <= 0) {
           alive[i] = 0
@@ -164,6 +199,10 @@ export function createSunspear(): Sunspear {
           else hits[base + 3] = slot
           const hit = horde.damage(slot, dmg[i] ?? 0, 'weapon', might)
           if (hit === 0) continue
+          const hx = horde.x[slot] ?? nx
+          const hz = horde.z[slot] ?? nz
+          spear.onImpact?.(hx, hz, ctx.isLit(hx, hz))
+          fx.hit(hx, hz, ctx.isLit(hx, hz))
           if (hit === 2) horde.slay(slot, ctx)
           pierce[i] = (pierce[i] ?? 1) - 1
           if ((pierce[i] ?? 0) <= 0) {
@@ -179,7 +218,9 @@ export function createSunspear(): Sunspear {
       let n = 0
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
-        writeInstance(mesh, n, x[i] ?? 0, 0.7, z[i] ?? 0, yawFromDirection(vx[i] ?? 0, vz[i] ?? 1), 1)
+        const big = spear.rank >= 5
+        // Local +Z is the tip. yawFromDirection points local −Z along velocity, so add half a turn.
+        writeInstance(mesh, n, x[i] ?? 0, 0.55, z[i] ?? 0, yawFromDirection(vx[i] ?? 0, vz[i] ?? 1) + Math.PI, big ? 1.7 : 1.45)
         n++
       }
       mesh.count = n

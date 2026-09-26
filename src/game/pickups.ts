@@ -1,4 +1,4 @@
-import { IcosahedronGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
+import { Color, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial } from 'three'
 import { TUNING } from '../data/tuning'
 import { FreeList } from '../core/pool'
 import { makeCrowd, writeInstance } from '../render/instancing'
@@ -9,16 +9,18 @@ export interface Pickups {
   mesh: InstancedMesh
   update: (dt: number, px: number, pz: number, radius: number, cap: number, gain: (value: number) => void) => void
   spawn: (x: number, z: number, value: number, cap: number, px: number, pz: number) => void
-  sync: () => void
+  sync: (litAt?: (x: number, z: number) => boolean) => void
   clear: () => void
   used: () => number
   visit: (fn: (x: number, z: number) => void) => void
 }
 
 export function createPickups(): Pickups {
-  const gem = new MeshBasicMaterial({ color: 0xb6ffe6, toneMapped: false })
-  gem.color.multiplyScalar(TUNING.look.emissiveGain)
-  const mesh = makeCrowd(new IcosahedronGeometry(0.16, 0), gem, MAX)
+  const teal = new Color(0x5fb8a8)
+  const gem = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false })
+  const mesh = makeCrowd(new IcosahedronGeometry(0.096, 0), gem, MAX)
+  mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX * 3), 3)
+  const gemTint = new Color()
   const x = new Float32Array(MAX)
   const z = new Float32Array(MAX)
   const value = new Float32Array(MAX)
@@ -107,16 +109,22 @@ export function createPickups(): Pickups {
         }
       }
     },
-    sync() {
+    sync(litAt) {
       let n = 0
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
         writeInstance(mesh, n, x[i] ?? 0, 0.35, z[i] ?? 0, 0, 1)
+        const gain = litAt?.(x[i] ?? 0, z[i] ?? 0) ? 0.35 : 0.2
+        gemTint.copy(teal).multiplyScalar(gain)
+        mesh.setColorAt(n, gemTint)
         n++
       }
       mesh.count = n
       mesh.visible = n > 0
-      if (n > 0) mesh.instanceMatrix.needsUpdate = true
+      if (n > 0) {
+        mesh.instanceMatrix.needsUpdate = true
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+      }
     },
   }
   return pickups

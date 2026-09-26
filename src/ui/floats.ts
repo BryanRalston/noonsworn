@@ -9,7 +9,7 @@ interface Live {
 }
 
 export interface Floats {
-  push: (x: number, z: number, text: string, kind: 'hot' | 'spark' | 'pop') => void
+  push: (x: number, z: number, text: string, kind: 'hot' | 'spark' | 'pop' | 'arm') => void
   sync: (camera: Camera, width: number, height: number, dt: number) => void
 }
 

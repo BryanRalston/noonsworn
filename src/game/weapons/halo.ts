@@ -1,9 +1,9 @@
-import { InstancedMesh, MeshBasicMaterial, RingGeometry } from 'three'
-import { COLOR } from '../../data/palette'
+import { CylinderGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
 import { TUNING } from '../../data/tuning'
-import { makeCrowd, writeFlat } from '../../render/instancing'
+import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
 import type { Horde, HordeCtx } from '../enemies/horde'
+import { FX, type WeaponFx } from './fx'
 
 const QUERY = new Int16Array(48)
 
@@ -44,17 +44,21 @@ export interface Halo {
   update: (dt: number, px: number, pz: number, horde: Horde, level: number, might: number, time: number, ctx: HordeCtx) => void
   sync: (px: number, pz: number, level: number) => void
   clear: () => void
+  onImpact: ((x: number, z: number, lit: boolean) => void) | null
 }
 
-export function createHalo(): Halo {
-  const geo = new RingGeometry(TUNING.halo.discR * 0.62, TUNING.halo.discR, 18)
-  geo.rotateX(-Math.PI / 2)
-  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: COLOR.goldHot.clone().multiplyScalar(TUNING.look.emissiveGain), toneMapped: false }), TUNING.halo.maxDiscs)
+export function createHalo(fx: WeaponFx): Halo {
+  const geo = new CylinderGeometry(TUNING.halo.discR, TUNING.halo.discR, 0.07, 6)
+  geo.rotateX(0)
+  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), TUNING.halo.maxDiscs)
   const stamps = new Float32Array(TUNING.hordeCap * TUNING.halo.maxDiscs)
+  let rayAt = 0
+  let arcAt = 0
   const halo: Halo = {
     mesh,
     angle: 0,
     stamps,
+    onImpact: null,
     clear() {
       halo.angle = 0
       stamps.fill(0)
@@ -63,6 +67,25 @@ export function createHalo(): Halo {
       const stats = haloStats(level)
       if (!stats) return
       halo.angle += dt * ((Math.PI * 2) / TUNING.halo.period)
+      const big = level >= 5
+      const blades = big ? 6 : 3
+      const arc = time - arcAt > 0.12
+      if (arc) arcAt = time
+      for (let d = 0; d < blades; d++) {
+        const a = halo.angle + (d * Math.PI * 2) / blades
+        const hx = px + Math.cos(a) * stats.orbit
+        const hz = pz + Math.sin(a) * stats.orbit
+        fx.blade(d, hx, hz, TUNING.camera.yaw, big)
+      }
+      if (big && time - rayAt > 0.28) {
+        rayAt = time
+        for (let r = 0; r < 10; r++) {
+          const ray = (r / 10) * Math.PI * 2
+          const ox = Math.cos(ray)
+          const oz = Math.sin(ray)
+          fx.streak(px + ox * (stats.orbit + 0.35), 1.05, pz + oz * (stats.orbit + 0.35), TUNING.camera.yaw, 1.55, 0.2, 0.75, FX.goldBlade, true)
+        }
+      }
       const n = hashQuery(px, pz, stats.orbit + 1.2, QUERY)
       for (let d = 0; d < stats.count; d++) {
         const a = halo.angle + (d * Math.PI * 2) / stats.count
@@ -82,27 +105,18 @@ export function createHalo(): Halo {
           stamps[stampAt] = time
           const hit = horde.damage(slot, stats.damage, 'weapon', might)
           if (hit === 0) continue
+          const hx = horde.x[slot] ?? sx
+          const hz = horde.z[slot] ?? sz
+          const lit = ctx.isLit(hx, hz)
+          halo.onImpact?.(hx, hz, lit)
+          fx.hit(hx, hz, lit)
           if (hit === 2) horde.slay(slot, ctx)
         }
       }
     },
-    sync(px, pz, level) {
-      const stats = haloStats(level)
-      if (!stats) {
-        mesh.count = 0
-        mesh.visible = false
-        return
-      }
-      for (let d = 0; d < stats.count; d++) {
-        const a = halo.angle + (d * Math.PI * 2) / stats.count
-        const limit = TUNING.arena.size / 2 - 1.2
-        const hx = Math.max(-limit, Math.min(limit, px + Math.cos(a) * stats.orbit))
-        const hz = Math.max(-limit, Math.min(limit, pz + Math.sin(a) * stats.orbit))
-        writeFlat(mesh, d, hx, hz, 0, 1, 1)
-      }
-      mesh.count = stats.count
-      mesh.visible = true
-      mesh.instanceMatrix.needsUpdate = true
+    sync() {
+      mesh.count = 0
+      mesh.visible = false
     },
   }
   return halo

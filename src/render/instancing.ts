@@ -57,8 +57,7 @@ transformed.z += aLeg * cos(uTime * 12.0 + iPhase) * iMove * 0.05;`,
 float fres = pow(1.0 - facing, 2.0);
 float luma = dot(outgoingLight, vec3(0.299, 0.587, 0.114));
 if (vTele > 0.5) {
-  if (vITele < 0.5) discard;
-  outgoingLight = vec3(1.0, 0.24, 0.55);
+  discard;
 } else if (vEye > 0.5) {
   outgoingLight = mix(vec3(0.82, 0.7, 1.0), uGold, vLit);
 } else if (vLit > 0.5) {
@@ -72,7 +71,9 @@ if (vTele > 0.5) {
   outgoingLight += uRim * fres * 1.1;
 }
 if (vLocal.y > 0.58) outgoingLight = mix(outgoingLight, uRim, 0.92);
-outgoingLight = mix(outgoingLight, uGold * 1.8, vFlash);
+vec3 flashHot = vec3(0.78, 0.64, 0.32);
+vec3 flashDull = vec3(0.30, 0.26, 0.34);
+outgoingLight = mix(outgoingLight, mix(flashDull, flashHot, vLit), vFlash * 0.72);
 #include <opaque_fragment>`,
       )
   }

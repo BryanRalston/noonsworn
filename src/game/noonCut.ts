@@ -120,6 +120,7 @@ export function sweepCut(
   might: number,
   ctx: HordeCtx,
   onBig: () => void,
+  onStrike?: (x: number, z: number, lit: boolean) => void,
 ) {
   if (!cut.active) return
   const alive = horde.alive
@@ -129,6 +130,9 @@ export function sweepCut(
     if (d > TUNING.cut.radius) continue
     const hit = horde.damage(i, TUNING.cut.damage, 'cut', might)
     if (hit === 0) continue
+    const hx = horde.x[i] ?? 0
+    const hz = horde.z[i] ?? 0
+    onStrike?.(hx, hz, ctx.isLit(hx, hz))
     cut.seen[i] = cut.id
     cut.hits++
     if (hit === 2) {
@@ -180,9 +184,10 @@ export function syncRibbon(mesh: Mesh, cut: CutState, player: Player) {
   const len = Math.max(0.2, Math.hypot(dx, dz))
   mesh.position.set(cut.sx, 0, cut.sz)
   mesh.rotation.y = yawFromDirection(cut.dirX, cut.dirZ)
-  mesh.scale.set(TUNING.cut.radius * 2, 1, len)
+  const big = cut.boomed || cut.hits >= TUNING.cut.bigHits
+  mesh.scale.set(TUNING.cut.radius * 2 * (big ? 1.65 : 1), 1, len)
   const mat = mesh.material as MeshBasicMaterial
   const k = cut.active ? 1 : Math.max(0, cut.fade / TUNING.cut.ribbonFade)
-  mat.color.copy(COLOR.gold).lerp(COLOR.goldHot, cut.active ? Math.min(1, cut.time / TUNING.cut.duration) : 1).multiplyScalar(TUNING.look.emissiveGain)
-  mat.opacity = 0.35 + 0.65 * k
+  mat.color.copy(big ? COLOR.goldHot : COLOR.gold).multiplyScalar(TUNING.look.emissiveGain * (big ? 1.4 : 1))
+  mat.opacity = 0.45 + 0.55 * k
 }

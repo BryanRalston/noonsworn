@@ -47,7 +47,7 @@ export const TUNING = {
     radius: 0.45,
     height: 1.8,
     invuln: 0.5,
-    pickup: 2.5,
+    pickup: 3.75,
     haloDisc: 0.5,
   },
   cut: {
@@ -160,9 +160,9 @@ export const TUNING = {
   openSeconds: 30,
   openContact: 0.75,
   tiers: {
-    low: { minRatio: 0.75, maxRatio: 1.5, cap: 150, projectiles: 300, xp: 400, sepHz: 30, motes: 0, floats: 24 },
-    med: { minRatio: 0.9, maxRatio: 2, cap: 250, projectiles: 500, xp: 600, sepHz: 60, motes: 200, floats: 32 },
-    high: { minRatio: 1, maxRatio: 2, cap: 400, projectiles: 800, xp: 1000, sepHz: 60, motes: 500, floats: 40 },
+    low: { minRatio: 0.75, maxRatio: 1.5, cap: 150, projectiles: 300, xp: 400, sepHz: 30, motes: 0, floats: 24, sparks: 90, trails: 64, sparkHit: 2 },
+    med: { minRatio: 0.9, maxRatio: 2, cap: 250, projectiles: 500, xp: 600, sepHz: 60, motes: 200, floats: 32, sparks: 80, trails: 40, sparkHit: 4 },
+    high: { minRatio: 1, maxRatio: 2, cap: 400, projectiles: 800, xp: 1000, sepHz: 60, motes: 500, floats: 40, sparks: 420, trails: 260, sparkHit: 7 },
   },
   quality: {
     benchSeconds: 2.5,
@@ -176,7 +176,7 @@ export const TUNING = {
     dynUpHold: 2,
     dynSettle: 1,
     dynUpSettle: 0.08,
-    dynStep: 0.05,
+    dynStep: 0.1,
     dynProbe: 5,
     dynClimb: 0.12,
     dropGap: 2,

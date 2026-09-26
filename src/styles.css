@@ -115,8 +115,8 @@ button.card, #btn-feature, #btn-pause-feature, #feature-close {
 }
 .slider input { width: 120px; }
 .float.spark {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
   padding: 0;
   border-radius: 50%;
   background: #b7b7c8;
@@ -214,9 +214,9 @@ h1 { color: var(--goldHot); font-size: 40px; }
 .ring-fg { fill: none; stroke: var(--gold); stroke-width: 3; }
 
 #floats { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
-.float { position: absolute; left: 0; top: 0; font: 700 16px/1 system-ui, sans-serif; color: var(--goldHot); text-shadow: 0 1px 0 #141225; }
-.float.arm { font-size: 12px; color: #c8c4d4; }
-.float.pop { font-size: 22px; letter-spacing: 0.08em; }
+.float { position: absolute; left: 0; top: 0; font: 700 10px/1 system-ui, sans-serif; color: var(--goldHot); text-shadow: 0 1px 0 #141225; }
+.float.arm { font-size: 8px; color: #c8c4d4; }
+.float.pop { font-size: 13px; letter-spacing: 0.08em; }
 #toast {
   position: fixed;
   left: 50%;
