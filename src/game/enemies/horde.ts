@@ -62,6 +62,7 @@ export interface Horde {
   visit: (fn: (x: number, z: number, kind: number) => void) => void
   radial: (x: number, z: number, radius: number, amount: number, ctx: HordeCtx) => void
   slow: (x: number, z: number, radius: number, seconds: number) => void
+  frozen: boolean
   tris: { mite: number; hound: number }
   telegraphs: { x: number; z: number; yaw: number }[]
 }
@@ -214,11 +215,13 @@ export function createHorde(): Horde {
       occupy(slot, kind, sx, sz, isBench)
       return slot
     },
+    frozen: false,
     clear() {
       alive.fill(0)
       state.fill(0)
       bench.fill(0)
       bonusMites = 0
+      horde.frozen = false
       free.reset()
     },
     cullTo(cap, px, pz) {
@@ -251,6 +254,7 @@ export function createHorde(): Horde {
       hound: houndGeo.getAttribute('position').count / 3,
     },
     radial(cx, cz, radius, amount, hitCtx) {
+      if (horde.frozen) return
       const r2 = radius * radius
       for (let i = 0; i < MAX; i++) {
         if (!alive[i] || state[i] === DYING || bench[i]) continue
@@ -283,6 +287,7 @@ export function createHorde(): Horde {
       }
     },
     damage(index, base, source, might) {
+      if (horde.frozen) return 0
       if (!alive[index] || state[index] === DYING || bench[index]) return 0
       const amount = damageAmount(base, lit[index] === 1, source, might)
       hp[index] = (hp[index] ?? 0) - amount
@@ -296,6 +301,7 @@ export function createHorde(): Horde {
     },
     update(ctx) {
       hashBuild(x, z, alive, MAX)
+      if (horde.frozen) return
       let activeHounds = 0
       for (let i = 0; i < MAX; i++) {
         if (alive[i] && type[i] === 1 && (state[i] === TELE || state[i] === LUNGE)) activeHounds++

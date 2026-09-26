@@ -60,6 +60,7 @@ export interface Sunspear {
   ) => void
   sync: () => void
   clear: () => void
+  kick: (px: number, pz: number, ang: number, level: number, cap: number) => void
   used: () => number
   onFire: (() => void) | null
   onImpact: ((x: number, z: number, lit: boolean) => void) | null
@@ -123,6 +124,17 @@ export function createSunspear(fx: WeaponFx): Sunspear {
     mesh,
     cooldown: 0.35,
     used: () => free.used,
+    kick(px, pz, ang, level, cap) {
+      const stats = spearStats(Math.max(1, level))
+      spear.rank = Math.max(1, level)
+      if (stats.count <= 1) launch(px, pz, ang, stats.damage, stats.pierce, cap)
+      else {
+        const spread = (TUNING.spear.fanDeg * Math.PI) / 180
+        launch(px, pz, ang - spread, stats.damage, stats.pierce, cap)
+        launch(px, pz, ang + spread, stats.damage, stats.pierce, cap)
+      }
+      spear.onFire?.()
+    },
     onFire: null,
     onImpact: null,
     rank: 1,
@@ -172,9 +184,9 @@ export function createSunspear(fx: WeaponFx): Sunspear {
           const fxDir = (vx[i] ?? 0) / spd
           const fzDir = (vz[i] ?? 0) / spd
           const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1)
-          const len = big ? 1.7 : 1.55
-          fx.streak(nx - fxDir * len * 0.35, 0.55, nz - fzDir * len * 0.35, yaw, len, 0.22, 0.24, FX.goldBlade)
-          fx.streak(nx - fxDir * len * 0.85, 0.4, nz - fzDir * len * 0.85, yaw, 0.55, 0.1, 0.2, FX.gold)
+          const len = 1.4
+          fx.streak(nx - fxDir * len * 0.35, 0.55, nz - fzDir * len * 0.35, yaw, len, 0.15, 0.28, FX.goldBlade)
+          fx.streak(nx - fxDir * 0.85, 0.4, nz - fzDir * 0.85, yaw, 1, 0.1, 0.24, FX.gold)
           fx.glint(nx + fxDir * 0.45, 0.7, nz + fzDir * 0.45, big ? 0.36 : 0.32)
         }
         life[i] = (life[i] ?? 0) - dt

@@ -41,6 +41,7 @@ export interface Halo {
   mesh: InstancedMesh
   angle: number
   stamps: Float32Array
+  pulses: number
   update: (dt: number, px: number, pz: number, horde: Horde, level: number, might: number, time: number, ctx: HordeCtx) => void
   sync: (px: number, pz: number, level: number) => void
   clear: () => void
@@ -52,15 +53,18 @@ export function createHalo(fx: WeaponFx): Halo {
   geo.rotateX(0)
   const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), TUNING.halo.maxDiscs)
   const stamps = new Float32Array(TUNING.hordeCap * TUNING.halo.maxDiscs)
-  let rayAt = 0
+  let rayAt = -1
   let arcAt = 0
   const halo: Halo = {
     mesh,
     angle: 0,
     stamps,
+    pulses: 0,
     onImpact: null,
     clear() {
       halo.angle = 0
+      halo.pulses = 0
+      rayAt = -1
       stamps.fill(0)
     },
     update(dt, px, pz, horde, level, might, time, ctx) {
@@ -77,14 +81,18 @@ export function createHalo(fx: WeaponFx): Halo {
         const hz = pz + Math.sin(a) * stats.orbit
         fx.blade(d, hx, hz, TUNING.camera.yaw, big)
       }
-      if (big && time - rayAt > 0.28) {
+      if (big && time - rayAt > 0.36) {
         rayAt = time
+        halo.pulses++
         for (let r = 0; r < 10; r++) {
           const ray = (r / 10) * Math.PI * 2
           const ox = Math.cos(ray)
           const oz = Math.sin(ray)
-          fx.streak(px + ox * (stats.orbit + 0.35), 1.05, pz + oz * (stats.orbit + 0.35), TUNING.camera.yaw, 1.55, 0.2, 0.75, FX.goldBlade, true)
+          fx.streak(px + ox * (stats.orbit + 0.4), 1.15, pz + oz * (stats.orbit + 0.4), TUNING.camera.yaw, 1.2, 0.12, 0.4, FX.goldBlade, true)
         }
+      } else if (!big && time - rayAt > 1) {
+        rayAt = time
+        halo.pulses++
       }
       const n = hashQuery(px, pz, stats.orbit + 1.2, QUERY)
       for (let d = 0; d < stats.count; d++) {

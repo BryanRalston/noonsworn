@@ -53,6 +53,7 @@ export const FX = {
   goldBlade: lin(0xd9a441),
   goldHot: lin(0xf0d48a),
   shade: lin(0x6a6578),
+  shadePuff: lin(0x8a7aa8),
 } as const
 
 const ADD_CAP = 0.55
@@ -196,12 +197,17 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
       varying vec2 vUv;
       varying vec3 vCol;
       varying float vFlag;
+      varying float vRadius;
+      varying vec2 vLocalXZ;
       void main() {
         vFxUv = iUv.xy + uv * iUv.zw;
         vUv = uv;
         vCol = instanceColor;
         vFlag = iFlag;
         vec4 world = instanceMatrix * vec4(position.xyz, 1.0);
+        vec4 origin = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        vRadius = 0.5 * length(instanceMatrix[0].xyz);
+        vLocalXZ = world.xz - origin.xz;
         gl_Position = projectionMatrix * modelViewMatrix * world;
       }
     `,
@@ -212,9 +218,17 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
       varying vec2 vUv;
       varying vec3 vCol;
       varying float vFlag;
+      varying float vRadius;
+      varying vec2 vLocalXZ;
       void main() {
         float a = texture2D(uMap, vFxUv).a;
         vec3 col = min(vCol * a, vec3(${ADD_CAP.toFixed(2)}));
+        if (vFlag > 3.5) {
+          float y = vUv.y;
+          float halfW = mix(0.12, 0.0, smoothstep(0.05, 0.92, y));
+          float inside = 1.0 - smoothstep(halfW - 0.02, halfW, abs(vUv.x - 0.5));
+          col = min(vec3(0.95, 0.78, 0.35) * inside * max(vCol.r, 0.35), vec3(${ADD_CAP.toFixed(2)}));
+        }
         gl_FragColor = vec4(col, 1.0);
       }
     `
@@ -224,28 +238,46 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
       varying vec2 vUv;
       varying vec3 vCol;
       varying float vFlag;
+      varying float vRadius;
+      varying vec2 vLocalXZ;
       void main() {
         vec4 tex = texture2D(uMap, vFxUv);
         float rim = smoothstep(0.72, 0.98, tex.r);
         vec3 col = mix(vCol * 0.78, min(vCol * 1.65, vec3(0.95)), rim);
         float alpha = tex.a * mix(0.8, 0.95, rim);
         float d = length(vUv - 0.5) * 2.0;
-        if (vFlag > 2.5) {
-          float ember = smoothstep(0.45, 0.92, tex.r);
-          float fade = clamp(max(vCol.r, vCol.g) / 0.55, 0.0, 1.0);
-          col = mix(vec3(0.07, 0.03, 0.015), vCol / max(fade, 0.08), ember);
-          alpha = tex.a * fade;
+        if (vFlag > 3.5) {
+          float y = vUv.y;
+          float halfW = mix(0.46, 0.0, smoothstep(0.12, 1.0, y));
+          float edgeDist = abs(vUv.x - 0.5);
+          float fw = clamp(fwidth(vUv.x), 0.008, 0.06);
+          float inside = 1.0 - smoothstep(halfW - fw, halfW, edgeDist);
+          float outline = smoothstep(halfW - fw * 2.4, halfW - fw * 0.35, edgeDist);
+          vec3 tipCol = vec3(0.887, 0.552, 0.102);
+          vec3 baseCol = vec3(0.479, 0.238, 0.027);
+          vec3 bronze = vec3(0.09, 0.04, 0.015);
+          col = mix(mix(baseCol, tipCol, y), bronze, outline);
+          alpha = inside * clamp(max(vCol.r, vCol.g), 0.0, 1.0);
+        } else if (vFlag > 2.5) {
+          float ember = smoothstep(0.78, 0.96, tex.r);
+          float body = 1.0 - smoothstep(0.32, 0.5, length((vUv - 0.5) * vec2(0.85, 0.7)));
+          float fade = clamp(max(vCol.r, vCol.g) / 0.45, 0.0, 1.0);
+          col = mix(vec3(0.042, 0.018, 0.009), vCol, ember);
+          alpha = max(body * 0.7, ember * tex.a * 0.9) * fade;
         } else if (vFlag > 1.5) {
-          float band = smoothstep(0.70, 0.76, d) * (1.0 - smoothstep(0.94, 0.99, d));
-          float lead = smoothstep(0.70, 0.97, d);
-          float fade = clamp(max(vCol.r, vCol.g) / 0.72, 0.0, 1.0);
-          col = vCol / max(fade, 0.08);
-          alpha = band * lead * 0.6 * fade;
-        } else if (vFlag > 0.5) {
           float band = smoothstep(0.82, 0.86, d) * (1.0 - smoothstep(0.955, 0.995, d));
           float edge = smoothstep(0.945, 0.99, d);
           col = mix(vCol, vec3(0.72, 0.42, 0.12), edge);
           alpha = band * mix(0.20, 0.95, edge);
+        } else if (vFlag > 0.5) {
+          float rad = max(vRadius, 0.5);
+          float dist = length(vLocalXZ);
+          float inner = rad - 0.35;
+          float band = smoothstep(inner - 0.03, inner + 0.02, dist) * (1.0 - smoothstep(rad - 0.02, rad + 0.02, dist));
+          float edge = smoothstep(rad - 0.09, rad, dist);
+          float life = clamp(max(vCol.r, vCol.g) / 0.28, 0.0, 1.0);
+          col = mix(vCol, vec3(0.055, 0.028, 0.012), clamp(edge, 0.0, 1.0));
+          alpha = band * 0.75 * life;
         }
         if (alpha < 0.02) discard;
         gl_FragColor = vec4(col, alpha);
@@ -402,23 +434,18 @@ export function createWeaponFx(): WeaponFx {
       tier = next
     },
     hit(px, pz, lit, scale = 1) {
-      const s = scale
+      const n = scale > 1 ? 12 : 10
       if (lit) {
-        const n = s > 1 ? 7 : tier === 'low' ? 3 : tier === 'med' ? 4 : 5
-        const rad = s > 1 ? 0.7 : 0.36
-        const size = s > 1 ? 0.72 : 0.32
         for (let i = 0; i < n; i++) {
           const a = (i / n) * Math.PI * 2
-          put(CELL.spark, px + Math.cos(a) * rad, s > 1 ? 1.05 : 0.8, pz + Math.sin(a) * rad, face, size, size, s > 1 ? 0.55 : 0.28, FX.goldHot, 0, 0)
+          const ox = Math.cos(a)
+          const oz = Math.sin(a)
+          put(CELL.streak, px + ox * 0.2, 0.9, pz + oz * 0.2, face, 0.05, 0.15, 0.3, FX.goldHot, 4, 0, 1)
         }
-        put(CELL.spark, px, s > 1 ? 1.2 : 0.95, pz, face, s > 1 ? 0.42 : 0.22, s > 1 ? 0.42 : 0.22, 0.14, FX.goldHot, 0, 0, 1)
       } else {
-        const n = s > 1 ? 6 : tier === 'low' ? 2 : 3
-        const puff = s > 1 ? 0.8 : 0.22
-        const rad = s > 1 ? 0.45 : 0.16
         for (let i = 0; i < n; i++) {
           const a = (i / n) * Math.PI * 2
-          put(CELL.spark, px + Math.cos(a) * rad, s > 1 ? 1.35 : 0.5, pz + Math.sin(a) * rad, face, puff, puff, s > 1 ? 0.55 : 0.2, FX.shade, 0, 0)
+          put(CELL.spark, px + Math.cos(a) * 0.22, 0.7, pz + Math.sin(a) * 0.22, face, 0.15, 0.15, 0.3, FX.shadePuff, 0, 0)
         }
       }
     },
@@ -427,10 +454,11 @@ export function createWeaponFx(): WeaponFx {
     },
     blade(slot, px, pz, rot, big) {
       if (slot < 0 || slot >= 8) return
-      const length = big ? 1.45 : 1.25
-      const width = 0.22
-      writeSlot(slot, CELL.blade, px, 1.05, pz, rot, width, length, 0.4, FX.goldBlade, 0, 0, 0, 0)
-      writeSlot(slot + 8, CELL.blade, px, 1.05, pz, rot, 0.05, length, 0.4, FX.goldHot, 0, 0, 1, 0)
+      const length = big ? 1 : 1
+      const width = 0.25
+      const white = [1, 1, 1] as const
+      writeSlot(slot, CELL.blade, px, 1.15, pz, rot, width, length, 0.4, white, 0, 0, 0, 4)
+      writeSlot(slot + 8, CELL.blade, px, 1.15, pz, rot, width, length, 0.4, white, 0, 0, 1, 4)
     },
     crescent(px, pz, rot, big) {
       writeSlot(SLOT_MOON, CELL.crescent, px, 1.55, pz, rot, big ? 4.2 : 3.6, big ? 2.8 : 2.4, 0.95, FX.orange, 0, 0)
@@ -473,6 +501,7 @@ export function createWeaponFx(): WeaponFx {
       const uvA = mesh.geometry.getAttribute('iUv') as InstancedBufferAttribute
       const uvH = hot.geometry.getAttribute('iUv') as InstancedBufferAttribute
       const flagA = mesh.geometry.getAttribute('iFlag') as InstancedBufferAttribute
+      const flagH = hot.geometry.getAttribute('iFlag') as InstancedBufferAttribute
       let nA = 0
       let nH = 0
       const limit = cap()
@@ -505,8 +534,8 @@ export function createWeaponFx(): WeaponFx {
         }
         if (mode[i] === 2) y[i] = (y[i] ?? 0) + (vy[i] ?? 0) * dt
         const kind = cell[i] ?? 0
-        const held = kind === CELL.crescent || kind === CELL.shell
-        const fade = kind === CELL.brand || kind === CELL.ring ? k : held ? (k > 0.18 ? 1 : k / 0.18) : mode[i] === 3 ? Math.max(0.35, k) : k
+        const held = kind === CELL.crescent
+        const fade = kind === CELL.shell ? (k > 0.32 ? 1 : k / 0.32) : kind === CELL.brand || kind === CELL.ring ? k : held ? (k > 0.18 ? 1 : k / 0.18) : mode[i] === 3 ? Math.max(0.35, k) : k
         const upright = kind === CELL.blade || kind === CELL.spark || kind === CELL.ember || kind === CELL.crescent || mode[i] === 4
         dummy.position.set(x[i] ?? 0, y[i] ?? 0, z[i] ?? 0)
         dummy.rotation.set(0, 0, 0)
@@ -526,7 +555,8 @@ export function createWeaponFx(): WeaponFx {
         const n = hotBit[i] ? nH : nA
         target.setMatrixAt(n, dummy.matrix)
         uv.setXYZW(n, uvTable[rectAt] ?? 0, uvTable[rectAt + 1] ?? 0, uvTable[rectAt + 2] ?? 0.25, uvTable[rectAt + 3] ?? 0.25)
-        if (!hotBit[i]) flagA.setX(n, shellBit[i] ? 1 : 0)
+        if (hotBit[i]) flagH.setX(n, shellBit[i] ?? 0)
+        else flagA.setX(n, shellBit[i] ?? 0)
         tint.setRGB((cr[i] ?? 0) * fade, (cg[i] ?? 0) * fade, (cb[i] ?? 0) * fade)
         target.setColorAt(n, tint)
         if (hotBit[i]) nH++
@@ -545,6 +575,7 @@ export function createWeaponFx(): WeaponFx {
       if (nH > 0) {
         hot.instanceMatrix.needsUpdate = true
         uvH.needsUpdate = true
+        flagH.needsUpdate = true
         if (hot.instanceColor) hot.instanceColor.needsUpdate = true
       }
     },

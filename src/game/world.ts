@@ -76,7 +76,13 @@ export function boot(container: HTMLElement) {
   const previewRank = Number(params.get('rank') ?? '1')
   const previewTier = params.get('tier')
   const previewHold = params.get('hold') === '1'
+  const previewShow = import.meta.env.DEV && params.get('show') === '1'
   let previewCutIn = 0.4
+  let showIn = 0.08
+  let showX = 0
+  let showZ = 0
+  let previewFires = 0
+  const flareRadius = (level: number) => (level <= 1 ? 7.5 * 0.6 : 3.5 + (level - 1))
   let cutMark = -1
   let teleGate = 0
   let hitPreview = 0.2
@@ -551,7 +557,30 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     const requested = Number(params.get('n') ?? (heavy ? '400' : '90'))
     let swarm = Number.isFinite(requested) ? requested : heavy ? 400 : 90
     swarm = heavy ? Math.max(1, Math.min(400, swarm)) : Math.max(60, Math.min(120, swarm))
-    if (previewWeapon === 'hits') {
+    if (previewShow) {
+      showX = previewWeapon === 'hits' ? 11 : 0
+      showZ = 0
+      player.x = showX
+      player.z = showZ
+      player.px = showX
+      player.pz = showZ
+      follow.snap(showX, showZ)
+      if (previewWeapon === 'hits') {
+        build.spear = 0
+        build.halo = 0
+        build.flare = 0
+        build.bell = 0
+        build.searing = 0
+      }
+      const ring = 16
+      for (let i = 0; i < ring; i++) {
+        const a = (i / ring) * Math.PI * 2
+        horde.spawn(0, showX + Math.cos(a) * 7, showZ + Math.sin(a) * 7, false, 400, showX, showZ)
+      }
+      horde.frozen = true
+      showIn = 0.08
+      previewFires = 0
+    } else if (previewWeapon === 'hits') {
       litAx = 8.6
       litAz = 0.2
       shadeAx = 15.4
@@ -585,7 +614,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     }
   }
 
-  spears.onFire = () => audio.spear()
+  spears.onFire = () => {
+    previewFires++
+    audio.spear()
+  }
   screens.onPlay = () => {
     audio.ui()
     startRun()
@@ -682,6 +714,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         fxMs: number
         bloomMs: number
         syncMs: number
+        fires: number
+        selaX: number
+        selaZ: number
       }
     }
     hook.__ns = () => ({
@@ -699,6 +734,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       fxMs: Math.round(profFx * 100) / 100,
       bloomMs: Math.round(profBloom * 100) / 100,
       syncMs: Math.round(profSync * 100) / 100,
+      fires: previewFires + halo.pulses,
+      selaX: player.x,
+      selaZ: player.z,
     })
     requestAnimationFrame(() => startRun())
   }
@@ -797,16 +835,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
-      if (build.flare > 0) {
+      if (build.flare > 0 && !(previewShow && previewWeapon === 'flare')) {
         flareCd -= dt
         if (flareCd <= 0) {
           flareCd = 6
-          const radius = 3.5 + (build.flare - 1)
+          const radius = flareRadius(build.flare)
           horde.radial(player.x, player.z, radius, 16, ctx)
           audio.exposed()
           const big = build.flare >= 5
+          const same = big || build.flare === 1
           fx.ring(player.x, player.z, radius, FX.orange, 1.2)
-          if (big) fx.ring(player.x, player.z, radius * 0.62, FX.orange, 1.2)
+          if (same) fx.ring(player.x, player.z, radius * 0.62, FX.orange, 1.2)
+          previewFires++
           const bits = big ? 7 : 4
           for (let i = 0; i < bits; i++) {
             const a = (i / bits) * Math.PI * 2
@@ -814,7 +854,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           }
         }
       }
-      if (build.bell > 0) {
+      if (build.bell > 0 && !(previewShow && previewWeapon === 'bell')) {
         bellCd -= dt
         if (bellCd <= 0) {
           bellCd = 10
@@ -823,6 +863,45 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           const big = build.bell >= 5
           fx.shell(player.x, player.z, big ? 6.4 : 5.2, 1.45)
           if (big) fx.shell(player.x, player.z, 4.4, 1.45)
+          previewFires++
+        }
+      }
+      if (previewShow && previewWeapon !== 'halo') {
+        showIn -= dt
+        if (showIn <= 0) {
+          if (previewWeapon === 'sunspear') {
+            showIn = 1
+            spears.kick(player.x, player.z, 0.15, build.spear, TUNING.tiers[quality.tier].projectiles)
+          } else if (previewWeapon === 'bell') {
+            showIn = 1.15
+            const big = build.bell >= 5
+            fx.shell(player.x, player.z, big ? 6.4 : 5.2, 1.45)
+            if (big) fx.shell(player.x, player.z, 4.4, 1.45)
+            previewFires++
+          } else if (previewWeapon === 'flare') {
+            showIn = 0.9
+            const radius = flareRadius(build.flare)
+            const big = build.flare >= 5
+            fx.ring(player.x, player.z, radius, FX.orange, 1.2)
+            if (big || build.flare === 1) fx.ring(player.x, player.z, radius * 0.62, FX.orange, 1.2)
+            previewFires++
+          } else if (previewWeapon === 'cut') {
+            showIn = 1
+            const yaw = 0.5
+            const dirX = -Math.sin(yaw)
+            const dirZ = -Math.cos(yaw)
+            const midX = player.x + dirX * TUNING.cut.distance * 0.5
+            const midZ = player.z + dirZ * TUNING.cut.distance * 0.5
+            const big = previewRank >= 5
+            fx.scorch(midX, midZ, yaw, TUNING.cut.distance, 1.7, 1, big)
+            fx.crescent(midX, midZ, yaw, big)
+            previewFires++
+          } else if (previewWeapon === 'hits') {
+            showIn = 0.4
+            fx.hit(showX - 1.8, showZ + 0.3, true)
+            fx.hit(showX + 1.8, showZ - 0.2, false)
+            previewFires++
+          } else showIn = 1
         }
       }
       time += dt
@@ -832,7 +911,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (previewWeapon === 'bell' || previewWeapon === 'all') {
         if (bellCd > 1.15) bellCd = 1.15
       }
-      if (previewWeapon === 'cut' || previewWeapon === 'all') {
+      if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all')) {
         previewCutIn -= dt
         if (previewCutIn <= 0) {
           previewCutIn = 0.8
@@ -867,7 +946,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       let wishX = basis.rx * state.moveX + basis.fx * state.moveY
       let wishZ = basis.rz * state.moveX + basis.fz * state.moveY
-      if (previewWeapon === 'hits') {
+      if (previewShow || previewWeapon === 'hits') {
         wishX = 0
         wishZ = 0
       } else if (previewWeapon) {
@@ -881,7 +960,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         wishX = (wishX / mag) * step
         wishZ = (wishZ / mag) * step
       }
-      if ((previewWeapon === 'cut' || previewWeapon === 'all') && state.cutPressed) {
+      if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && state.cutPressed) {
         wishX = previewSweepX
         wishZ = previewSweepZ
         state.cutDirX = previewSweepX
@@ -900,13 +979,30 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         mouseIdle: state.mouseIdle,
         usingTouch: state.usingTouch,
       }, build.haste)
-      if ((previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
+      if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
-      if (previewWeapon === 'hits') {
+      if (previewShow) {
+        player.x = showX
+        player.z = showZ
+        player.vx = 0
+        player.vz = 0
+        player.px = showX
+        player.pz = showZ
+      } else if (previewWeapon === 'hits') {
         player.x = 12
         player.z = 0
         player.vx = 0
         player.vz = 0
+      } else if (previewWeapon && follow.camera.aspect < 1) {
+        const lim = 7.5
+        const pd = Math.hypot(player.x, player.z)
+        if (pd > lim) {
+          const s = lim / pd
+          player.x *= s
+          player.z *= s
+          player.vx = 0
+          player.vz = 0
+        }
       }
       if (previewWeapon) player.iframe = Math.max(player.iframe, 30)
       if (cut.active && !cutWas) {
@@ -916,6 +1012,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         const midZ = cut.sz + cut.dirZ * TUNING.cut.distance * 0.5
         fx.scorch(midX, midZ, slashYaw, TUNING.cut.distance, 1.7, 1, false)
         fx.crescent(midX, midZ, slashYaw, false)
+        previewFires++
         audio.cut()
         buzz(16)
         if (shakeOn()) {
@@ -956,11 +1053,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       fillCtx(dt)
       const cam = follow.camera.position
-      director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z)
+      if (!horde.frozen) director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z)
       const hordeT = performance.now()
       horde.update(ctx)
       profHorde += performance.now() - hordeT
-      if (previewWeapon === 'hits') {
+      if (!previewShow && previewWeapon === 'hits') {
         hitPreview -= dt
         if (hitPreview <= 0) {
           hitPreview = 0.4
@@ -971,6 +1068,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         }
       }
       fx.setTier(quality.tier)
+      if (previewShow && previewWeapon === 'sunspear') spears.cooldown = 30
       const spearT = performance.now()
       spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
       profSpear += performance.now() - spearT
@@ -1093,8 +1191,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       shadows.end()
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
       const bloomT = performance.now()
-      if (quality.tier === 'low') gpu.renderer.render(gpu.scene, follow.camera)
-      else bloom.render(gpu.renderer, gpu.scene, follow.camera)
+      if (quality.tier === 'high') bloom.render(gpu.renderer, gpu.scene, follow.camera)
+      else gpu.renderer.render(gpu.scene, follow.camera)
       profBloom = performance.now() - bloomT
       sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)
       stats = gpu.readStats()
