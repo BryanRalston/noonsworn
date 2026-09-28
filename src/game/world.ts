@@ -1223,6 +1223,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         viewW: canvas.clientWidth,
         viewH: canvas.clientHeight,
         hold: import.meta.env.DEV ? params.get('clip') : null,
+        sparse: quality.tier !== 'high',
       })
       animHurt = false
       animThrust = false

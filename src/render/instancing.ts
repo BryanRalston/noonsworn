@@ -17,6 +17,8 @@ function enemyVertex(): string {
       attribute float aEmit;
       attribute float iFlash;
       attribute float iLit;
+      attribute vec4 iPose;
+      uniform float uTime;
       varying vec3 vColor;
       varying float vEmit;
       varying float vLit;
@@ -26,11 +28,28 @@ function enemyVertex(): string {
         vEmit = aEmit;
         vLit = iLit;
         vFlash = iFlash;
-        vec4 mvPosition = vec4(position, 1.0);
-        #ifdef USE_INSTANCING
-          mvPosition = instanceMatrix * mvPosition;
-        #endif
-        gl_Position = projectionMatrix * modelViewMatrix * mvPosition;
+        float w = iPose.w;
+        float band = floor(w / 32.0);
+        float sc = max(band / 32.0, 0.03);
+        float rest = w - band * 32.0;
+        float crouch = step(16.0, rest);
+        float moving = step(8.0, rest) * (1.0 - crouch);
+        float phase = rest - moving * 8.0 - crouch * 16.0;
+        float wave = sin(uTime * 8.0 + phase) * (0.35 + 0.65 * moving);
+        vec3 p = position * sc;
+        p.y *= mix(1.0, 0.62, crouch) * (1.0 + wave * 0.07);
+        p.y += wave * 0.045;
+        float lean = wave * 0.1;
+        float cl = cos(lean);
+        float sl = sin(lean);
+        float y1 = cl * p.y - sl * p.z;
+        float z1 = sl * p.y + cl * p.z;
+        float yaw = iPose.z + wave * 0.16;
+        float cy = cos(yaw);
+        float sy = sin(yaw);
+        float x2 = cy * p.x + sy * z1;
+        float z2 = -sy * p.x + cy * z1;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(x2 + iPose.x, y1, z2 + iPose.y, 1.0);
       }
     `
 }

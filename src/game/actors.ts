@@ -52,6 +52,7 @@ export interface SelaFrame {
   viewW: number
   viewH: number
   hold?: string | null
+  sparse?: boolean
 }
 
 const dark = new Color('#1B2A2E')
@@ -183,6 +184,7 @@ outgoingLight += vec3(1.0, 0.82, 0.55) * fres * 0.16;
   root.name = 'sela'
   root.add(createMarker(), visual)
   let current: ClipName = 'idle'
+  let mixAcc = 0
   const focus: SelaFocus = { x: 0, y: 0, h: 0, meters: authored }
 
   function play(name: ClipName, loop: typeof LoopOnce | typeof LoopRepeat, restart: boolean) {
@@ -216,7 +218,15 @@ outgoingLight += vec3(1.0, 0.82, 0.55) * fres * 0.16;
     pose(frame) {
       const display = frame.aspect < 1 ? 1.5 : 1.25
       visual.scale.setScalar(display)
-      if (frame.dt > 0) mixer.update(frame.dt)
+      if (frame.dt > 0) {
+        if (frame.sparse) {
+          mixAcc += frame.dt
+          if (mixAcc >= 1 / 30) {
+            mixer.update(mixAcc)
+            mixAcc = 0
+          }
+        } else mixer.update(frame.dt)
+      }
       if (rootBone) {
         rootBone.position.x = 0
         rootBone.position.z = 0

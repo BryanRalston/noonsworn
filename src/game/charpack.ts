@@ -96,6 +96,7 @@ function mergeEnemy(root: Object3D, body: string, eyes: string, glow: string, le
   if (!merged) throw new Error(`merge failed for ${body}`)
   // Assets face +Z. The horde yaws a local −Z front (yawFromDirection).
   merged.rotateY(Math.PI)
+  if (legs) merged.scale(1.3, 1.3, 1.3)
   merged.computeBoundingSphere()
   return merged
 }

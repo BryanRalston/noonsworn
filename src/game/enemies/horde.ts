@@ -10,7 +10,7 @@ import { yawFromDirection } from '../../core/math'
 import { resolveCircle } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
-import { createEnemyMaterial, enemyTime, makeCrowd, writeInstance } from '../../render/instancing'
+import { createEnemyMaterial, makeCrowd } from '../../render/instancing'
 
 const MAX = TUNING.hordeCap
 const CHASE = 1
@@ -22,16 +22,16 @@ const DYING = 6
 const QUERY = new Int16Array(48)
 
 function attrs(mesh: InstancedMesh) {
+  const pose = new InstancedBufferAttribute(new Float32Array(MAX * 4), 4)
   const flash = new InstancedBufferAttribute(new Float32Array(MAX), 1)
   const lit = new InstancedBufferAttribute(new Float32Array(MAX), 1)
-  const phase = new InstancedBufferAttribute(new Float32Array(MAX), 1)
+  pose.setUsage(DynamicDrawUsage)
   flash.setUsage(DynamicDrawUsage)
   lit.setUsage(DynamicDrawUsage)
-  phase.setUsage(DynamicDrawUsage)
+  mesh.geometry.setAttribute('iPose', pose)
   mesh.geometry.setAttribute('iFlash', flash)
   mesh.geometry.setAttribute('iLit', lit)
-  mesh.geometry.setAttribute('iPhase', phase)
-  return { flash, lit, phase }
+  return { pose, flash, lit }
 }
 
 export interface Horde {
@@ -121,6 +121,8 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
   const houndMesh = makeCrowd(houndGeo, material, MAX)
   const miteA = attrs(miteMesh)
   const houndA = attrs(houndMesh)
+  const miteTris = triCount(miteGeo)
+  const houndTris = triCount(houndGeo)
   function occupy(i: number, kind: 0 | 1, sx: number, sz: number, isBench: boolean) {
     const spec = kind === 0 ? TUNING.mite : TUNING.hound
     x[i] = sx
@@ -248,8 +250,8 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
     onExpose: null,
     telegraphs,
     tris: {
-      mite: triCount(miteGeo),
-      hound: triCount(houndGeo),
+      mite: miteTris,
+      hound: houndTris,
     },
     radial(cx, cz, radius, amount, hitCtx) {
       if (horde.frozen) return
@@ -483,7 +485,6 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
       let mites = 0
       let hounds = 0
       telegraphs.length = 0
-      const now = enemyTime().value
       let miteFlash = false
       let miteLit = false
       let houndFlash = false
@@ -492,15 +493,14 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         if (!alive[i]) continue
         const s = Math.max(0.001, scale[i] ?? 1)
         const moving = state[i] === CHASE || state[i] === LUNGE ? 1 : 0
-        const wave = Math.sin(now * 8 + (phase[i] ?? 0)) * (0.35 + 0.65 * moving)
-        const bob = wave * 0.045
-        const squash = 1 + wave * 0.07
-        const lean = wave * 0.1
-        const spin = (yaw[i] ?? 0) + wave * 0.16
+        const crouch = type[i] === 1 && state[i] === TELE ? 1 : 0
+        const ph = phase[i] ?? 0
+        const pack = ph + moving * 8 + crouch * 16 + Math.round(Math.min(1, s) * 32) * 32
         const hot = (flash[i] ?? 0) > 0 ? 1 : 0
         const litNow = lit[i] ?? 0
+        const yawNow = yaw[i] ?? 0
         if (type[i] === 0) {
-          writeInstance(miteMesh, mites, x[i] ?? 0, bob, z[i] ?? 0, spin, s, s * squash, lean)
+          miteA.pose.setXYZW(mites, x[i] ?? 0, z[i] ?? 0, yawNow, pack)
           if (miteA.flash.getX(mites) !== hot) {
             miteA.flash.setX(mites, hot)
             miteFlash = true
@@ -511,9 +511,7 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
           }
           mites++
         } else {
-          const crouch = state[i] === TELE ? 0.62 : 1
-          const hs = s * 1.3
-          writeInstance(houndMesh, hounds, x[i] ?? 0, bob, z[i] ?? 0, spin, hs, hs * crouch * squash, lean)
+          houndA.pose.setXYZW(hounds, x[i] ?? 0, z[i] ?? 0, yawNow, pack)
           if (houndA.flash.getX(hounds) !== hot) {
             houndA.flash.setX(hounds, hot)
             houndFlash = true
@@ -522,7 +520,7 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
             houndA.lit.setX(hounds, litNow)
             houndLit = true
           }
-          if (state[i] === TELE) telegraphs.push({ x: x[i] ?? 0, z: z[i] ?? 0, yaw: yaw[i] ?? 0 })
+          if (state[i] === TELE) telegraphs.push({ x: x[i] ?? 0, z: z[i] ?? 0, yaw: yawNow })
           hounds++
         }
       }
@@ -536,13 +534,17 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
 function finish(
   mesh: InstancedMesh,
   count: number,
-  a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute },
+  a: { pose: InstancedBufferAttribute; flash: InstancedBufferAttribute; lit: InstancedBufferAttribute },
   flashDirty: boolean,
   litDirty: boolean,
 ) {
   mesh.count = count
   mesh.visible = count > 0
-  if (count > 0) mesh.instanceMatrix.needsUpdate = true
+  if (count > 0) {
+    a.pose.clearUpdateRanges()
+    a.pose.addUpdateRange(0, count * 4)
+    a.pose.needsUpdate = true
+  }
   if (count > 0 && flashDirty) a.flash.needsUpdate = true
   if (count > 0 && litDirty) a.lit.needsUpdate = true
 }
