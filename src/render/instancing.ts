@@ -1,13 +1,11 @@
 import {
   BufferGeometry,
   DynamicDrawUsage,
-  GLBufferAttribute,
   InstancedMesh,
   MeshToonMaterial,
   Object3D,
   ShaderMaterial,
   type Material,
-  type WebGLRenderer,
 } from 'three'
 
 const dummy = new Object3D()
@@ -82,58 +80,6 @@ export function makeCrowd(geo: BufferGeometry, material: Material, capacity: num
   mesh.frustumCulled = false
   mesh.instanceMatrix.setUsage(DynamicDrawUsage)
   return mesh
-}
-
-export function writeInstanceArray(
-  out: Float32Array,
-  index: number,
-  x: number,
-  y: number,
-  z: number,
-  yaw: number,
-  sx: number,
-  sy: number,
-  lean = 0,
-) {
-  const o = index * 16
-  const a = Math.cos(lean)
-  const b = Math.sin(lean)
-  const c = Math.cos(yaw)
-  const d = Math.sin(yaw)
-  out[o] = c * sx
-  out[o + 1] = b * d * sx
-  out[o + 2] = -a * d * sx
-  out[o + 3] = 0
-  out[o + 4] = 0
-  out[o + 5] = a * sy
-  out[o + 6] = b * sy
-  out[o + 7] = 0
-  out[o + 8] = d * sx
-  out[o + 9] = -b * c * sx
-  out[o + 10] = a * c * sx
-  out[o + 11] = 0
-  out[o + 12] = x
-  out[o + 13] = y
-  out[o + 14] = z
-  out[o + 15] = 1
-}
-
-/** Replace the buffer store each frame so ANGLE does not stall on the previous draw. */
-export function orphanMatrices(mesh: InstancedMesh, cpu: Float32Array) {
-  const box: { buf?: WebGLBuffer } = {}
-  mesh.onBeforeRender = (renderer: WebGLRenderer) => {
-    const gl = renderer.getContext()
-    if (!box.buf) {
-      const buf = gl.createBuffer()
-      if (!buf) return
-      box.buf = buf
-      const attr = new GLBufferAttribute(buf, gl.FLOAT, 16, 4, cpu.length / 16)
-      Object.assign(attr, { isInstancedBufferAttribute: true, meshPerAttribute: 1 })
-      mesh.instanceMatrix = attr as unknown as typeof mesh.instanceMatrix
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, box.buf)
-    gl.bufferData(gl.ARRAY_BUFFER, cpu, gl.DYNAMIC_DRAW)
-  }
 }
 
 export function writeInstance(

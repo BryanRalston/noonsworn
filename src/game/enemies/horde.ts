@@ -10,7 +10,7 @@ import { yawFromDirection } from '../../core/math'
 import { resolveCircle } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
-import { createEnemyMaterial, enemyTime, makeCrowd, orphanMatrices, writeInstanceArray } from '../../render/instancing'
+import { createEnemyMaterial, enemyTime, makeCrowd, writeInstance } from '../../render/instancing'
 
 const MAX = TUNING.hordeCap
 const CHASE = 1
@@ -121,10 +121,6 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
   const houndMesh = makeCrowd(houndGeo, material, MAX)
   const miteA = attrs(miteMesh)
   const houndA = attrs(houndMesh)
-  const miteCpu = new Float32Array(MAX * 16)
-  const houndCpu = new Float32Array(MAX * 16)
-  orphanMatrices(miteMesh, miteCpu)
-  orphanMatrices(houndMesh, houndCpu)
   function occupy(i: number, kind: 0 | 1, sx: number, sz: number, isBench: boolean) {
     const spec = kind === 0 ? TUNING.mite : TUNING.hound
     x[i] = sx
@@ -504,7 +500,7 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         const hot = (flash[i] ?? 0) > 0 ? 1 : 0
         const litNow = lit[i] ?? 0
         if (type[i] === 0) {
-          writeInstanceArray(miteCpu, mites, x[i] ?? 0, bob, z[i] ?? 0, spin, s, s * squash, lean)
+          writeInstance(miteMesh, mites, x[i] ?? 0, bob, z[i] ?? 0, spin, s, s * squash, lean)
           if (miteA.flash.getX(mites) !== hot) {
             miteA.flash.setX(mites, hot)
             miteFlash = true
@@ -517,7 +513,7 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         } else {
           const crouch = state[i] === TELE ? 0.62 : 1
           const hs = s * 1.3
-          writeInstanceArray(houndCpu, hounds, x[i] ?? 0, bob, z[i] ?? 0, spin, hs, hs * crouch * squash, lean)
+          writeInstance(houndMesh, hounds, x[i] ?? 0, bob, z[i] ?? 0, spin, hs, hs * crouch * squash, lean)
           if (houndA.flash.getX(hounds) !== hot) {
             houndA.flash.setX(hounds, hot)
             houndFlash = true
@@ -546,6 +542,7 @@ function finish(
 ) {
   mesh.count = count
   mesh.visible = count > 0
+  if (count > 0) mesh.instanceMatrix.needsUpdate = true
   if (count > 0 && flashDirty) a.flash.needsUpdate = true
   if (count > 0 && litDirty) a.lit.needsUpdate = true
 }
