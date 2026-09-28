@@ -10,7 +10,7 @@ import { yawFromDirection } from '../../core/math'
 import { resolveCircle } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
-import { createEnemyMaterial, enemyTime, makeCrowd, writeInstance } from '../../render/instancing'
+import { createEnemyMaterial, enemyTime, makeCrowd, orphanMatrices, writeInstanceArray } from '../../render/instancing'
 
 const MAX = TUNING.hordeCap
 const CHASE = 1
@@ -121,6 +121,10 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
   const houndMesh = makeCrowd(houndGeo, material, MAX)
   const miteA = attrs(miteMesh)
   const houndA = attrs(houndMesh)
+  const miteCpu = new Float32Array(MAX * 16)
+  const houndCpu = new Float32Array(MAX * 16)
+  orphanMatrices(miteMesh, miteCpu)
+  orphanMatrices(houndMesh, houndCpu)
   function occupy(i: number, kind: 0 | 1, sx: number, sz: number, isBench: boolean) {
     const spec = kind === 0 ? TUNING.mite : TUNING.hound
     x[i] = sx
@@ -479,11 +483,15 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
     face(angle) {
       for (let i = 0; i < MAX; i++) if (alive[i]) yaw[i] = angle
     },
-    sync(camX, camZ, high) {
+    sync(_camX, _camZ, _high) {
       let mites = 0
       let hounds = 0
       telegraphs.length = 0
       const now = enemyTime().value
+      let miteFlash = false
+      let miteLit = false
+      let houndFlash = false
+      let houndLit = false
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
         const s = Math.max(0.001, scale[i] ?? 1)
@@ -493,43 +501,51 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         const squash = 1 + wave * 0.07
         const lean = wave * 0.1
         const spin = (yaw[i] ?? 0) + wave * 0.16
-        const dx = (x[i] ?? 0) - camX
-        const dz = (z[i] ?? 0) - camZ
-        const leg = high && dx * dx + dz * dz < 625 ? 0.08 : 0
         const hot = (flash[i] ?? 0) > 0 ? 1 : 0
         const litNow = lit[i] ?? 0
-        const ph = phase[i] ?? 0
         if (type[i] === 0) {
-          writeInstance(miteMesh, mites, x[i] ?? 0, bob, z[i] ?? 0, spin, s, s * squash, lean)
-          miteA.flash.setX(mites, hot)
-          miteA.lit.setX(mites, litNow)
-          miteA.phase.setX(mites, leg > 0 ? ph + 10 : 0)
+          writeInstanceArray(miteCpu, mites, x[i] ?? 0, bob, z[i] ?? 0, spin, s, s * squash, lean)
+          if (miteA.flash.getX(mites) !== hot) {
+            miteA.flash.setX(mites, hot)
+            miteFlash = true
+          }
+          if (miteA.lit.getX(mites) !== litNow) {
+            miteA.lit.setX(mites, litNow)
+            miteLit = true
+          }
           mites++
         } else {
           const crouch = state[i] === TELE ? 0.62 : 1
           const hs = s * 1.3
-          writeInstance(houndMesh, hounds, x[i] ?? 0, bob, z[i] ?? 0, spin, hs, hs * crouch * squash, lean)
-          houndA.flash.setX(hounds, hot)
-          houndA.lit.setX(hounds, litNow)
-          houndA.phase.setX(hounds, leg > 0 ? ph + 10 : 0)
+          writeInstanceArray(houndCpu, hounds, x[i] ?? 0, bob, z[i] ?? 0, spin, hs, hs * crouch * squash, lean)
+          if (houndA.flash.getX(hounds) !== hot) {
+            houndA.flash.setX(hounds, hot)
+            houndFlash = true
+          }
+          if (houndA.lit.getX(hounds) !== litNow) {
+            houndA.lit.setX(hounds, litNow)
+            houndLit = true
+          }
           if (state[i] === TELE) telegraphs.push({ x: x[i] ?? 0, z: z[i] ?? 0, yaw: yaw[i] ?? 0 })
           hounds++
         }
       }
-      finish(miteMesh, mites, miteA)
-      finish(houndMesh, hounds, houndA)
+      finish(miteMesh, mites, miteA, miteFlash, miteLit)
+      finish(houndMesh, hounds, houndA, houndFlash, houndLit)
     },
   }
   return horde
 }
 
-function finish(mesh: InstancedMesh, count: number, a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute; phase: InstancedBufferAttribute }) {
+function finish(
+  mesh: InstancedMesh,
+  count: number,
+  a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute },
+  flashDirty: boolean,
+  litDirty: boolean,
+) {
   mesh.count = count
   mesh.visible = count > 0
-  if (count > 0) {
-    mesh.instanceMatrix.needsUpdate = true
-    a.flash.needsUpdate = true
-    a.lit.needsUpdate = true
-    a.phase.needsUpdate = true
-  }
+  if (count > 0 && flashDirty) a.flash.needsUpdate = true
+  if (count > 0 && litDirty) a.lit.needsUpdate = true
 }
