@@ -146,7 +146,6 @@ outgoingLight += vec3(1.0, 0.82, 0.55) * fres * 0.16;
     )
   }
   const matNote = `before ${beforeNote}; after metalness 0 roughness 0.75 colorSpace ${bodyMat.map?.colorSpace ?? 'none'} emissive map off fresnel 0.16`
-  console.info('sela material', matNote)
   const haloMesh = halo
   if ((haloMesh as Mesh).isMesh) {
     const mat = (haloMesh as Mesh).material as MeshStandardMaterial
