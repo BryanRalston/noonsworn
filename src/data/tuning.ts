@@ -154,7 +154,7 @@ export const TUNING = {
     levelOrbit: 0.4,
     reachPad: 0.55,
   },
-  xp: { fly: 12, collect: 0.45, base: 5, lin: 6, quad: 0.9, merge: 3, early1: 3, early2: 9, early3: 14 },
+  xp: { fly: 12, collect: 0.45, base: 5, lin: 6, quad: 0.9, merge: 3, early1: 30, early2: 12, early3: 18, early4: 56, early5: 75 },
   touch: { stick: 60, deadzone: 0.12, cut: 96, left: 0.6, flickPx: 40, flickMs: 180, recenter: 1.5 },
   designCap: 240,
   openSeconds: 30,

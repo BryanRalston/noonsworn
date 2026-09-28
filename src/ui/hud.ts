@@ -8,7 +8,10 @@ export interface Hud {
   setXp: (xp: number, next: number, level: number) => void
   setKills: (kills: number) => void
   setCooldown: (ready: number) => void
+  setCharges: (n: number) => void
+  pulse: () => void
   onPause: (() => void) | null
+  onHalo: (() => void) | null
 }
 
 export function createHud(parent: HTMLElement): Hud {
@@ -21,7 +24,8 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hp-wrap"><div class="hp-bar"><div id="hp-fill"></div><span id="hp-num">100</span></div></div>
     <svg id="hud-ring" viewBox="0 0 36 36" class="ring" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"></circle><circle id="hud-ring-fg" cx="18" cy="18" r="15" class="ring-fg"></circle></svg>
     <div id="kills">0</div>
-    <button type="button" id="btn-pause" aria-label="Pause">II</button>`
+    <button type="button" id="btn-pause" aria-label="Pause">II</button>
+    <button type="button" id="btn-halo" aria-label="Power-up"><span id="halo-count">0</span></button>`
   parent.append(root)
   const hpFill = root.querySelector('#hp-fill') as HTMLElement
   const hpNum = root.querySelector('#hp-num') as HTMLElement
@@ -30,17 +34,22 @@ export function createHud(parent: HTMLElement): Hud {
   const kills = root.querySelector('#kills') as HTMLElement
   const ring = root.querySelector('#hud-ring-fg') as SVGCircleElement
   const ringSvg = root.querySelector('#hud-ring') as SVGElement
+  const haloBtn = root.querySelector('#btn-halo') as HTMLButtonElement
+  const haloCount = root.querySelector('#halo-count') as HTMLElement
   ring.style.strokeDasharray = `${RING}`
   let touch = false
+  let charges = -1
   const hud: Hud = {
     root,
     onPause: null,
+    onHalo: null,
     setVisible(on) {
       root.hidden = !on
     },
     setTouchMode(on) {
       touch = on
       ringSvg.style.visibility = on ? 'hidden' : 'visible'
+      root.classList.toggle('touch', on)
     },
     setHp(hp, max) {
       const pct = max > 0 ? (Math.max(0, hp) / max) * 100 : 0
@@ -61,7 +70,20 @@ export function createHud(parent: HTMLElement): Hud {
       const t = ready < 0 ? 0 : ready > 1 ? 1 : ready
       ring.style.strokeDashoffset = `${RING * (1 - t)}`
     },
+    setCharges(n) {
+      if (n === charges) return
+      charges = n
+      haloCount.textContent = `${n}`
+      haloBtn.classList.toggle('ready', n > 0)
+    },
+    pulse() {
+      haloBtn.classList.remove('glow')
+      void haloBtn.offsetWidth
+      haloBtn.classList.add('glow')
+    },
   }
   root.querySelector('#btn-pause')?.addEventListener('click', () => hud.onPause?.())
+  haloBtn.addEventListener('click', () => hud.onHalo?.())
+  haloBtn.addEventListener('animationend', () => haloBtn.classList.remove('glow'))
   return hud
 }

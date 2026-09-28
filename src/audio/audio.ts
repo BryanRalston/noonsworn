@@ -34,6 +34,7 @@ export interface AudioBus {
   cut: () => void
   xp: (step: number) => void
   level: () => void
+  chime: () => void
   hurt: () => void
   shimmer: () => void
   ui: () => void
@@ -371,6 +372,10 @@ export function createAudio(fxRng: () => number): AudioBus {
       duck()
       one(bells, 0.45, 'level')
       one(['level_jingle'], 0.4, null)
+    },
+    chime() {
+      mark('level')
+      one(['level_jingle'], 0.42, 'level')
     },
     hurt() {
       mark('hurt')

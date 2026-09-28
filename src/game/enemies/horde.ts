@@ -60,6 +60,7 @@ export interface Horde {
   frozen: boolean
   tris: { mite: number; hound: number }
   telegraphs: { x: number; z: number; yaw: number }[]
+  onSpawn: ((kind: 0 | 1) => void) | null
 }
 
 export interface HordeCtx {
@@ -207,12 +208,14 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         }
         if (best < 0) return -1
         occupy(best, kind, sx, sz, false)
+        if (!isBench) horde.onSpawn?.(kind)
         return best
       }
       if (!isBench && limit != null && horde.count() >= limit) return relocate()
       const slot = free.acquire()
       if (slot < 0) return relocate()
       occupy(slot, kind, sx, sz, isBench)
+      if (!isBench) horde.onSpawn?.(kind)
       return slot
     },
     frozen: false,
@@ -248,6 +251,7 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
     },
     onHit: null,
     onExpose: null,
+    onSpawn: null,
     telegraphs,
     tris: {
       mite: miteTris,

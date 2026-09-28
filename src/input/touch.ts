@@ -98,7 +98,7 @@ export function createTouch(view: TouchView, basis: () => Basis) {
   window.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch') return
     const target = e.target
-    if (target instanceof Element && target.closest('#ui button, #feature-map, #debug, #level-up')) return
+    if (target instanceof Element && target.closest('#ui button, #feature-map, #debug, #level-up, #screens, #jit, #coach')) return
     api.activity = true
     view.show()
     view.layout()

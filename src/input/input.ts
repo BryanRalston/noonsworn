@@ -1,5 +1,6 @@
 import type { Camera } from 'three'
 import type { TouchView } from '../ui/touchControls'
+import { createGamepad } from './gamepad'
 import { createKeyboard } from './keyboard'
 import { createMouse } from './mouse'
 import { createTouch, type Basis } from './touch'
@@ -19,24 +20,40 @@ export interface InputState {
   pick: number
   mouseIdle: boolean
   usingTouch: boolean
+  claimPressed: boolean
+  confirmPressed: boolean
+  cancelPressed: boolean
+  navX: number
+  navY: number
+  anyPressed: boolean
+  keyPressed: boolean
 }
 
 export function createInput(canvas: HTMLCanvasElement, touch: TouchView, basis: () => Basis) {
   const keys = createKeyboard()
   const mouse = createMouse(canvas)
   const pad = createTouch(touch, basis)
-  let device: 'keyboard' | 'mouse' | 'touch' = 'keyboard'
+  const gamepad = createGamepad()
+  let device: 'keyboard' | 'mouse' | 'touch' | 'pad' = 'keyboard'
   return {
     device: () => device,
+    setNavLock(on: boolean) {
+      keys.navLock = on
+    },
     clearCut() {
       keys.clearCut()
       mouse.clearCut()
       pad.clearCut()
     },
     readInto(out: InputState, camera: Camera) {
-      if (keys.activity) device = 'keyboard'
-      if (mouse.activity) device = 'mouse'
-      if (pad.activity) device = 'touch'
+      const gp = gamepad.poll()
+      const keyActive = keys.activity
+      const mouseActive = mouse.activity
+      const touchActive = pad.activity
+      if (keyActive) device = 'keyboard'
+      if (mouseActive) device = 'mouse'
+      if (touchActive) device = 'touch'
+      if (gp.activity) device = 'pad'
       keys.activity = false
       mouse.activity = false
       pad.activity = false
@@ -45,8 +62,8 @@ export function createInput(canvas: HTMLCanvasElement, touch: TouchView, basis: 
       pad.consume()
       const key = keys.axes()
       const stick = pad.stick()
-      let mx = key.x + stick.x
-      let my = key.y + stick.y
+      let mx = key.x + stick.x + gp.stickX
+      let my = key.y + stick.y + gp.stickY
       const mag = Math.hypot(mx, my)
       if (mag > 1) {
         mx /= mag
@@ -57,7 +74,7 @@ export function createInput(canvas: HTMLCanvasElement, touch: TouchView, basis: 
       out.moveY = my
       out.aimX = aim ? aim.x : null
       out.aimZ = aim ? aim.z : null
-      out.cutPressed = keys.cut || mouse.cut || pad.cut
+      out.cutPressed = keys.cut || mouse.cut || pad.cut || gp.a
       out.cutDirX = pad.flickX
       out.cutDirZ = pad.flickZ
       out.pausePressed = keys.pause
@@ -67,6 +84,13 @@ export function createInput(canvas: HTMLCanvasElement, touch: TouchView, basis: 
       out.pick = keys.pick
       out.mouseIdle = mouse.idle()
       out.usingTouch = device === 'touch'
+      out.claimPressed = keys.claim || gp.lb
+      out.confirmPressed = keys.confirm || gp.a
+      out.cancelPressed = gp.b
+      out.navX = keys.navX !== 0 ? keys.navX : gp.navX
+      out.navY = keys.navY !== 0 ? keys.navY : gp.navY
+      out.anyPressed = keyActive || mouseActive || touchActive || gp.any || gp.a || gp.b || gp.lb || gp.navX !== 0 || gp.navY !== 0
+      out.keyPressed = keyActive
     },
   }
 }

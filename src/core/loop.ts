@@ -3,7 +3,8 @@ import { TUNING } from '../data/tuning'
 const STEP = 1 / TUNING.simHz
 
 export interface LoopHost {
-  beginFrame: (frameSec: number) => boolean
+  /** `false` skips the sim. A number is the time scale applied to this frame. */
+  beginFrame: (frameSec: number) => false | number
   step: (dt: number, first: boolean) => boolean
   render: (alpha: number, frameSec: number, frameMs: number) => void
 }
@@ -18,12 +19,13 @@ export function startLoop(host: LoopHost) {
     if (frameSec < 0) frameSec = 0
     if (frameSec > 0.1) frameSec = 0.1
     const frameMs = frameSec * 1000
-    if (!host.beginFrame(frameSec)) {
+    const scale = host.beginFrame(frameSec)
+    if (scale === false) {
       acc = 0
       host.render(1, frameSec, frameMs)
       return
     }
-    acc += frameSec
+    acc += frameSec * scale
     let steps = 0
     let first = true
     while (acc >= STEP && steps < TUNING.maxSteps) {

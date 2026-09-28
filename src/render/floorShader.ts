@@ -29,6 +29,7 @@ uniform float uFogNear;
 uniform float uFogFar;
 uniform sampler2D uAlbedo;
 uniform float uTexMix;
+uniform float uEdgeBoost;
 
 float clearance(vec2 s, vec2 p, vec2 c, float r) {
   vec2 d = p - s;
@@ -59,7 +60,7 @@ void main() {
   vec3 col = mix(shadeCol, litCol, clamp(cone, 0.0, 1.0));
   col = mix(shCol, col, clamp(shadow, 0.0, 1.0));
   float edge = smoothstep(4.2, 0.0, abs((cosAng - uCosBeta) * max(dist, 0.35)));
-  col += uGold * edge * clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * 0.22;
+  col += uGold * edge * clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * (0.22 + uEdgeBoost);
   vec3 albedo = texture(uAlbedo, p * 0.08).rgb;
   col = mix(col, col * albedo, uTexMix);
   col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));
@@ -87,6 +88,7 @@ export interface FloorUniforms {
   uFogFar: { value: number }
   uAlbedo: { value: Texture }
   uTexMix: { value: number }
+  uEdgeBoost: { value: number }
 }
 
 function whiteTex(): DataTexture {
@@ -123,6 +125,7 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
     uFogFar: { value: TUNING.camera.distance + TUNING.arena.fogSpan },
     uAlbedo: { value: whiteTex() },
     uTexMix: { value: 0 },
+    uEdgeBoost: { value: 0 },
   }
   const material = new ShaderMaterial({
     uniforms: uniforms as unknown as ShaderMaterial['uniforms'],

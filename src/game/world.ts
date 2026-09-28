@@ -26,14 +26,16 @@ import { createDebugOverlay, frameSummary, pushFrameSample } from '../ui/debugOv
 import { createFeatureMap } from '../ui/featureMap'
 import { createHud } from '../ui/hud'
 import { createLevelUp } from '../ui/levelUp'
-import { createScreens, type ScreenMode } from '../ui/screens'
+import { autopickEnabled, createScreens, tipsEnabled, type ScreenMode } from '../ui/screens'
+import { createTips } from '../ui/tips'
+import { createTutorial } from '../ui/tutorial'
 import { createSundial } from '../ui/sundialHud'
 import { createFloats } from '../ui/floats'
 import { createAudio } from '../audio/audio'
 import { loadArt } from '../render/art'
 import { createBloom } from '../render/bloom'
 import { toonMap } from '../render/toon'
-import { storageGet, storageSet } from '../platform/storage'
+import { storageGet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
 import { loadCast } from './charpack'
@@ -42,7 +44,7 @@ import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector } from './director'
 import { createHorde, type HordeCtx } from './enemies/horde'
-import { CARD, createBuild, describe, grantXp, rollCards, xpToNext, type Build, type Card } from './leveling'
+import { CARD, cardStep, createBuild, describe, grantXp, isSunBoon, noteJump, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
 import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
@@ -67,6 +69,13 @@ function blankInput(): InputState {
     pick: -1,
     mouseIdle: true,
     usingTouch: false,
+    claimPressed: false,
+    confirmPressed: false,
+    cancelPressed: false,
+    navX: 0,
+    navY: 0,
+    anyPressed: false,
+    keyPressed: false,
   }
 }
 
@@ -108,6 +117,8 @@ export async function boot(container: HTMLElement) {
     document.documentElement.dataset.ads = 'noop'
   }
   const quality = createQuality()
+  const savedPref = storageGet('noonsworn.quality.pref')
+  if (!params.get('tier') && (savedPref === 'low' || savedPref === 'med' || savedPref === 'high')) quality.forceTier(savedPref)
   const canvas = document.createElement('canvas')
   canvas.id = 'game'
   container.append(canvas)
@@ -131,6 +142,8 @@ export async function boot(container: HTMLElement) {
   const hud = createHud(ui)
   const sundial = createSundial(ui)
   const levelUp = createLevelUp(ui)
+  const tips = createTips(ui)
+  tips.setEnabled(tipsEnabled())
   const featureMap = createFeatureMap(() => ({ version: __VERSION__, sha: __SHA__, tier: quality.tier }))
   ui.append(featureMap.root)
   const debug = createDebugOverlay(ui)
@@ -215,7 +228,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   try {
     cast = await loadCast()
   } catch (err) {
-    console.error(err)
+    if (import.meta.env.DEV) console.error(err)
     container.replaceChildren()
     const msg = document.createElement('p')
     msg.textContent = 'Character assets failed to load.'
@@ -229,6 +242,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const shards = createShards()
   const bloom = createBloom()
   gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
+  const tutorial = createTutorial(ui, gpu.scene)
+  tutorial.setEnabled(tipsEnabled())
 
   const sun = createSunClock()
   const horde = createHorde(cast.mite, cast.hound)
@@ -243,7 +258,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const cut = createCut()
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
-  let mode: ScreenMode = 'title'
+  let mode: ScreenMode = 'splash'
   let endAt = 0
   let xpWindow = 0
   let xpWindowT = 0
@@ -258,7 +273,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let queuedCut = false
   const frame = blankInput()
   const held = blankInput()
-  const shown: Card[] = [describe(build, CARD.heal), describe(build, CARD.heal), describe(build, CARD.heal)]
+  const shown: Card[] = [describe(build, CARD.heal), describe(build, CARD.heal), describe(build, CARD.heal), describe(build, CARD.heal)]
+  let offerCount = 3
   let debugClock = 0
   let stats = { calls: 0, triangles: 0, geometries: 0, textures: 0 }
   const audit =
@@ -358,9 +374,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
     onXp(x, z, value) {
       pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z)
+      tutorial.onShard()
     },
     onKill() {
       kills++
+      tutorial.onKill()
     },
     onEmber(x, z) {
       shards.burst(x, z, true)
@@ -421,8 +439,28 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     } else if (next === 'clear') {
       endAt = performance.now()
       audio.win()
-    }
+    } else if (next === 'menu' || next === 'splash') audio.stopMusic()
     if (next !== 'level') levelUp.hide()
+  }
+
+  function enemyLitNear(): boolean {
+    let found = false
+    horde.visit((ex, ez) => {
+      if (found) return
+      const dx = ex - player.x
+      const dz = ez - player.z
+      if (dx * dx + dz * dz > 36) return
+      if (sun.isLit(ex, ez)) found = true
+    })
+    return found
+  }
+
+  function noteOffer(count: number) {
+    if (!tipsEnabled()) return
+    for (let i = 0; i < count; i++) {
+      const card = shown[i]
+      if (card && isSunBoon(card.id)) tips.notify('boon')
+    }
   }
 
   function fillCtx(dt: number) {
@@ -439,42 +477,80 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   function openLevel() {
-    rollCards(build, rng, shown)
-    levelUp.show(shown)
-    audio.level()
-    buzz(30)
-    showMode('level')
-    ads.gameplayStop()
+    const sunlit = sun.isLit(player.x, player.z)
+    offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
+    noteOffer(offerCount)
+    levelUp.show(shown.slice(0, offerCount), sunlit)
+    buzz(18)
+    if (mode !== 'level') showMode('level')
+  }
+
+  function closeOffer() {
+    levelUp.hide()
+    if (mode === 'level') showMode('playing')
   }
 
   function applyCard(id: number) {
-    if (id === CARD.spear && build.spear < 5) build.spear++
-    else if (id === CARD.halo && build.halo < 5) build.halo++
-    else if (id === CARD.might && build.might < 5) build.might++
-    else if (id === CARD.haste && build.haste < 5) build.haste++
-    else if (id === CARD.swift && build.swift < 5) build.swift++
-    else if (id === CARD.lodestone && build.lodestone < 5) build.lodestone++
-    else if (id === CARD.vitality && build.vitality < 5) {
+    const step = cardStep(build, id)
+    const cap = TUNING.passive.max
+    if (id === CARD.spear && build.spear < cap) {
+      build.spear = Math.min(cap, build.spear + step)
+      noteJump(build, id, step)
+    } else if (id === CARD.halo && build.halo < cap) {
+      build.halo = Math.min(cap, build.halo + step)
+      noteJump(build, id, step)
+    } else if (id === CARD.flare && build.flare < cap) {
+      build.flare = Math.min(cap, build.flare + step)
+      noteJump(build, id, step)
+    } else if (id === CARD.bell && build.bell < cap) {
+      build.bell = Math.min(cap, build.bell + step)
+      noteJump(build, id, step)
+    } else if (id === CARD.might && build.might < cap) build.might++
+    else if (id === CARD.haste && build.haste < cap) build.haste++
+    else if (id === CARD.swift && build.swift < cap) build.swift++
+    else if (id === CARD.lodestone && build.lodestone < cap) build.lodestone++
+    else if (id === CARD.vitality && build.vitality < cap) {
       build.vitality++
       player.maxHp += TUNING.passive.vitalHp
       player.hp = Math.min(player.maxHp, player.hp + TUNING.passive.vitalHeal)
     } else if (id === CARD.wide && build.wide < TUNING.wideMax) {
       build.wide++
       sun.setWide(build.wide)
-    } else if (id === CARD.flare && build.flare < TUNING.passive.max) build.flare++
-    else if (id === CARD.bell && build.bell < TUNING.passive.max) build.bell++
-    else if (id === CARD.longday && build.longday < TUNING.passive.max) build.longday++
-    else if (id === CARD.searing && build.searing < TUNING.passive.max) build.searing++
+    } else if (id === CARD.longday && build.longday < cap) build.longday++
+    else if (id === CARD.searing && build.searing < cap) build.searing++
     else {
       player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
     }
     build.pending = Math.max(0, build.pending - 1)
+  }
+
+  function takeCard(index: number) {
+    if (mode !== 'level') return
+    audio.ui()
+    tutorial.onClaim()
+    applyCard(shown[index]?.id ?? CARD.heal)
+    hud.setCharges(build.pending)
     if (build.pending > 0) openLevel()
-    else {
-      levelUp.hide()
-      showMode('playing')
-      ads.gameplayStart()
+    else closeOffer()
+  }
+
+  function bankCharges() {
+    audio.chime()
+    hud.pulse()
+    hud.setCharges(build.pending)
+    tutorial.onCharge()
+    if (!autopickEnabled()) return
+    while (build.pending > 0) {
+      const sunlit = sun.isLit(player.x, player.z)
+      offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
+      noteOffer(offerCount)
+      const index = recommendIndex(build, shown, offerCount)
+      const card = shown[index]
+      showToast(card?.name ?? 'Upgrade', 2)
+      tutorial.onClaim()
+      applyCard(card?.id ?? CARD.heal)
     }
+    hud.setCharges(build.pending)
   }
 
   function spawnBench() {
@@ -488,11 +564,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
 
   horde.onHit = ctx.onHit
   horde.onExpose = ctx.onExpose
+  horde.onSpawn = (kind) => {
+    if (kind === 1) tips.notify('hound')
+  }
 
-  function showToast(text: string) {
+  function showToast(text: string, seconds = 3.2) {
     toast.textContent = text
     toast.hidden = false
-    toastTimer = 3.2
+    toastTimer = seconds
   }
 
   function startRun() {
@@ -518,14 +597,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     flareCd = 6
     bellCd = 10
     audio.startMusic()
-    const seen = Number(storageGet('noonsworn.runs') ?? '0')
-    if (seen < 2) {
-      showToast(seen === 0 ? 'Fight in the SUN — enemies take ×2' : 'Space / Cut button to dash-slash')
-      storageSet('noonsworn.runs', String(seen + 1))
-    }
+    hud.setCharges(0)
     levelUp.hide()
     featureMap.close()
     showMode('playing')
+    tutorial.begin(!previewWeapon && !turnWho && tipsEnabled())
     ads.gameplayStart()
     swallow = true
     if (previewWeapon) armPreview()
@@ -654,6 +730,34 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     }
   }
   screens.onFeature = () => featureMap.toggle()
+  screens.onQuit = () => {
+    featureMap.close()
+    showMode('menu')
+    ads.gameplayStop()
+  }
+  screens.onScreen = (next) => showMode(next)
+  screens.onHover = () => audio.ui()
+  screens.onQuality = (value) => {
+    if (value === 'auto') quality.autoDrop = true
+    else quality.forceTier(value)
+  }
+  screens.onTips = (on) => {
+    tips.setEnabled(on)
+    tutorial.setEnabled(on)
+    if (on && mode === 'playing') tutorial.begin(true)
+  }
+  screens.onResetTutorial = () => {
+    tutorial.reset()
+    if (mode === 'playing' && tipsEnabled()) tutorial.begin(true)
+  }
+  if (!params.get('tier')) {
+    const pref = storageGet('noonsworn.quality.pref')
+    if (pref === 'auto' || pref === 'low' || pref === 'med' || pref === 'high') screens.setQuality(pref)
+  }
+  hud.onHalo = () => {
+    audio.ui()
+    if (mode === 'playing' && build.pending > 0) openLevel()
+  }
   function applyStoredAudio() {
     audio.setMuted(document.hidden || storageGet('noonsworn.mute') === '1')
     audio.setMusic(Number(storageGet('noonsworn.music') ?? '45') / 100)
@@ -700,24 +804,26 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }, (slots) => {
     const base = import.meta.env.BASE_URL
     if (slots.cards) levelUp.arm(`${base}assets/art/${slots.cards}`)
-    const title = document.querySelector('#title-screen') as HTMLElement | null
-    if (title && slots.keyart) {
-      title.style.backgroundImage = `url(${base}assets/art/${slots.keyart})`
-      title.style.backgroundSize = 'cover'
-      title.style.backgroundPosition = 'center'
+    const artUrl = slots.keyart ? `url(${base}assets/art/${slots.keyart})` : ''
+    for (const id of ['#splash-screen', '#menu-screen']) {
+      const el = document.querySelector(id) as HTMLElement | null
+      if (el && artUrl) el.style.backgroundImage = artUrl
     }
-    const heading = document.querySelector('#title-screen h1')
-    if (heading && slots.logo) {
-      heading.textContent = ''
-      const img = document.createElement('img')
-      img.src = `${base}assets/art/${slots.logo}`
-      img.alt = 'NOONSWORN'
-      img.style.width = 'min(420px, 86vw)'
-      img.style.height = 'auto'
-      heading.append(img)
+    if (slots.logo) {
+      document.querySelectorAll('.logo-slot').forEach((heading) => {
+        heading.textContent = ''
+        const img = document.createElement('img')
+        img.src = `${base}assets/art/${slots.logo}`
+        img.alt = 'NOONSWORN'
+        heading.append(img)
+      })
     }
   }))
   if (params.get('debug') === '1') debug.open()
+  if (import.meta.env.DEV) {
+    const pace = window as unknown as { __pace?: () => { t: number; level: number; xp: number; next: number; pending: number } }
+    pace.__pace = () => ({ t: time, level: build.level, xp: build.xp, next: xpToNext(build.level), pending: build.pending, lit: sun.isLit(player.x, player.z) })
+  }
   if (previewWeapon) {
     const hook = window as unknown as {
       __ns?: () => {
@@ -780,20 +886,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     requestAnimationFrame(() => startRun())
   }
 
-  window.addEventListener('keydown', (e) => {
-    if (e.repeat || mode !== 'title') return
-    if (e.code === 'KeyM' || e.code === 'F3' || e.code === 'Backquote') return
-    audio.unlock()
-    audio.ui()
-    startRun()
-    input.clearCut()
-  })
   window.addEventListener('pointerdown', (e) => {
     const target = e.target
     if (!(target instanceof Element)) return
-    if (target.closest('button, label, input, #feature-map, #debug, #level-up')) return
+    if (mode === 'splash') {
+      audio.unlock()
+      audio.ui()
+      showMode('menu')
+      return
+    }
+    if (target.closest('button, label, input, select, #feature-map, #debug, #level-up, #screens')) return
     if ((mode === 'dead' || mode === 'clear') && performance.now() - endAt < 800) return
-    if (mode === 'title' || mode === 'dead' || mode === 'clear') {
+    if (mode === 'dead' || mode === 'clear') {
       audio.unlock()
       audio.ui()
       startRun()
@@ -804,6 +908,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   window.addEventListener('keydown', () => audio.unlock())
   document.addEventListener('visibilitychange', () => {
     audio.setMuted(document.hidden || storageGet('noonsworn.mute') === '1')
+    screens.setBeamPaused(document.hidden)
     if (document.hidden && mode === 'playing') {
       showMode('paused')
       ads.gameplayStop()
@@ -819,6 +924,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       profSpear = 0
       profHalo = 0
       follow.basis(basis)
+      const front = mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits' || mode === 'paused' || mode === 'dead' || mode === 'clear'
+      input.setNavLock(mode !== 'playing')
       input.readInto(frame, follow.camera)
       if (swallow) {
         frame.pausePressed = false
@@ -842,16 +949,41 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (frame.usingTouch) touchView.show()
       else touchView.hide()
       hud.setTouchMode(touchView.visible)
-      if (mode === 'level' && frame.pick >= 0) applyCard(shown[frame.pick]?.id ?? CARD.heal)
-      if ((mode === 'dead' || mode === 'clear') && frame.restartPressed) startRun()
-      if (frame.pausePressed) {
-        if (mode === 'playing') {
-          showMode('paused')
-          ads.gameplayStop()
-        } else if (mode === 'paused') {
+      if (mode === 'splash') {
+        if (frame.keyPressed || frame.confirmPressed || frame.claimPressed || frame.cutPressed || frame.pick >= 0 || frame.pausePressed || frame.navX !== 0 || frame.navY !== 0 || frame.cancelPressed || (input.device() === 'pad' && frame.anyPressed)) {
+          audio.unlock()
+          audio.ui()
+          showMode('menu')
+          input.clearCut()
+        }
+        return false
+      }
+      if (front) {
+        const ended = mode === 'dead' || mode === 'clear'
+        screens.navigate(frame.navX, frame.navY, frame.confirmPressed && !ended)
+        if (ended && frame.restartPressed) startRun()
+        if ((mode === 'howto' || mode === 'settings' || mode === 'credits') && (frame.pausePressed || frame.cancelPressed)) screens.back()
+        if (mode === 'paused' && (frame.pausePressed || frame.cancelPressed)) {
           showMode('playing')
           ads.gameplayStart()
         }
+        return false
+      }
+      if (mode === 'level') {
+        frame.cutPressed = false
+        queuedCut = false
+        if (frame.pausePressed || frame.cancelPressed) closeOffer()
+        else if (frame.pick >= 0 && frame.pick < offerCount) takeCard(frame.pick)
+        else {
+          if (frame.navX !== 0) levelUp.move(frame.navX)
+          if (frame.confirmPressed) levelUp.confirm()
+        }
+      } else if (frame.claimPressed && build.pending > 0) {
+        openLevel()
+      } else if (frame.pausePressed && mode === 'playing') {
+        showMode('paused')
+        ads.gameplayStop()
+        return false
       }
       if (hitStop > 0) {
         hitStop -= frameSec
@@ -862,7 +994,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         frame.cutPressed = true
         queuedCut = false
       }
-      return mode === 'playing'
+      if (mode === 'level') return 0.15
+      return mode === 'playing' ? 1 : false
     },
     step(dt, first) {
       sparkVis = 0
@@ -1018,6 +1151,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         mouseIdle: state.mouseIdle,
         usingTouch: state.usingTouch,
       }, build.haste)
+      if (cut.active) tutorial.onCut()
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
       if (previewShow) {
@@ -1120,6 +1254,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         xpStep = (xpStep + 1) % 8
         audio.xp(xpStep)
         grantXp(build, value)
+        tutorial.onCollect()
       })
       if (player.hp <= 0) {
         showMode('dead')
@@ -1133,10 +1268,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       if (build.pending > before) {
         if (previewWeapon) build.pending = before
-        else {
-          openLevel()
-          return false
-        }
+        else bankCharges()
       }
       if (previewWeapon && params.get('bench') === '1') {
         const want = Math.max(1, Math.min(400, Number(params.get('n') ?? '400') || 400))
@@ -1277,13 +1409,24 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         if (toastTimer <= 0) toast.hidden = true
       }
       floats.sync(follow.camera, canvas.clientWidth, canvas.clientHeight, frameSec)
+      if (!previewWeapon && !turnWho) {
+        tutorial.update(frameSec, player.x, player.z, follow.camera, canvas.clientWidth, canvas.clientHeight, {
+          moving: Math.hypot(frame.moveX, frame.moveY) > 0.2,
+          litNear: tutorial.active() ? enemyLitNear() : false,
+          inLight: sun.isLit(player.x, player.z),
+          device: input.device(),
+        })
+        tips.update(frameSec)
+      }
+      floor.uniforms.uEdgeBoost.value = tutorial.outlining() ? 0.7 : 0
+      hud.setCharges(build.pending)
       const ready = cut.cooldown <= 0 ? 1 : 1 - cut.cooldown / (TUNING.cut.cooldown * Math.max(0.2, 1 - TUNING.passive.haste * build.haste))
       hud.setHp(player.hp, player.maxHp)
       hud.setXp(build.xp, xpToNext(build.level), build.level)
       hud.setKills(kills)
       hud.setCooldown(ready)
       touchView.setCooldown(ready)
-      sundial.set(sun.angle, mode === 'title' ? sun.time : time)
+      sundial.set(sun.angle, mode === 'playing' || mode === 'level' ? time : sun.time)
       if (debug.visible) {
         debugClock += frameSec
         if (debugClock >= 0.25) {
