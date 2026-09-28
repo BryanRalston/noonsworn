@@ -1,6 +1,7 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Color,
   Mesh,
   MeshStandardMaterial,
   Object3D,
@@ -45,8 +46,11 @@ function findMesh(root: Object3D, materialName: string): Mesh {
   throw new Error(`missing material ${materialName} in ${names.join(', ')}`)
 }
 
+const plumLo = new Color('#3a2a3f')
+const plumHi = new Color('#4a3350')
+
 /** Bake base or emissive colour into the vertex colours and tag glow. Legs are tagged before the facing rotation. */
-function bake(mesh: Mesh, emit: number, legs: boolean): BufferGeometry {
+function bake(mesh: Mesh, emit: number, legs: boolean, plum = false): BufferGeometry {
   const geo = mesh.geometry.clone()
   const mat = mesh.material as MeshStandardMaterial
   const src = geo.getAttribute('color')
@@ -57,12 +61,20 @@ function bake(mesh: Mesh, emit: number, legs: boolean): BufferGeometry {
   const gal = new Float32Array(n)
   const glow = mat.emissive.r + mat.emissive.g + mat.emissive.b > 0.02 ? mat.emissive : mat.color
   const tint = emit > 0 ? glow : mat.color
+  const lift = emit > 0.5 ? 1 : 3.4
   for (let i = 0; i < n; i++) {
     const ao = src ? src.getX(i) : 1
-    const k = emit > 0.5 ? 1 : ao
-    col[i * 3] = tint.r * k
-    col[i * 3 + 1] = tint.g * k
-    col[i * 3 + 2] = tint.b * k
+    const t = ao < 0 ? 0 : ao > 1 ? 1 : ao
+    if (plum && emit === 0) {
+      col[i * 3] = plumLo.r + (plumHi.r - plumLo.r) * t
+      col[i * 3 + 1] = plumLo.g + (plumHi.g - plumLo.g) * t
+      col[i * 3 + 2] = plumLo.b + (plumHi.b - plumLo.b) * t
+    } else {
+      const k = (emit > 0.5 ? 1 : t) * lift
+      col[i * 3] = tint.r * k
+      col[i * 3 + 1] = tint.g * k
+      col[i * 3 + 2] = tint.b * k
+    }
     em[i] = emit
     const y = pos.getY(i)
     const z = pos.getZ(i)
@@ -77,8 +89,8 @@ function bake(mesh: Mesh, emit: number, legs: boolean): BufferGeometry {
   return geo
 }
 
-function mergeEnemy(root: Object3D, body: string, eyes: string, glow: string, legs: boolean): BufferGeometry {
-  const parts = [bake(findMesh(root, body), 0, legs), bake(findMesh(root, eyes), 1, false), bake(findMesh(root, glow), 0.35, false)]
+function mergeEnemy(root: Object3D, body: string, eyes: string, glow: string, legs: boolean, plum = false): BufferGeometry {
+  const parts = [bake(findMesh(root, body), 0, legs, plum), bake(findMesh(root, eyes), 1, false), bake(findMesh(root, glow), 0.35, false)]
   const merged = mergeGeometries(parts, false)
   for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
   if (!merged) throw new Error(`merge failed for ${body}`)
@@ -104,7 +116,7 @@ export async function loadCast(): Promise<Cast> {
     loadGltf(loader, `${base}mite.glb`),
     loadGltf(loader, `${base}hound.glb`),
   ])
-  const mite = mergeEnemy(miteGltf.scene, 'mite_body', 'mite_eyes', 'mite_cracks', false)
+  const mite = mergeEnemy(miteGltf.scene, 'mite_body', 'mite_eyes', 'mite_cracks', false, true)
   const hound = mergeEnemy(houndGltf.scene, 'hound_body', 'hound_eyes', 'hound_seams', true)
   if (triCount(mite) < 1 || triCount(hound) < 1) throw new Error('enemy mesh is empty')
   return { gltf, mite, hound }

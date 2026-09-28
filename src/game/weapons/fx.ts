@@ -293,8 +293,10 @@ function makeMaterial(map: DataTexture, additive: boolean, player: Vector2): Sha
         }
         float dist = length(vWorldXZ - uPlayer);
         float cover = smoothstep(0.0, 1.2, dist);
+        float flare = smoothstep(0.0, 2.0, dist);
         if (vFlag > 2.5 && vFlag < 3.5 && dist < 0.9) discard;
-        if (vFlag > 0.5 && vFlag < 2.5) alpha *= cover;
+        if (vFlag > 1.5 && vFlag < 2.5) alpha *= flare;
+        else if (vFlag > 0.5 && vFlag < 1.5) alpha *= cover;
         if (vFlag < 0.5 && vAtlas.y > 0.20 && vAtlas.y < 0.30 && vAtlas.x < 0.62) alpha *= cover;
         if (alpha < 0.02) discard;
         gl_FragColor = vec4(col, alpha);

@@ -17,7 +17,7 @@ import { mulberry32, type Rng } from '../core/rng'
 import { NoopAds } from '../platform/ads'
 import { createFollowCamera } from '../render/camera'
 import { createFloorMaterial } from '../render/floorShader'
-import { enemyTime } from '../render/instancing'
+import { enemyTime, setEnemyLegSwing } from '../render/instancing'
 import { createQuality, wantsAntialias } from '../render/quality'
 import { createGpu } from '../render/renderer'
 import { createInput, type InputState } from '../input/input'
@@ -529,9 +529,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     ads.gameplayStart()
     swallow = true
     if (previewWeapon) armPreview()
-    if (turnWho === 'mite') horde.spawn(0, 0, 0, false, 8, 0, 0)
-    if (turnWho === 'hound') horde.spawn(1, 0, 0, false, 8, 0, 0)
-    if (turnWho === 'mite' || turnWho === 'hound') horde.frozen = true
+    if (import.meta.env.DEV && turnWho === 'mite') horde.spawn(0, 0, 0, false, 8, 0, 0)
+    if (import.meta.env.DEV && turnWho === 'hound') horde.spawn(1, 0, 0, false, 8, 0, 0)
+    if (import.meta.env.DEV && (turnWho === 'mite' || turnWho === 'hound')) horde.frozen = true
   }
 
   function armPreview() {
@@ -745,6 +745,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         houndTris: number
         selaTris: number
         t: number
+        selaMat: string
       }
     }
     hook.__ns = () => ({
@@ -772,6 +773,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       houndTris: horde.tris.hound,
       selaTris: sela.tris,
       t: Math.round(time * 1000) / 1000,
+      selaMat: sela.matNote,
     })
     requestAnimationFrame(() => startRun())
   } else if (turnWho) {
@@ -1185,6 +1187,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
       enemyTime().value = performance.now() * 0.001
+      setEnemyLegSwing(quality.tier === 'high')
       audio.sample()
       const moving = Math.hypot(player.vx, player.vz)
       if (mode === 'playing' && moving > 0.8) {
@@ -1194,10 +1197,13 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           audio.step()
         }
       } else stepAcc = 0
-      if (turnWho === 'sela') {
+      if (import.meta.env.DEV && turnWho === 'sela') {
         const ang = Number(params.get('yaw') ?? '0')
         player.yaw = ang
         player.prevYaw = ang
+      }
+      if (import.meta.env.DEV && (turnWho === 'mite' || turnWho === 'hound')) {
+        horde.face(Number(params.get('yaw') ?? '0'))
       }
       playerView.position.set(x, 0, z)
       playerView.rotation.y = turnWho === 'sela' ? player.yaw : yaw
@@ -1225,7 +1231,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sela.halo.visible = playerView.visible
       fx.setFocus(x, z)
       const syncT = performance.now()
-      horde.sync()
+      horde.sync(follow.camera.position.x, follow.camera.position.z, quality.tier === 'high')
       profSync = performance.now() - syncT
       teleGate -= frameSec
       if (teleGate <= 0 && horde.telegraphs.length > 0) {

@@ -10,6 +10,7 @@ import {
   MeshStandardMaterial,
   ShaderMaterial,
   SkinnedMesh,
+  SRGBColorSpace,
   Vector3,
   type AnimationAction,
   type Camera,
@@ -34,6 +35,7 @@ export interface SelaView {
   tris: number
   bones: number
   focus: SelaFocus
+  matNote: string
   pose: (frame: SelaFrame) => void
 }
 
@@ -125,6 +127,17 @@ export function createSela(gltf: GLTF): SelaView {
   if (!skinned) throw new Error('sela_rigged has no skinned mesh')
   if (!halo) throw new Error('sela_rigged has no halo')
   const skinnedMesh = skinned as SkinnedMesh
+  const bodyMat = skinnedMesh.material as MeshStandardMaterial
+  const beforeSpace = bodyMat.map?.colorSpace ?? 'none'
+  const beforeNote = `metalness ${bodyMat.metalness} roughness ${bodyMat.roughness} colorSpace ${beforeSpace}`
+  bodyMat.metalness = 0
+  bodyMat.roughness = 0.75
+  if (bodyMat.map) bodyMat.map.colorSpace = SRGBColorSpace
+  bodyMat.emissive.set(0x000000)
+  bodyMat.emissiveIntensity = 0
+  bodyMat.emissiveMap = null
+  const matNote = `before ${beforeNote}; after metalness 0 roughness 0.75 colorSpace ${bodyMat.map?.colorSpace ?? 'none'} emissive off`
+  console.info('sela material', matNote)
   const haloMesh = halo
   if ((haloMesh as Mesh).isMesh) {
     const mat = (haloMesh as Mesh).material as MeshStandardMaterial
@@ -190,6 +203,7 @@ export function createSela(gltf: GLTF): SelaView {
     halo: haloMesh,
     tris: triCount(rig),
     bones: skinnedMesh.skeleton.bones.length,
+    matNote,
     focus,
     pose(frame) {
       const display = frame.aspect < 1 ? 1.5 : 1.25

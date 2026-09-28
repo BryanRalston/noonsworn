@@ -10,43 +10,51 @@ import {
 
 const dummy = new Object3D()
 const time = { value: 0 }
+let enemyMat: ShaderMaterial | null = null
+let legSwing = false
 
-export function enemyTime(): { value: number } {
-  return time
-}
-
-export function createEnemyMaterial(): ShaderMaterial {
-  return new ShaderMaterial({
-    uniforms: { uTime: time },
-    vertexShader: /* glsl */ `
+function enemyVertex(leg: boolean): string {
+  return /* glsl */ `
       attribute vec3 color;
       attribute float aEmit;
-      attribute float aGallop;
-      attribute vec4 iAnim;
+      attribute float iFlash;
+      attribute float iLit;
+      ${leg ? 'attribute float aGallop; attribute float iPhase; uniform float uTime;' : ''}
       varying vec3 vColor;
       varying float vEmit;
       varying float vLit;
       varying float vFlash;
-      uniform float uTime;
       void main() {
         vColor = color;
         vEmit = aEmit;
-        vLit = iAnim.y;
-        vFlash = iAnim.x;
+        vLit = iLit;
+        vFlash = iFlash;
         vec3 transformed = position;
-        float phase = fract(uTime * 1.4 + iAnim.z * 0.07);
-        float wave = (abs(phase * 2.0 - 1.0) * 2.0 - 1.0) * clamp(iAnim.w, 0.25, 1.0);
-        transformed.y += wave * 0.045;
-        transformed.y *= 1.0 + wave * 0.07;
-        transformed.z += wave * position.y * 0.16;
-        transformed.y += aGallop * wave * 0.08;
+        ${leg ? 'float legOn = step(5.0, iPhase); transformed.y += aGallop * sin(uTime + iPhase - legOn * 10.0) * legOn * 0.08;' : ''}
         vec4 mvPosition = vec4(transformed, 1.0);
         #ifdef USE_INSTANCING
           mvPosition = instanceMatrix * mvPosition;
         #endif
         gl_Position = projectionMatrix * modelViewMatrix * mvPosition;
       }
-    `,
+    `
+}
+
+export function enemyTime(): { value: number } {
+  return time
+}
+
+export function setEnemyLegSwing(on: boolean) {
+  if (!enemyMat || on === legSwing) return
+  legSwing = on
+  enemyMat.vertexShader = enemyVertex(on)
+  enemyMat.needsUpdate = true
+}
+
+export function createEnemyMaterial(): ShaderMaterial {
+  enemyMat = new ShaderMaterial({
+    uniforms: { uTime: time },
+    vertexShader: enemyVertex(false),
     fragmentShader: /* glsl */ `
       precision highp float;
       varying vec3 vColor;
@@ -54,8 +62,8 @@ export function createEnemyMaterial(): ShaderMaterial {
       varying float vLit;
       varying float vFlash;
       void main() {
-        vec3 col = vColor * 3.4;
-        if (vEmit > 0.5) col = vColor * 1.7;
+        vec3 col = vColor;
+        if (vEmit > 0.5) col *= 1.7;
         else if (vLit < 0.5) col *= 0.72;
         col = mix(col, vec3(1.0, 0.78, 0.38), vFlash * 0.7);
         gl_FragColor = vec4(col, 1.0);
@@ -63,6 +71,7 @@ export function createEnemyMaterial(): ShaderMaterial {
       }
     `,
   })
+  return enemyMat
 }
 
 export function whiteRim(material: MeshToonMaterial) {
@@ -93,9 +102,10 @@ export function writeInstance(
   yaw: number,
   scale: number,
   sy?: number,
+  lean = 0,
 ) {
   dummy.position.set(x, y, z)
-  dummy.rotation.set(0, yaw, 0)
+  dummy.rotation.set(lean, yaw, 0)
   dummy.scale.set(scale, sy ?? scale, scale)
   dummy.updateMatrix()
   mesh.setMatrixAt(index, dummy.matrix)
