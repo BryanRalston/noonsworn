@@ -243,7 +243,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const bloom = createBloom()
   gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
   const tutorial = createTutorial(ui, gpu.scene)
-  tutorial.setEnabled(tipsEnabled())
 
   const sun = createSunClock()
   const horde = createHorde(cast.mite, cast.hound)
@@ -1409,7 +1408,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         if (toastTimer <= 0) toast.hidden = true
       }
       floats.sync(follow.camera, canvas.clientWidth, canvas.clientHeight, frameSec)
-      if (!previewWeapon && !turnWho) {
+      if ((mode === 'playing' || mode === 'level') && !previewWeapon && !turnWho) {
         tutorial.update(frameSec, player.x, player.z, follow.camera, canvas.clientWidth, canvas.clientHeight, {
           moving: Math.hypot(frame.moveX, frame.moveY) > 0.2,
           litNear: tutorial.active() ? enemyLitNear() : false,
@@ -1417,7 +1416,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           device: input.device(),
         })
         tips.update(frameSec)
-      }
+      } else tutorial.conceal()
       floor.uniforms.uEdgeBoost.value = tutorial.outlining() ? 0.7 : 0
       hud.setCharges(build.pending)
       const ready = cut.cooldown <= 0 ? 1 : 1 - cut.cooldown / (TUNING.cut.cooldown * Math.max(0.2, 1 - TUNING.passive.haste * build.haste))

@@ -25,6 +25,7 @@ export interface Tutorial {
   onClaim: () => void
   outlining: () => boolean
   active: () => boolean
+  conceal: () => void
 }
 
 export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
@@ -140,6 +141,9 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
     setEnabled(on) {
       enabled = on
       if (!on) hide()
+    },
+    conceal() {
+      hide()
     },
     onKill() {
       killed = true

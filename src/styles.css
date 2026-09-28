@@ -421,7 +421,8 @@ h1 { color: var(--goldHot); font-size: 40px; }
   overflow: hidden;
 }
 #splash-screen { justify-content: flex-end; align-items: center; }
-#menu-screen { justify-content: center; align-items: flex-start; }
+#screens #menu-screen { justify-content: center; align-items: flex-start; }
+#screens { z-index: 8; }
 .sun-beam {
   position: absolute;
   inset: -30% -20%;
