@@ -13,13 +13,20 @@ const QUALITY = 'noonsworn.quality.pref'
 export type ScreenMode = 'splash' | 'menu' | 'howto' | 'settings' | 'credits' | 'playing' | 'paused' | 'dead' | 'clear' | 'level'
 export type QualityPref = 'auto' | TierName
 
-const PAGES = [
-  { title: 'Move', text: 'WASD, the left stick, or drag. Sela follows your hand.', icon: 'icon_swift.webp' },
-  { title: 'Auto-weapons', text: 'Spears and discs fire on their own. You only have to move.', icon: 'icon_spear.webp' },
-  { title: 'Sunlight', text: 'Enemies standing in the sun take double damage. Fight in the light.', icon: 'icon_wide.webp' },
-  { title: 'Noon Cut', text: 'Dash-slash through a pack. Space, a right-side tap, or A.', icon: 'icon_flare.webp' },
-  { title: 'Halo power-ups', text: 'A level-up banks a charge. Tap the halo when you want the cards.', icon: 'icon_halo.webp' },
-]
+type HintDevice = 'keyboard' | 'touch' | 'pad'
+
+function pages(device: HintDevice) {
+  const move = device === 'touch' ? 'Drag to move.' : device === 'pad' ? 'Left stick to move.' : 'WASD to move.'
+  const dash = device === 'touch' ? 'Dash-slash through them. Tap Cut.' : device === 'pad' ? 'Dash-slash through them. Press A.' : 'Dash-slash through them. Press Space.'
+  const halo = device === 'touch' ? 'A level-up banks a charge. Tap the halo.' : device === 'pad' ? 'A level-up banks a charge. Press LB.' : 'A level-up banks a charge. Press Tab.'
+  return [
+    { title: 'Move', text: move, icon: 'icon_swift.webp' },
+    { title: 'Auto-weapons', text: 'Spears and discs fire on their own. You only have to move.', icon: 'icon_spear.webp' },
+    { title: 'Sunlight', text: 'Enemies standing in the sun take double damage. Fight in the light.', icon: 'icon_wide.webp' },
+    { title: 'Noon Cut', text: dash, icon: 'icon_flare.webp' },
+    { title: 'Halo power-ups', text: halo, icon: 'icon_halo.webp' },
+  ]
+}
 
 export interface Screens {
   setMode: (mode: ScreenMode, detail?: string) => void
@@ -27,6 +34,7 @@ export interface Screens {
   setQuality: (value: QualityPref) => void
   navigate: (dx: number, dy: number, confirm: boolean) => void
   back: () => void
+  setDevice: (device: 'keyboard' | 'touch' | 'pad') => void
   onPlay: (() => void) | null
   onRestart: (() => void) | null
   onResume: (() => void) | null
@@ -151,16 +159,18 @@ export function createScreens(parent: HTMLElement): Screens {
   const howtoDots = root.querySelector('#howto-dots') as HTMLElement
   let page = 0
   let focus = 0
+  let hint: HintDevice = 'keyboard'
   let mode: ScreenMode = 'splash'
   let returnTo: ScreenMode = 'menu'
   let qualitySilent = false
   function paintHow() {
-    const item = PAGES[page] ?? PAGES[0]
+    const list = pages(hint)
+    const item = list[page] ?? list[0]
     if (!item) return
     howtoTitle.textContent = item.title
     howtoText.textContent = item.text
     howtoIcon.src = `${base}assets/art/${item.icon}`
-    howtoDots.textContent = PAGES.map((_, i) => (i === page ? '●' : '○')).join(' ')
+    howtoDots.textContent = list.map((_, i) => (i === page ? '●' : '○')).join(' ')
   }
   function sync() {
     const shake = storageGet(SHAKE) !== '0'
@@ -199,7 +209,7 @@ export function createScreens(parent: HTMLElement): Screens {
     list.forEach((el, i) => el.classList.toggle('focus', i === focus))
   }
   function showPage(next: number) {
-    page = (next + PAGES.length) % PAGES.length
+    page = (next + pages(hint).length) % pages(hint).length
     paintHow()
   }
   paintHow()
@@ -268,9 +278,16 @@ export function createScreens(parent: HTMLElement): Screens {
     back() {
       screens.onScreen?.(returnTo)
     },
+    setDevice(device) {
+      if (device === hint) return
+      hint = device
+      if (mode === 'howto') paintHow()
+    },
   }
   function sub(next: ScreenMode) {
     returnTo = mode === 'paused' ? 'paused' : 'menu'
+    const el = sections.get(next)
+    if (el) el.classList.toggle('key-backdrop', returnTo === 'menu' && (next === 'howto' || next === 'settings'))
     screens.onScreen?.(next)
   }
   root.querySelector('#btn-play')?.addEventListener('click', () => screens.onPlay?.())

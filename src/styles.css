@@ -249,6 +249,16 @@ h1 { color: var(--goldHot); font-size: 40px; }
 
 #level-up { background: none; }
 #level-up[hidden], #feature-map[hidden], #debug[hidden] { display: none !important; }
+#feature-map:not([hidden]) {
+  z-index: 40;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+#feature-map:not([hidden]) {
+  z-index: 40;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+}
 #level-up .strip {
   position: absolute;
   left: 0;
@@ -358,11 +368,17 @@ h1 { color: var(--goldHot); font-size: 40px; }
 }
 #btn-halo.ready { box-shadow: 0 0 0 2px var(--goldHot); }
 #btn-halo.glow { animation: halo-pulse 0.55s ease-out 2; }
-#hud.touch #btn-halo {
+#hud.touch #btn-halo,
+#btn-halo.thumb {
   top: auto;
-  bottom: calc(108px + env(safe-area-inset-bottom));
-  right: calc(22px + env(safe-area-inset-right));
+  width: 72px;
+  height: 72px;
+  font-size: 22px;
+  bottom: calc(134px + env(safe-area-inset-bottom));
+  right: calc(30px + env(safe-area-inset-right));
 }
+#hud.touch #btn-halo.ready,
+#btn-halo.thumb.ready { animation: halo-pulse 1.15s ease-out infinite; }
 @keyframes halo-pulse {
   0% { box-shadow: 0 0 0 0 rgba(242, 182, 50, 0.85); }
   100% { box-shadow: 0 0 0 16px rgba(242, 182, 50, 0); }
@@ -372,15 +388,36 @@ h1 { color: var(--goldHot); font-size: 40px; }
   left: 0;
   top: 0;
   z-index: 4;
-  max-width: min(280px, 78vw);
-  padding: 6px 10px;
+  max-width: min(440px, 88vw);
+  padding: 8px 12px;
   border-radius: 8px;
   background: rgba(20, 18, 37, 0.88);
   color: var(--goldHot);
   border: 1px solid var(--gold);
-  font: 650 15px/1.3 system-ui, sans-serif;
+  font: 650 16px/1.35 system-ui, sans-serif;
   text-align: center;
   pointer-events: none;
+}
+#coach.big { font-size: 18px; }
+#coach-arrow {
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 4px;
+  z-index: 5;
+  pointer-events: none;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, #f2b632, #fff3b0);
+  box-shadow: 0 0 10px #f2b632;
+}
+#coach-arrow[hidden] { display: none !important; }
+#coach-arrow::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  top: -6px;
+  border: 8px solid transparent;
+  border-left: 10px solid #fff3b0;
 }
 #coach[hidden] { display: none !important; }
 #jit {
@@ -402,8 +439,8 @@ h1 { color: var(--goldHot); font-size: 40px; }
 }
 #jit[hidden] { display: none !important; }
 #jit img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; }
-#jit strong { display: block; color: var(--goldHot); font-size: 14px; letter-spacing: 0.04em; }
-#jit span { display: block; color: var(--sandstone); font: 13px/1.3 system-ui, sans-serif; }
+#jit strong { display: block; color: var(--goldHot); font: 700 16px/1.3 system-ui, sans-serif; letter-spacing: 0.04em; }
+#jit span { display: block; color: var(--sandstone); font: 600 16px/1.35 system-ui, sans-serif; }
 #splash-screen, #menu-screen {
   inset: 0 !important;
   left: 0 !important;
@@ -461,6 +498,24 @@ h1 { color: var(--goldHot); font-size: 40px; }
   border: 1px solid var(--shade);
 }
 .menu-item.focus, .menu-item:focus-visible { box-shadow: 0 0 0 2px var(--goldHot); }
+#howto-screen.key-backdrop,
+#settings-screen.key-backdrop {
+  inset: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  transform: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-image: linear-gradient(rgba(20, 18, 37, 0.62), rgba(20, 18, 37, 0.72)), var(--keyart);
+  background-size: cover;
+  background-position: center;
+  justify-content: center;
+}
+#howto-screen.key-backdrop > *,
+#settings-screen.key-backdrop > * { position: relative; z-index: 1; }
 #howto-card {
   width: min(420px, 100%);
   min-height: 180px;
@@ -482,7 +537,16 @@ h1 { color: var(--goldHot); font-size: 40px; }
     border-radius: 18px 18px 0 0;
     padding-bottom: calc(18px + env(safe-area-inset-bottom));
   }
-  #coach { font-size: 16px; }
+  #coach, #jit strong, #jit span { font-size: 18px; }
+  #btn-halo {
+    top: auto;
+    width: 72px;
+    height: 72px;
+    font-size: 22px;
+    bottom: calc(134px + env(safe-area-inset-bottom));
+    right: calc(30px + env(safe-area-inset-right));
+  }
+  #btn-halo.ready { animation: halo-pulse 1.15s ease-out infinite; }
 }
 @media (max-width: 800px) {
   #level-up #cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }

@@ -15,7 +15,7 @@ export interface Tutorial {
     camera: Camera,
     width: number,
     height: number,
-    now: { moving: boolean; litNear: boolean; inLight: boolean; device: string },
+    now: { moving: boolean; litNear: boolean; inLight: boolean; device: string; charges: number },
   ) => void
   onKill: () => void
   onShard: () => void
@@ -30,16 +30,16 @@ export interface Tutorial {
 
 export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
   const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
+  canvas.width = 256
+  canvas.height = 256
   const tex = new CanvasTexture(canvas)
   tex.anisotropy = 2
   const mesh = new Mesh(
-    new PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2),
-    new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }),
+    new PlaneGeometry(4.8, 4.8).rotateX(-Math.PI / 2),
+    new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, toneMapped: false }),
   )
-  mesh.position.y = 0.05
-  mesh.renderOrder = 3
+  mesh.position.y = 0.2
+  mesh.renderOrder = 8
   mesh.frustumCulled = false
   mesh.visible = false
   scene.add(mesh)
@@ -47,6 +47,10 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
   label.id = 'coach'
   label.hidden = true
   parent.append(label)
+  const arrow = document.createElement('div')
+  arrow.id = 'coach-arrow'
+  arrow.hidden = true
+  parent.append(arrow)
   const v = new Vector3()
   let step = readStep()
   let timer = 0
@@ -60,33 +64,40 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
   let claimed = false
   let outline = 0
   let outlined = false
+  let litHold = 0
   let drawn = -1
   let drawnDevice = ''
 
   function save() {
     storageSet(KEY, step >= 6 ? 'done' : String(step))
   }
+  function hideArrow() {
+    arrow.hidden = true
+  }
   function hide() {
     mesh.visible = false
     label.hidden = true
+    hideArrow()
   }
   function advance() {
     step++
     timer = 0
+    litHold = 0
     if (step === 1) {
       moved = false
       killed = false
     }
+    if (step === 2) outlined = false
     if (step === 3) cut = false
     if (step === 4) collected = false
     if (step === 5) claimed = false
     save()
   }
-  function ready(): boolean {
-    if (timer < 0.45) return false
-    if (step === 0) return false
+  function done(): boolean {
+    if (timer < 3) return false
+    if (step === 0) return moved
     if (step === 1) return killed
-    if (step === 2) return false
+    if (step === 2) return litHold >= 1.5
     if (step === 3) return cut
     if (step === 4) return collected && shard
     if (step === 5) return claimed
@@ -101,12 +112,39 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
     if (step === 1) return 'Your weapons fire on their own'
     if (step === 2) return 'Enemies in sunlight take double damage. Fight in the light.'
     if (step === 3) {
-      if (device === 'touch') return 'Dash-slash through them. Tap the right side.'
+      if (device === 'touch') return 'Dash-slash through them. Tap Cut.'
       if (device === 'pad') return 'Dash-slash through them. Press A.'
       return 'Dash-slash through them. Press Space.'
     }
     if (step === 4) return 'Collect shards'
-    return 'Power-up ready. Tap the halo.'
+    if (device === 'touch') return 'Power-up ready. Tap the halo.'
+    if (device === 'pad') return 'Power-up ready. Press LB.'
+    return 'Power-up ready. Press Tab.'
+  }
+  function aimArrow() {
+    const halo = document.querySelector('#btn-halo')
+    if (!(halo instanceof HTMLElement) || timer > 2.4) {
+      hideArrow()
+      return
+    }
+    const from = label.getBoundingClientRect()
+    const to = halo.getBoundingClientRect()
+    const x1 = from.left + from.width / 2
+    const y1 = from.top + from.height / 2
+    const x2 = to.left + to.width / 2
+    const y2 = to.top + to.height / 2
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const len = Math.hypot(dx, dy)
+    if (len < 8) {
+      hideArrow()
+      return
+    }
+    arrow.hidden = false
+    arrow.style.left = `${x1}px`
+    arrow.style.top = `${y1}px`
+    arrow.style.width = `${Math.max(0, len - 28)}px`
+    arrow.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`
   }
 
   const api: Tutorial = {
@@ -117,6 +155,7 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       timer = 0
       outline = 0
       outlined = false
+      litHold = 0
       moved = false
       killed = false
       collected = false
@@ -129,6 +168,7 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       timer = 0
       outline = 0
       outlined = false
+      litHold = 0
       moved = false
       killed = false
       shard = false
@@ -155,7 +195,7 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       collected = true
     },
     onCut() {
-      cut = true
+      if (step === 3 && timer >= 1) cut = true
     },
     onCharge() {
       charged = true
@@ -174,16 +214,23 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
         hide()
         return
       }
+      label.classList.toggle('big', now.device === 'touch' || height > width)
+      if (step === 5 && charged && now.charges <= 0) {
+        step = 6
+        hide()
+        save()
+        return
+      }
       if (now.moving) moved = true
       if (step === 5 && !charged) {
         hide()
         timer = 0
+        litHold = 0
         return
       }
+      if (step === 2 && timer >= 3) litHold = now.inLight ? litHold + dt : 0
       timer += dt
-      if (step === 0 && moved && timer >= 0.45) advance()
-      else if (step === 2 && now.inLight && timer >= 0.45) advance()
-      else if (timer >= 12 || ready()) advance()
+      if (timer >= 12 || done()) advance()
       if (step >= 6) {
         hide()
         save()
@@ -192,6 +239,12 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       if (step === 5 && !charged) {
         hide()
         timer = 0
+        return
+      }
+      if (step === 5 && now.charges <= 0) {
+        step = 6
+        hide()
+        save()
         return
       }
       if (step === 2 && !outlined && (now.litNear || timer > 0.2)) {
@@ -207,13 +260,15 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       }
       mesh.visible = true
       mesh.position.x = x
-      mesh.position.z = z + 0.9
+      mesh.position.z = z
       label.hidden = false
       label.textContent = line(now.device)
       v.set(x, 0.4, z).project(camera)
       const sx = (v.x * 0.5 + 0.5) * width
-      const sy = (-v.y * 0.5 + 0.5) * height + 28
+      const sy = (-v.y * 0.5 + 0.5) * height + 36
       label.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, 0)`
+      if (step === 5 && now.charges > 0) aimArrow()
+      else hideArrow()
     },
   }
   return api
@@ -229,67 +284,73 @@ function readStep(): number {
 function paintGlyph(canvas: HTMLCanvasElement, step: number) {
   const g = canvas.getContext('2d')
   if (!g) return
-  g.clearRect(0, 0, 128, 128)
-  g.fillStyle = 'rgba(20, 18, 37, 0.82)'
+  g.clearRect(0, 0, 256, 256)
+  g.fillStyle = 'rgba(20, 18, 37, 0.72)'
   g.beginPath()
-  g.arc(64, 64, 58, 0, Math.PI * 2)
+  g.arc(128, 128, 118, 0, Math.PI * 2)
   g.fill()
   g.strokeStyle = '#F2B632'
-  g.lineWidth = 3
+  g.lineWidth = 18
+  g.stroke()
+  g.strokeStyle = '#FFF3B0'
+  g.lineWidth = 6
+  g.beginPath()
+  g.arc(128, 128, 96, 0, Math.PI * 2)
   g.stroke()
   g.fillStyle = '#F2B632'
   g.strokeStyle = '#F2B632'
+  g.lineWidth = 8
+  g.font = '700 42px system-ui, sans-serif'
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
   if (step === 0) {
-    g.font = '700 18px system-ui, sans-serif'
-    g.textAlign = 'center'
-    g.textBaseline = 'middle'
-    g.fillText('W', 64, 34)
-    g.fillText('A', 40, 64)
-    g.fillText('S', 64, 94)
-    g.fillText('D', 88, 64)
+    g.fillText('W', 128, 78)
+    g.fillText('A', 78, 128)
+    g.fillText('S', 128, 178)
+    g.fillText('D', 178, 128)
   } else if (step === 1) {
     g.beginPath()
-    g.moveTo(64, 28)
-    g.lineTo(72, 64)
-    g.lineTo(64, 58)
-    g.lineTo(56, 64)
+    g.moveTo(128, 70)
+    g.lineTo(146, 128)
+    g.lineTo(128, 116)
+    g.lineTo(110, 128)
     g.closePath()
     g.fill()
-    g.fillRect(60, 64, 8, 32)
+    g.fillRect(120, 128, 16, 52)
   } else if (step === 2) {
     g.beginPath()
-    g.arc(64, 64, 16, 0, Math.PI * 2)
+    g.arc(128, 128, 28, 0, Math.PI * 2)
     g.fill()
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2
       g.beginPath()
-      g.moveTo(64 + Math.cos(a) * 24, 64 + Math.sin(a) * 24)
-      g.lineTo(64 + Math.cos(a) * 40, 64 + Math.sin(a) * 40)
+      g.moveTo(128 + Math.cos(a) * 44, 128 + Math.sin(a) * 44)
+      g.lineTo(128 + Math.cos(a) * 72, 128 + Math.sin(a) * 72)
       g.stroke()
     }
   } else if (step === 3) {
     g.beginPath()
-    g.arc(64, 70, 28, Math.PI * 1.15, Math.PI * 1.85)
+    g.arc(128, 140, 48, Math.PI * 1.15, Math.PI * 1.85)
     g.stroke()
     g.beginPath()
-    g.moveTo(40, 58)
-    g.lineTo(28, 70)
-    g.lineTo(42, 74)
+    g.moveTo(86, 112)
+    g.lineTo(64, 136)
+    g.lineTo(92, 142)
     g.fill()
   } else if (step === 4) {
     g.beginPath()
-    g.moveTo(64, 30)
-    g.lineTo(84, 64)
-    g.lineTo(64, 98)
-    g.lineTo(44, 64)
+    g.moveTo(128, 68)
+    g.lineTo(168, 128)
+    g.lineTo(128, 188)
+    g.lineTo(88, 128)
     g.closePath()
     g.fill()
   } else {
     g.beginPath()
-    g.arc(64, 64, 22, 0, Math.PI * 2)
+    g.arc(128, 128, 36, 0, Math.PI * 2)
     g.stroke()
     g.beginPath()
-    g.arc(64, 64, 8, 0, Math.PI * 2)
+    g.arc(128, 128, 14, 0, Math.PI * 2)
     g.fill()
   }
 }

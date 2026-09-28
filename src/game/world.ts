@@ -804,6 +804,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     const base = import.meta.env.BASE_URL
     if (slots.cards) levelUp.arm(`${base}assets/art/${slots.cards}`)
     const artUrl = slots.keyart ? `url(${base}assets/art/${slots.keyart})` : ''
+    if (artUrl) (document.querySelector('#screens') as HTMLElement | null)?.style.setProperty('--keyart', artUrl)
     for (const id of ['#splash-screen', '#menu-screen']) {
       const el = document.querySelector(id) as HTMLElement | null
       if (el && artUrl) el.style.backgroundImage = artUrl
@@ -926,6 +927,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       const front = mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits' || mode === 'paused' || mode === 'dead' || mode === 'clear'
       input.setNavLock(mode !== 'playing')
       input.readInto(frame, follow.camera)
+      const hintDevice = input.device()
+      screens.setDevice(hintDevice === 'touch' ? 'touch' : hintDevice === 'pad' ? 'pad' : 'keyboard')
       if (swallow) {
         frame.pausePressed = false
         frame.cutPressed = false
@@ -1150,7 +1153,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         mouseIdle: state.mouseIdle,
         usingTouch: state.usingTouch,
       }, build.haste)
-      if (cut.active) tutorial.onCut()
+      if (cut.active && !cutWas) tutorial.onCut()
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
       if (previewShow) {
@@ -1414,6 +1417,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           litNear: tutorial.active() ? enemyLitNear() : false,
           inLight: sun.isLit(player.x, player.z),
           device: input.device(),
+          charges: build.pending,
         })
         tips.update(frameSec)
       } else tutorial.conceal()
