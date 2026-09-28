@@ -36,6 +36,7 @@ import { toonMap } from '../render/toon'
 import { storageGet, storageSet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
+import { loadCast } from './charpack'
 import { buildInlay, buildPillars, buildShell, createScatter, createSunPip } from './arena'
 import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
@@ -69,7 +70,7 @@ function blankInput(): InputState {
   }
 }
 
-export function boot(container: HTMLElement) {
+export async function boot(container: HTMLElement) {
   mountPalette(document.documentElement)
   const params = new URLSearchParams(location.search)
   const previewWeapon = import.meta.env.DEV ? params.get('m25a') : null
@@ -77,6 +78,7 @@ export function boot(container: HTMLElement) {
   const previewTier = params.get('tier')
   const previewHold = params.get('hold') === '1'
   const previewShow = import.meta.env.DEV && params.get('show') === '1'
+  const turnWho = import.meta.env.DEV ? params.get('turn') : null
   let previewCutIn = 0.4
   let showIn = 0.08
   let showX = 0
@@ -86,6 +88,9 @@ export function boot(container: HTMLElement) {
   let cutMark = -1
   let teleGate = 0
   let hitPreview = 0.2
+  let animHurt = false
+  let animThrust = false
+  let animSlashSeen = 0
   let litAx = 10.2
   let litAz = 1.4
   let shadeAx = 18
@@ -206,7 +211,19 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const scatter = createScatter(scatterMat)
   const sunPip = createSunPip()
   const fx = createWeaponFx()
-  const sela = createSela()
+  let cast: Awaited<ReturnType<typeof loadCast>>
+  try {
+    cast = await loadCast()
+  } catch (err) {
+    console.error(err)
+    container.replaceChildren()
+    const msg = document.createElement('p')
+    msg.textContent = 'Character assets failed to load.'
+    msg.style.cssText = 'color:#FBF6EC;font-family:system-ui,sans-serif;padding:24px'
+    container.append(msg)
+    return
+  }
+  const sela = createSela(cast.gltf)
   const playerView = sela.root
   const shadows = createBlobShadows()
   const shards = createShards()
@@ -214,7 +231,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
 
   const sun = createSunClock()
-  const horde = createHorde()
+  const horde = createHorde(cast.mite, cast.hound)
   const spears = createSunspear(fx)
   const halo = createHalo(fx)
   const pickups = createPickups()
@@ -310,7 +327,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         if (!lit) armFloatAt[index] = time
         floats.push(x, z, `${Math.round(amount)}`, lit ? 'hot' : 'arm')
       }
-      sela.swing(time)
       if (killed) audio.kill(lit)
       if (killed && lit) {
         if (time - litBurstAt > 0.12) litBurst = 0
@@ -330,6 +346,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
     onHurt(amount) {
       if (!hurtPlayer(player, amount)) return
+      animHurt = true
       if (storageGet('noonsworn.shake') !== '0') {
         shakeAmp = TUNING.hurtShake
         shakeT = TUNING.shakeDecay
@@ -512,6 +529,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     ads.gameplayStart()
     swallow = true
     if (previewWeapon) armPreview()
+    if (turnWho === 'mite') horde.spawn(0, 0, 0, false, 8, 0, 0)
+    if (turnWho === 'hound') horde.spawn(1, 0, 0, false, 8, 0, 0)
+    if (turnWho === 'mite' || turnWho === 'hound') horde.frozen = true
   }
 
   function armPreview() {
@@ -616,6 +636,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
 
   spears.onFire = () => {
     previewFires++
+    animThrust = true
     audio.spear()
   }
   screens.onPlay = () => {
@@ -717,6 +738,13 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         fires: number
         selaX: number
         selaZ: number
+        selaPx: number
+        selaM: number
+        selaBones: number
+        miteTris: number
+        houndTris: number
+        selaTris: number
+        t: number
       }
     }
     hook.__ns = () => ({
@@ -737,7 +765,16 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       fires: previewFires + halo.pulses,
       selaX: player.x,
       selaZ: player.z,
+      selaPx: Math.round(sela.focus.h * 10) / 10,
+      selaM: Math.round(sela.focus.meters * 100) / 100,
+      selaBones: sela.bones,
+      miteTris: horde.tris.mite,
+      houndTris: horde.tris.hound,
+      selaTris: sela.tris,
+      t: Math.round(time * 1000) / 1000,
     })
+    requestAnimationFrame(() => startRun())
+  } else if (turnWho) {
     requestAnimationFrame(() => startRun())
   }
 
@@ -1053,7 +1090,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       fillCtx(dt)
       const cam = follow.camera.position
-      if (!horde.frozen) director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z)
+      if (!horde.frozen && !turnWho) director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z)
       const hordeT = performance.now()
       horde.update(ctx)
       profHorde += performance.now() - hordeT
@@ -1157,11 +1194,36 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           audio.step()
         }
       } else stepAcc = 0
+      if (turnWho === 'sela') {
+        const ang = Number(params.get('yaw') ?? '0')
+        player.yaw = ang
+        player.prevYaw = ang
+      }
       playerView.position.set(x, 0, z)
-      playerView.rotation.y = yaw
-      sela.bob(performance.now() * 0.001, Math.hypot(player.vx, player.vz), cut.active || cut.fade > 0 ? 1 : 0)
-      playerView.visible = player.hp > 0 && (player.invuln <= 0 || ((player.invuln * 14) | 0) % 2 === 0)
+      playerView.rotation.y = turnWho === 'sela' ? player.yaw : yaw
+      const slashNow = halo.pulses !== animSlashSeen
+      animSlashSeen = halo.pulses
+      const animDt = mode === 'playing' || mode === 'dead' ? frameSec : 0
+      sela.pose({
+        dt: animDt,
+        speed: Math.hypot(player.vx, player.vz),
+        cutting: cut.active || cut.fade > 0,
+        thrust: animThrust,
+        slash: slashNow && halo.pulses > 0,
+        hurt: animHurt,
+        dead: player.hp <= 0,
+        aspect: follow.camera.aspect,
+        camera: follow.camera,
+        viewW: canvas.clientWidth,
+        viewH: canvas.clientHeight,
+        hold: import.meta.env.DEV ? params.get('clip') : null,
+      })
+      animHurt = false
+      animThrust = false
+      const hurtBlink = player.hp > 0 && player.invuln > 0 && ((player.invuln * 14) | 0) % 2 === 0
+      playerView.visible = turnWho !== 'mite' && turnWho !== 'hound' && (player.hp <= 0 || !hurtBlink)
       sela.halo.visible = playerView.visible
+      fx.setFocus(x, z)
       const syncT = performance.now()
       horde.sync()
       profSync = performance.now() - syncT
@@ -1187,7 +1249,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       shadows.put(x, z, 1.5 * 1.3)
       horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3))
       pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
-      sela.placeHalo(follow.camera)
       shadows.end()
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
       const bloomT = performance.now()

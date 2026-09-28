@@ -4,10 +4,9 @@ import {
   InstancedMesh,
   MeshToonMaterial,
   Object3D,
+  ShaderMaterial,
   type Material,
 } from 'three'
-import { COLOR } from '../data/palette'
-import { toonMap } from './toon'
 
 const dummy = new Object3D()
 const time = { value: 0 }
@@ -16,68 +15,54 @@ export function enemyTime(): { value: number } {
   return time
 }
 
-export function createEnemyMaterial(): MeshToonMaterial {
-  const material = new MeshToonMaterial({
-    color: COLOR.umbral,
-    gradientMap: toonMap(),
+export function createEnemyMaterial(): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: { uTime: time },
+    vertexShader: /* glsl */ `
+      attribute vec3 color;
+      attribute float aEmit;
+      attribute float aGallop;
+      attribute vec4 iAnim;
+      varying vec3 vColor;
+      varying float vEmit;
+      varying float vLit;
+      varying float vFlash;
+      uniform float uTime;
+      void main() {
+        vColor = color;
+        vEmit = aEmit;
+        vLit = iAnim.y;
+        vFlash = iAnim.x;
+        vec3 transformed = position;
+        float phase = fract(uTime * 1.4 + iAnim.z * 0.07);
+        float wave = (abs(phase * 2.0 - 1.0) * 2.0 - 1.0) * clamp(iAnim.w, 0.25, 1.0);
+        transformed.y += wave * 0.045;
+        transformed.y *= 1.0 + wave * 0.07;
+        transformed.z += wave * position.y * 0.16;
+        transformed.y += aGallop * wave * 0.08;
+        vec4 mvPosition = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          mvPosition = instanceMatrix * mvPosition;
+        #endif
+        gl_Position = projectionMatrix * modelViewMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+      varying vec3 vColor;
+      varying float vEmit;
+      varying float vLit;
+      varying float vFlash;
+      void main() {
+        vec3 col = vColor * 3.4;
+        if (vEmit > 0.5) col = vColor * 1.7;
+        else if (vLit < 0.5) col *= 0.72;
+        col = mix(col, vec3(1.0, 0.78, 0.38), vFlash * 0.7);
+        gl_FragColor = vec4(col, 1.0);
+        #include <colorspace_fragment>
+      }
+    `,
   })
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = time
-    shader.uniforms.uGold = { value: COLOR.goldHot }
-    shader.uniforms.uUmbral = { value: COLOR.umbral }
-    shader.uniforms.uRim = { value: COLOR.umbralRim }
-    shader.vertexShader =
-      'attribute float iFlash;\nattribute float iLit;\nattribute float iPhase;\nattribute float iMove;\nattribute float iTele;\nattribute float aEye;\nattribute float aLeg;\nattribute float aTele;\nvarying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nvarying float vTele;\nvarying float vITele;\nuniform float uTime;\n' +
-      shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-vLocal = position;
-vEye = aEye;
-vLit = iLit;
-vFlash = iFlash;
-vTele = aTele;
-vITele = iTele;
-float wave = sin(uTime * 9.0 + iPhase);
-float body = step(abs(aLeg), 0.01);
-float hop = body * wave;
-transformed.y += hop * 0.08;
-float squash = 1.0 + hop * 0.16;
-transformed.y *= squash;
-transformed.x /= squash;
-transformed.z /= squash;
-float swing = sin(uTime * 12.0 + iPhase);
-transformed.x += aLeg * swing * iMove * 0.1;
-transformed.z += aLeg * cos(uTime * 12.0 + iPhase) * iMove * 0.05;`,
-      )
-    shader.fragmentShader =
-      'varying vec3 vLocal;\nvarying float vEye;\nvarying float vLit;\nvarying float vFlash;\nvarying float vTele;\nvarying float vITele;\nuniform vec3 uGold;\nuniform vec3 uUmbral;\nuniform vec3 uRim;\n' +
-      shader.fragmentShader.replace(
-        '#include <opaque_fragment>',
-        `float facing = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
-float fres = pow(1.0 - facing, 2.0);
-float luma = dot(outgoingLight, vec3(0.299, 0.587, 0.114));
-if (vTele > 0.5) {
-  discard;
-} else if (vEye > 0.5) {
-  outgoingLight = mix(vec3(0.82, 0.7, 1.0), uGold, vLit);
-} else if (vLit > 0.5) {
-  float band = floor(clamp(luma, 0.0, 0.999) * 3.0);
-  outgoingLight = vec3(0.16, 0.09, 0.04) * (0.55 + band * 0.2);
-  float crack = step(0.72, fract(sin(dot(vLocal.xz, vec2(19.1, 73.7)) + vLocal.y * 4.0) * 43758.5));
-  outgoingLight += uGold * crack * 1.15;
-  outgoingLight *= mix(0.2, 1.0, facing);
-} else {
-  outgoingLight = max(outgoingLight, uUmbral * 0.92);
-  outgoingLight += uRim * fres * 1.1;
-}
-if (vLocal.y > 0.58) outgoingLight = mix(outgoingLight, uRim, 0.92);
-vec3 flashHot = vec3(0.78, 0.64, 0.32);
-vec3 flashDull = vec3(0.30, 0.26, 0.34);
-outgoingLight = mix(outgoingLight, mix(flashDull, flashHot, vLit), vFlash * 0.72);
-#include <opaque_fragment>`,
-      )
-  }
-  return material
 }
 
 export function whiteRim(material: MeshToonMaterial) {

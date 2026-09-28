@@ -1,4 +1,5 @@
 import {
+  BufferGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
   InstancedMesh,
@@ -9,7 +10,6 @@ import { yawFromDirection } from '../../core/math'
 import { resolveCircle } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
-import { houndGeometry, miteGeometry } from '../actors'
 import { createEnemyMaterial, makeCrowd, writeInstance } from '../../render/instancing'
 
 const MAX = TUNING.hordeCap
@@ -22,22 +22,10 @@ const DYING = 6
 const QUERY = new Int16Array(48)
 
 function attrs(mesh: InstancedMesh) {
-  const flash = new InstancedBufferAttribute(new Float32Array(MAX), 1)
-  const lit = new InstancedBufferAttribute(new Float32Array(MAX), 1)
-  const phase = new InstancedBufferAttribute(new Float32Array(MAX), 1)
-  const move = new InstancedBufferAttribute(new Float32Array(MAX), 1)
-  const tele = new InstancedBufferAttribute(new Float32Array(MAX), 1)
-  flash.setUsage(DynamicDrawUsage)
-  lit.setUsage(DynamicDrawUsage)
-  phase.setUsage(DynamicDrawUsage)
-  move.setUsage(DynamicDrawUsage)
-  tele.setUsage(DynamicDrawUsage)
-  mesh.geometry.setAttribute('iFlash', flash)
-  mesh.geometry.setAttribute('iLit', lit)
-  mesh.geometry.setAttribute('iPhase', phase)
-  mesh.geometry.setAttribute('iMove', move)
-  mesh.geometry.setAttribute('iTele', tele)
-  return { flash, lit, phase, move, tele }
+  const anim = new InstancedBufferAttribute(new Float32Array(MAX * 4), 4)
+  anim.setUsage(DynamicDrawUsage)
+  mesh.geometry.setAttribute('iAnim', anim)
+  return { anim }
 }
 
 export interface Horde {
@@ -91,7 +79,12 @@ export interface HordeCtx {
   onSpark: (x: number, z: number, lit: boolean) => void
 }
 
-export function createHorde(): Horde {
+function triCount(geo: BufferGeometry): number {
+  if (geo.index) return geo.index.count / 3
+  return geo.getAttribute('position').count / 3
+}
+
+export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): Horde {
   const x = new Float32Array(MAX)
   const z = new Float32Array(MAX)
   const hp = new Float32Array(MAX)
@@ -117,8 +110,6 @@ export function createHorde(): Horde {
   const bench = new Uint8Array(MAX)
   const free = new FreeList(MAX)
   const material = createEnemyMaterial()
-  const miteGeo = miteGeometry()
-  const houndGeo = houndGeometry()
   const miteMesh = makeCrowd(miteGeo, material, MAX)
   const houndMesh = makeCrowd(houndGeo, material, MAX)
   const miteA = attrs(miteMesh)
@@ -250,8 +241,8 @@ export function createHorde(): Horde {
     onExpose: null,
     telegraphs,
     tris: {
-      mite: miteGeo.getAttribute('position').count / 3,
-      hound: houndGeo.getAttribute('position').count / 3,
+      mite: triCount(miteGeo),
+      hound: triCount(houndGeo),
     },
     radial(cx, cz, radius, amount, hitCtx) {
       if (horde.frozen) return
@@ -426,6 +417,24 @@ export function createHorde(): Horde {
         z[i] = slid.z
         yaw[i] = yawFromDirection(sx, sz)
       }
+      const pushR = 0.9
+      const pushR2 = pushR * pushR
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || bench[i] || state[i] === DYING) continue
+        const dx = (x[i] ?? 0) - ctx.px
+        const dz = (z[i] ?? 0) - ctx.pz
+        const d2 = dx * dx + dz * dz
+        if (d2 >= pushR2 || d2 < 1e-8) continue
+        const d = Math.sqrt(d2)
+        const spec = type[i] === 0 ? TUNING.mite : TUNING.hound
+        const spd = spec.speed * (lit[i] ? TUNING.exposedSpeed : 1) * ((slowT[i] ?? 0) > 0 ? 0.6 : 1)
+        const push = Math.min(pushR - d, spd * ctx.dt * 1.5)
+        x[i] = (x[i] ?? 0) + (dx / d) * push
+        z[i] = (z[i] ?? 0) + (dz / d) * push
+        const slid = resolveCircle(x[i] ?? 0, z[i] ?? 0, spec.radius)
+        x[i] = slid.x
+        z[i] = slid.z
+      }
       hashBuild(x, z, alive, MAX)
       if (!ctx.vulnerable()) return
       const near = hashQuery(ctx.px, ctx.pz, 2.2, QUERY)
@@ -469,20 +478,13 @@ export function createHorde(): Horde {
         const s = Math.max(0.001, scale[i] ?? 1)
         const moving = state[i] === CHASE || state[i] === LUNGE ? 1 : 0
         if (type[i] === 0) {
-          writeInstance(miteMesh, mites, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s * 1.7)
-          miteA.flash.setX(mites, (flash[i] ?? 0) > 0 ? 1 : 0)
-          miteA.lit.setX(mites, lit[i] ?? 0)
-          miteA.phase.setX(mites, phase[i] ?? 0)
-          miteA.move.setX(mites, moving)
+          writeInstance(miteMesh, mites, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s)
+          miteA.anim.setXYZW(mites, (flash[i] ?? 0) > 0 ? 1 : 0, lit[i] ?? 0, phase[i] ?? 0, moving)
           mites++
         } else {
           const crouch = state[i] === TELE ? 0.62 : 1
-          writeInstance(houndMesh, hounds, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s, s * crouch)
-          houndA.flash.setX(hounds, (flash[i] ?? 0) > 0 ? 1 : 0)
-          houndA.lit.setX(hounds, lit[i] ?? 0)
-          houndA.phase.setX(hounds, phase[i] ?? 0)
-          houndA.move.setX(hounds, moving)
-          houndA.tele.setX(hounds, state[i] === TELE ? 1 : 0)
+          writeInstance(houndMesh, hounds, x[i] ?? 0, 0, z[i] ?? 0, yaw[i] ?? 0, s * 1.3, s * crouch * 1.3)
+          houndA.anim.setXYZW(hounds, (flash[i] ?? 0) > 0 ? 1 : 0, lit[i] ?? 0, phase[i] ?? 0, moving)
           if (state[i] === TELE) telegraphs.push({ x: x[i] ?? 0, z: z[i] ?? 0, yaw: yaw[i] ?? 0 })
           hounds++
         }
@@ -494,19 +496,11 @@ export function createHorde(): Horde {
   return horde
 }
 
-function finish(
-  mesh: InstancedMesh,
-  count: number,
-  a: { flash: InstancedBufferAttribute; lit: InstancedBufferAttribute; phase: InstancedBufferAttribute; move: InstancedBufferAttribute; tele: InstancedBufferAttribute },
-) {
+function finish(mesh: InstancedMesh, count: number, a: { anim: InstancedBufferAttribute }) {
   mesh.count = count
   mesh.visible = count > 0
   if (count > 0) {
     mesh.instanceMatrix.needsUpdate = true
-    a.flash.needsUpdate = true
-    a.lit.needsUpdate = true
-    a.phase.needsUpdate = true
-    a.move.needsUpdate = true
-    a.tele.needsUpdate = true
+    a.anim.needsUpdate = true
   }
 }

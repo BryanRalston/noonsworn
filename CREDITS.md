@@ -6,4 +6,4 @@ Sound effects: Kenney (kenney.nl) Impact, Interface, Music Jingles, and RPG Audi
 Music: "Desert Loop (Lo-Fi Remaster)" by iamoneabe, via OpenGameArt.org. CC0 1.0.
 Shipped samples peak at −3 dBFS or below and include AAC .m4a twins. See audio-src/LICENSES.md for the file map.
 
-No CC0 model packs are included. Palette and layout follow the Noonsworn spec. Three.js is MIT.
+No CC0 model packs are included. Sela, the Dusk Mite, and the Shade Hound are original procedural models (assets_v3, sela_rigged.glb). Palette and layout follow the Noonsworn spec. Three.js is MIT.

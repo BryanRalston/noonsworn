@@ -11,6 +11,7 @@ import {
   RGBAFormat,
   ShaderMaterial,
   UnsignedByteType,
+  Vector2,
 } from 'three'
 import { TUNING, type TierName } from '../../data/tuning'
 
@@ -73,6 +74,7 @@ export interface WeaponFx {
   shimmer: (x: number, z: number, radius: number) => void
   glint: (x: number, y: number, z: number, size: number) => void
   tele: (x: number, z: number, yaw: number) => void
+  setFocus: (x: number, z: number) => void
   update: (dt: number) => void
   clear: () => void
 }
@@ -187,9 +189,9 @@ function buildAtlas(): DataTexture {
   return tex
 }
 
-function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
+function makeMaterial(map: DataTexture, additive: boolean, player: Vector2): ShaderMaterial {
   return new ShaderMaterial({
-    uniforms: { uMap: { value: map } },
+    uniforms: { uMap: { value: map }, uPlayer: { value: player } },
     vertexShader: `
       attribute vec4 iUv;
       attribute float iFlag;
@@ -199,15 +201,19 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
       varying float vFlag;
       varying float vRadius;
       varying vec2 vLocalXZ;
+      varying vec2 vWorldXZ;
+      varying vec2 vAtlas;
       void main() {
         vFxUv = iUv.xy + uv * iUv.zw;
         vUv = uv;
         vCol = instanceColor;
         vFlag = iFlag;
+        vAtlas = iUv.xy;
         vec4 world = instanceMatrix * vec4(position.xyz, 1.0);
         vec4 origin = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         vRadius = 0.5 * length(instanceMatrix[0].xyz);
         vLocalXZ = world.xz - origin.xz;
+        vWorldXZ = world.xz;
         gl_Position = projectionMatrix * modelViewMatrix * world;
       }
     `,
@@ -220,6 +226,9 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
       varying float vFlag;
       varying float vRadius;
       varying vec2 vLocalXZ;
+      varying vec2 vWorldXZ;
+      varying vec2 vAtlas;
+      uniform vec2 uPlayer;
       void main() {
         float a = texture2D(uMap, vFxUv).a;
         vec3 col = min(vCol * a, vec3(${ADD_CAP.toFixed(2)}));
@@ -240,6 +249,9 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
       varying float vFlag;
       varying float vRadius;
       varying vec2 vLocalXZ;
+      varying vec2 vWorldXZ;
+      varying vec2 vAtlas;
+      uniform vec2 uPlayer;
       void main() {
         vec4 tex = texture2D(uMap, vFxUv);
         float rim = smoothstep(0.72, 0.98, tex.r);
@@ -271,14 +283,19 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
           alpha = band * mix(0.20, 0.95, edge);
         } else if (vFlag > 0.5) {
           float rad = max(vRadius, 0.5);
-          float dist = length(vLocalXZ);
+          float bellDist = length(vLocalXZ);
           float inner = rad - 0.35;
-          float band = smoothstep(inner - 0.03, inner + 0.02, dist) * (1.0 - smoothstep(rad - 0.02, rad + 0.02, dist));
-          float edge = smoothstep(rad - 0.09, rad, dist);
+          float band = smoothstep(inner - 0.03, inner + 0.02, bellDist) * (1.0 - smoothstep(rad - 0.02, rad + 0.02, bellDist));
+          float edge = smoothstep(rad - 0.09, rad, bellDist);
           float life = clamp(max(vCol.r, vCol.g) / 0.28, 0.0, 1.0);
           col = mix(vCol, vec3(0.055, 0.028, 0.012), clamp(edge, 0.0, 1.0));
           alpha = band * 0.75 * life;
         }
+        float dist = length(vWorldXZ - uPlayer);
+        float cover = smoothstep(0.0, 1.2, dist);
+        if (vFlag > 2.5 && vFlag < 3.5 && dist < 0.9) discard;
+        if (vFlag > 0.5 && vFlag < 2.5) alpha *= cover;
+        if (vFlag < 0.5 && vAtlas.y > 0.20 && vAtlas.y < 0.30 && vAtlas.x < 0.62) alpha *= cover;
         if (alpha < 0.02) discard;
         gl_FragColor = vec4(col, alpha);
       }
@@ -299,8 +316,10 @@ function makeMaterial(map: DataTexture, additive: boolean): ShaderMaterial {
 export function createWeaponFx(): WeaponFx {
   const map = buildAtlas()
   const geo = new PlaneGeometry(1, 1)
-  const mesh = new InstancedMesh(geo, makeMaterial(map, false), MAX)
-  const hot = new InstancedMesh(geo, makeMaterial(map, true), MAX)
+  const hotGeo = geo.clone()
+  const playerXZ = new Vector2()
+  const mesh = new InstancedMesh(geo, makeMaterial(map, false, playerXZ), MAX)
+  const hot = new InstancedMesh(hotGeo, makeMaterial(map, true, playerXZ), MAX)
   for (const m of [mesh, hot]) {
     m.count = 0
     m.frustumCulled = false
@@ -496,6 +515,9 @@ export function createWeaponFx(): WeaponFx {
       const fx = -Math.sin(rot)
       const fz = -Math.cos(rot)
       put(CELL.streak, px + fx * 1.15, 0.08, pz + fz * 1.15, rot, 0.1, 2.1, 0.16, FX.red, 0, 0)
+    },
+    setFocus(px, pz) {
+      playerXZ.set(px, pz)
     },
     update(dt) {
       const uvA = mesh.geometry.getAttribute('iUv') as InstancedBufferAttribute
