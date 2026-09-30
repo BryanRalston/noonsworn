@@ -53,6 +53,12 @@ Processing: mono (music is stereo), 44.1 kHz. Every shipped sample is peak-norma
 
 **Total: 830,610 bytes (811 KB)** for 42 files. SFX alone: 265,658 bytes. Music is the largest item (515 KB); lazy-load it after the first run starts.
 
+## M3b temple foley
+
+These nine clips are original ffmpeg synthesis for the temple. They are not CC0 samples and they are not stored in this folder. Shipped copies are `public/assets/audio/<name>.ogg` and the AAC `.m4a` twin. Each one is peak-normalized to −3 dBFS or below.
+
+`gate_rumble` (1.2 s), `mirror_hum_loop` (1 s, seamless), `mirror_fire`, `slab_warn`, `slab_slam`, `spring_launch`, `spring_land`, `mirage_step`, `relic_get`.
+
 ## Not downloaded but approved as sources
 - **Sonniss GDC Game Audio Bundles** (https://sonniss.com/gameaudiogdc): royalty-free, commercial use in games allowed, no attribution required; you may not redistribute the raw files as a sound library. Too large to download here (tens of GB); use it only if a Kenney/OGA sound is not good enough (e.g. a better stone-thud or metallic whoosh).
 - **Kenney Impact Sounds** also contains `impactBell_heavy_001-004`, `impactPlate_*`, `impactWood_*` alternates (CC0) if more variety is needed.

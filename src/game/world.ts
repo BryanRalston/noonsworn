@@ -1,22 +1,24 @@
 import {
   BackSide,
   CylinderGeometry,
+  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   MeshToonMaterial,
   PlaneGeometry,
   SphereGeometry,
+  Vector3,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { mountPalette, COLOR } from '../data/palette'
 import { TUNING, type TierName } from '../data/tuning'
 import { createEvents } from '../core/events'
-import { startLoop } from '../core/loop'
+import { startLoop, type LoopHost } from '../core/loop'
 import { yawFromDirection } from '../core/math'
 import { mulberry32, type Rng } from '../core/rng'
 import { NoopAds } from '../platform/ads'
 import { createFollowCamera } from '../render/camera'
-import { createFloorMaterial } from '../render/floorShader'
+import { createFloorMaterial, createWingFloorMaterial } from '../render/floorShader'
 import { enemyTime, setEnemyLegSwing } from '../render/instancing'
 import { createQuality, wantsAntialias } from '../render/quality'
 import { createGpu } from '../render/renderer'
@@ -39,7 +41,7 @@ import { storageGet } from '../platform/storage'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
 import { loadCast } from './charpack'
-import { buildInlay, buildPillars, buildShell, createScatter, createSunPip } from './arena'
+import { buildInlay, buildPillars, buildShell, buildWingFloors, createScatter, createSunPip } from './arena'
 import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector } from './director'
@@ -49,6 +51,9 @@ import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
 import { createSunClock, damageAmount } from './sunClock'
+import { cellBlocked } from './collision'
+import { createTemple, writeFloorPillars } from './temple'
+import { createTraps } from './traps'
 import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
@@ -76,6 +81,9 @@ function blankInput(): InputState {
     navY: 0,
     anyPressed: false,
     keyPressed: false,
+    shiftPressed: false,
+    altPressed: false,
+    miragePressed: false,
   }
 }
 
@@ -106,6 +114,7 @@ export async function boot(container: HTMLElement) {
   let shadeAz = 3
   const forced = params.get('seed')
   const forcedSeed = forced != null && Number.isFinite(Number(forced)) ? Number(forced) : null
+  let queuedSeed: number | null = null
   const ads = new NoopAds(params.get('ads') === 'fake')
   void ads.init()
   if (params.get('ads') === 'fake') {
@@ -146,6 +155,11 @@ export async function boot(container: HTMLElement) {
   tips.setEnabled(tipsEnabled())
   const featureMap = createFeatureMap(() => ({ version: __VERSION__, sha: __SHA__, tier: quality.tier }))
   ui.append(featureMap.root)
+  const gateArrow = document.createElement('div')
+  gateArrow.id = 'gate-arrow'
+  gateArrow.hidden = true
+  ui.append(gateArrow)
+  const arrowPoint = new Vector3()
   const debug = createDebugOverlay(ui)
   const touchView = createTouchControls(container)
   const basis: Basis = { fx: 0, fz: -1, rx: 1, rz: 0 }
@@ -208,6 +222,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   })
   const shell = new Mesh(buildShell(), wallMat)
   const pillars = new Mesh(buildPillars(), pillarMat)
+  const wingFloor = new Mesh(buildWingFloors(), createWingFloorMaterial(floor.uniforms))
+  wingFloor.frustumCulled = false
+  wingFloor.visible = false
+  const wingPillars = new InstancedMesh(new CylinderGeometry(1, 1, 5, 8), pillarMat, 7)
+  wingPillars.count = 0
+  wingPillars.visible = false
+  wingPillars.frustumCulled = false
+  const temple = createTemple()
+  const traps = createTraps()
   const inlay = new Mesh(buildInlay(), inlayMat)
   inlay.renderOrder = 1
   const outer = new Mesh(new PlaneGeometry(900, 900).rotateX(-Math.PI / 2), outerMat)
@@ -241,7 +264,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const shadows = createBlobShadows()
   const shards = createShards()
   const bloom = createBloom()
-  gpu.scene.add(sky, outer, scatter, floorMesh, shell, pillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
+  gpu.scene.add(sky, outer, scatter, floorMesh, wingFloor, shell, pillars, wingPillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
+  temple.attach(shell, wingFloor, wingPillars, gpu.scene, wallMat)
+  traps.attach(gpu.scene, pillarMat)
   const tutorial = createTutorial(ui, gpu.scene)
 
   const sun = createSunClock()
@@ -269,6 +294,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let shakeT = 0
   let shakeAmp = 0
   let swallow = false
+  let eatClick = false
   let queuedCut = false
   const frame = blankInput()
   const held = blankInput()
@@ -284,6 +310,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
 
   const floats = createFloats(container, TUNING.tiers.high.floats)
   const audio = createAudio(() => fxRng())
+  temple.onRumble = () => audio.rumble()
   const toast = document.createElement('div')
   toast.id = 'toast'
   toast.hidden = true
@@ -332,6 +359,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     might: 0,
     searing: 0,
     isLit: (x, z) => sun.isLit(x, z),
+    guide: null,
+    lureX: 0,
+    lureZ: 0,
+    lureR2: 0,
+    pass: false,
     onHit(x, z, amount, lit, killed, index) {
       audio.hit()
       const bigHit = amount >= TUNING.cut.damage
@@ -398,8 +430,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
 
   function buzz(ms: number) {
     if (storageGet('noonsworn.haptics') === '0') return
-    const nav = navigator as Navigator & { vibrate?: (pattern: number) => boolean }
-    if (typeof nav.vibrate === 'function') nav.vibrate(ms)
+    const nav = navigator as Navigator & { vibrate?: (pattern: number) => boolean; userActivation?: { hasBeenActive: boolean } }
+    if (typeof nav.vibrate !== 'function') return
+    if (nav.userActivation && !nav.userActivation.hasBeenActive) return
+    nav.vibrate(ms)
   }
 
   function shakeOn(): boolean {
@@ -473,6 +507,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     ctx.separate = tick % (quality.tier === 'low' ? 2 : 1) === 0
     ctx.might = build.might
     ctx.searing = build.searing
+    ctx.guide = temple.opened() > 0 ? temple.guide : null
+    ctx.pass = traps.phasing()
+    ctx.lureX = traps.decoyX()
+    ctx.lureZ = traps.decoyZ()
+    ctx.lureR2 = traps.decoyR2()
   }
 
   function openLevel() {
@@ -517,6 +556,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sun.setWide(build.wide)
     } else if (id === CARD.longday && build.longday < cap) build.longday++
     else if (id === CARD.searing && build.searing < cap) build.searing++
+    else if (id === CARD.mirage && build.mirage === 0) build.mirage = 1
     else {
       player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
     }
@@ -574,7 +614,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   function startRun() {
-    rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
+    rng = mulberry32(queuedSeed ?? forcedSeed ?? (Date.now() >>> 0))
+    queuedSeed = null
     resetPlayer(player)
     resetCut(cut)
     build = createBuild()
@@ -596,6 +637,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     flareCd = 6
     bellCd = 10
     audio.startMusic()
+    temple.reset(rng)
+    traps.reset(temple)
     hud.setCharges(0)
     levelUp.hide()
     featureMap.close()
@@ -892,6 +935,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     if (mode === 'splash') {
       audio.unlock()
       audio.ui()
+      eatClick = true
       showMode('menu')
       return
     }
@@ -904,6 +948,12 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       input.clearCut()
     }
   })
+  window.addEventListener('click', (e) => {
+    if (!eatClick) return
+    eatClick = false
+    e.preventDefault()
+    e.stopPropagation()
+  }, true)
   window.addEventListener('pointerdown', () => audio.unlock())
   window.addEventListener('keydown', () => audio.unlock())
   document.addEventListener('visibilitychange', () => {
@@ -918,7 +968,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     if (e.ctrlKey) e.preventDefault()
   }, { passive: false })
 
-  startLoop({
+  const loop: LoopHost = {
     beginFrame(frameSec) {
       profHorde = 0
       profSpear = 0
@@ -927,6 +977,12 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       const front = mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits' || mode === 'paused' || mode === 'dead' || mode === 'clear'
       input.setNavLock(mode !== 'playing')
       input.readInto(frame, follow.camera)
+      if (!featureMap.root.hidden && (frame.pausePressed || frame.cancelPressed)) {
+        featureMap.close()
+        frame.pausePressed = false
+        frame.cancelPressed = false
+      }
+      if (build.mirage <= 0 && (frame.shiftPressed || frame.altPressed)) frame.cutPressed = true
       const hintDevice = input.device()
       screens.setDevice(hintDevice === 'touch' ? 'touch' : hintDevice === 'pad' ? 'pad' : 'keyboard')
       if (swallow) {
@@ -1009,6 +1065,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
+      temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
+      temple.mask(floor.uniforms.uWing.value)
+      const wing = floor.uniforms.uWing.value
+      wingFloor.visible = wing.x + wing.y + wing.z + wing.w > 0
+      writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
       if (build.flare > 0 && !(previewShow && previewWeapon === 'flare')) {
         flareCd -= dt
         if (flareCd <= 0) {
@@ -1141,9 +1202,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         state.cutDirZ = previewSweepZ
       }
       const speed = TUNING.player.speed * (1 + TUNING.passive.swift * build.swift)
+      const slipped = traps.begin(dt, player)
+      if (traps.blocksCut()) {
+        cut.active = false
+        cut.buffer = 0
+      }
       fillCtx(dt)
       updateCut(cut, player, dt, {
-        pressed: state.cutPressed,
+        pressed: traps.blocksCut() ? false : state.cutPressed,
         dirX: state.cutDirX,
         dirZ: state.cutDirZ,
         wishX,
@@ -1155,7 +1221,37 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }, build.haste)
       if (cut.active && !cutWas) tutorial.onCut()
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
-      integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
+      if (!slipped) integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
+      const wantMirage = build.mirage > 0 && (state.shiftPressed || state.altPressed || state.miragePressed)
+      traps.after(dt, player, wishX, wishZ, horde, ctx, (x, z) => sun.isLit(x, z), build.mirage > 0, build.haste, wantMirage && (first ?? false))
+      if (traps.events.relic) {
+        build.mirage = 1
+        audio.relic()
+        showToast('Mirage Sandals', 2.4)
+      }
+      if (traps.events.fire) audio.mirrorFire()
+      if (traps.events.warn) audio.slabWarn()
+      if (traps.events.slam) {
+        audio.slabSlam()
+        audio.duckTap()
+      }
+      if (traps.events.launch) audio.springLaunch()
+      if (traps.events.land) {
+        audio.springLand()
+        audio.duckTap()
+        if (shakeOn()) {
+          shakeAmp = Math.max(shakeAmp, traps.events.shake)
+          shakeT = Math.max(shakeT, TUNING.shakeDecay)
+        }
+        hitStop = Math.max(hitStop, traps.events.stop)
+      }
+      if (traps.events.mirage) audio.mirage()
+      audio.setHums(traps.events.hum)
+      if (traps.blocksCut()) {
+        cut.active = false
+        cut.buffer = 0
+      }
+      if (traps.phasing()) player.invuln = Math.max(player.invuln, dt + 0.02)
       if (previewShow) {
         player.x = showX
         player.z = showZ
@@ -1228,7 +1324,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       fillCtx(dt)
       const cam = follow.camera.position
-      if (!horde.frozen && !turnWho) director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z)
+      writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
+      if (!horde.frozen && !turnWho) {
+        const poured = temple.takeSpawns()
+        director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z, poured, temple.pickWing)
+      }
       const hordeT = performance.now()
       horde.update(ctx)
       profHorde += performance.now() - hordeT
@@ -1339,7 +1439,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (import.meta.env.DEV && (turnWho === 'mite' || turnWho === 'hound')) {
         horde.face(Number(params.get('yaw') ?? '0'))
       }
-      playerView.position.set(x, 0, z)
+      playerView.position.set(x, traps.lift(), z)
       playerView.rotation.y = turnWho === 'sela' ? player.yaw : yaw
       const slashNow = halo.pulses !== animSlashSeen
       animSlashSeen = halo.pulses
@@ -1388,6 +1488,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       profFx = performance.now() - fxT
       shadows.begin()
       shadows.put(x, z, 1.5 * 1.3)
+      const marks = traps.blobs
+      for (let i = 0; i < marks.length; i++) {
+        const blob = marks[i]
+        if (blob) shadows.put(blob.x, blob.z, blob.scale)
+      }
       horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3))
       pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
       shadows.end()
@@ -1429,7 +1534,23 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       hud.setKills(kills)
       hud.setCooldown(ready)
       touchView.setCooldown(ready)
-      sundial.set(sun.angle, mode === 'playing' || mode === 'level' ? time : sun.time)
+      hud.setMirage(build.mirage > 0, traps.ready())
+      touchView.setOwned(build.mirage > 0)
+      sundial.set(sun.angle, mode === 'playing' || mode === 'level' ? time : sun.time, temple.telegraph())
+      const aim = temple.arrow()
+      if (!aim || (mode !== 'playing' && mode !== 'level')) gateArrow.hidden = true
+      else {
+        arrowPoint.set(aim.x, 1.2, aim.z).project(follow.camera)
+        const off = Math.abs(arrowPoint.x) > 0.9 || Math.abs(arrowPoint.y) > 0.9 || arrowPoint.z > 1
+        gateArrow.hidden = !off
+        if (off) {
+          const ax = Math.max(-0.86, Math.min(0.86, arrowPoint.x))
+          const ay = Math.max(-0.82, Math.min(0.82, arrowPoint.y))
+          gateArrow.style.left = `${(ax * 0.5 + 0.5) * (canvas.clientWidth || 1)}px`
+          gateArrow.style.top = `${(-ay * 0.5 + 0.5) * (canvas.clientHeight || 1)}px`
+          gateArrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(-ay, ax)}rad)`
+        }
+      }
       if (debug.visible) {
         debugClock += frameSec
         if (debugClock >= 0.25) {
@@ -1462,7 +1583,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         }
       }
     },
-  })
+  }
+  startLoop(loop)
 
   function sfxLine(): string {
     const c = audio.counts()
@@ -1473,6 +1595,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
 
   const api = {
     startRun,
+    seedRun: (n: number) => {
+      queuedSeed = n >>> 0
+      startRun()
+    },
     spawnStress,
     sun,
     player,
@@ -1490,10 +1616,61 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       player.pz = pz
       follow.snap(px, pz)
     },
+    tick: (dt: number) => loop.step(dt, true),
+    renderNow: () => loop.render(1, 0.016, 16),
+    pulseMirage: () => {
+      frame.miragePressed = true
+    },
+    clearPulse: () => {
+      frame.miragePressed = false
+      frame.shiftPressed = false
+      frame.altPressed = false
+    },
+    grantMirage: () => {
+      build.mirage = 1
+    },
+    probe: () => {
+      const c = follow.camera
+      c.updateMatrixWorld()
+      const e = c.matrixWorld.elements
+      const fx = -(e[8] ?? 0)
+      const fy = -(e[9] ?? 0)
+      const fz = -(e[10] ?? 0)
+      const pitch = (Math.atan2(-fy, Math.hypot(fx, fz)) * 180) / Math.PI
+      return {
+        fov: c.fov,
+        pitch,
+        dist: follow.lookDistance(),
+        calls: stats.calls,
+        tris: stats.triangles,
+        flow: temple.flowMs(),
+        wings: temple.opened(),
+        tele: temple.telegraph(),
+        t: time,
+        sun: sun.time,
+        order: temple.order(),
+        sides: temple.sides(),
+        openTimes: temple.openTimes(),
+        mirage: build.mirage,
+        hp: player.hp,
+        level: build.level,
+        y: traps.lift(),
+        ring: traps.ring(),
+        phases: traps.phases(),
+        mirageReady: traps.ready(),
+        plates: temple.plates.map((p) => ({ kind: p.kind, x: p.x, z: p.z, boxX: p.boxX, boxZ: p.boxZ, side: p.side, lit: sun.isLit(p.x, p.z) })),
+      }
+    },
     audioCounts: () => audio.counts(),
     meter: () => audio.meter(),
     time: () => time,
     mode: () => mode,
+    blocked: (x: number, z: number) => cellBlocked(x, z),
+    offers: () => {
+      const buf: Card[] = []
+      const n = rollCards(build, rng, buf, 4)
+      return buf.slice(0, n).map((c) => c.name)
+    },
   }
   window.__noonsworn = api
 }

@@ -1,4 +1,4 @@
-import { Color, DataTexture, RepeatWrapping, ShaderMaterial, Texture, Vector2, Vector3 } from 'three'
+import { Color, DataTexture, RepeatWrapping, ShaderMaterial, Texture, Vector2, Vector3, Vector4 } from 'three'
 import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 
@@ -17,7 +17,8 @@ varying vec3 vWorld;
 uniform vec2 uSun;
 uniform vec2 uDir;
 uniform float uCosBeta;
-uniform vec3 uPillars[4];
+uniform vec3 uPillars[12];
+uniform float uPillarN;
 uniform vec3 uSand;
 uniform vec3 uSunlit;
 uniform vec3 uShade;
@@ -50,6 +51,12 @@ void main() {
   for (int i = 0; i < 4; i++) {
     clearN = min(clearN, clearance(uSun, p, uPillars[i].xy, uPillars[i].z));
   }
+  if (uPillarN > 4.5) {
+    for (int i = 4; i < 12; i++) {
+      if (float(i) >= uPillarN) break;
+      clearN = min(clearN, clearance(uSun, p, uPillars[i].xy, uPillars[i].z));
+    }
+  }
   float shadow = smoothstep(-0.4, 0.4, clearN);
   float checker = mod(floor(p.x * 0.5) + floor(p.y * 0.5), 2.0);
   float bright = checker < 0.5 ? 0.96 : 1.04;
@@ -77,6 +84,7 @@ export interface FloorUniforms {
   uDir: { value: Vector2 }
   uCosBeta: { value: number }
   uPillars: { value: Vector3[] }
+  uPillarN: { value: number }
   uSand: { value: Color }
   uSunlit: { value: Color }
   uShade: { value: Color }
@@ -89,6 +97,7 @@ export interface FloorUniforms {
   uAlbedo: { value: Texture }
   uTexMix: { value: number }
   uEdgeBoost: { value: number }
+  uWing: { value: Vector4 }
 }
 
 function whiteTex(): DataTexture {
@@ -112,8 +121,17 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
         new Vector3(-at, at, r),
         new Vector3(at, -at, r),
         new Vector3(at, at, r),
+        new Vector3(0, 0, 0),
+        new Vector3(0, 0, 0),
+        new Vector3(0, 0, 0),
+        new Vector3(0, 0, 0),
+        new Vector3(0, 0, 0),
+        new Vector3(0, 0, 0),
+        new Vector3(0, 0, 0),
+        new Vector3(0, 0, 0),
       ],
     },
+    uPillarN: { value: 4 },
     uSand: { value: COLOR.sandstone.clone() },
     uSunlit: { value: COLOR.sunlit.clone() },
     uShade: { value: COLOR.shade.clone() },
@@ -126,6 +144,7 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
     uAlbedo: { value: whiteTex() },
     uTexMix: { value: 0 },
     uEdgeBoost: { value: 0 },
+    uWing: { value: new Vector4(0, 0, 0, 0) },
   }
   const material = new ShaderMaterial({
     uniforms: uniforms as unknown as ShaderMaterial['uniforms'],
@@ -133,4 +152,30 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
     fragmentShader: fragment,
   })
   return { material, uniforms }
+}
+
+/** Same sun shader as the sanctum, tinted, drawn only for wings that are opening. */
+export function createWingFloorMaterial(uniforms: FloorUniforms): ShaderMaterial {
+  const frag = fragment
+    .replace('uniform float uEdgeBoost;', 'uniform float uEdgeBoost;\nuniform vec4 uWing;')
+    .replace(
+      'void main() {\n  vec2 p = vWorld.xz;',
+      `void main() {
+  vec2 p = vWorld.xz;
+  float wingShow = 1.0;
+  if (p.x > 24.15) wingShow = uWing.x;
+  else if (p.x < -24.15) wingShow = uWing.z;
+  else if (p.y > 24.15) wingShow = uWing.y;
+  else if (p.y < -24.15) wingShow = uWing.w;
+  if (wingShow < 0.5) discard;`,
+    )
+    .replace(
+      'col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));',
+      'col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));\n  col *= 0.9;',
+    )
+  return new ShaderMaterial({
+    uniforms: uniforms as unknown as ShaderMaterial['uniforms'],
+    vertexShader: vertex,
+    fragmentShader: frag,
+  })
 }

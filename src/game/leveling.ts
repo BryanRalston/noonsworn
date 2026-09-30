@@ -19,6 +19,7 @@ export interface Build {
   bell: number
   longday: number
   searing: number
+  mirage: number
   spearJump: number
   haloJump: number
   flareJump: number
@@ -54,12 +55,13 @@ export const CARD = {
   bell: 10,
   longday: 11,
   searing: 12,
+  mirage: 13,
 } as const
 
 export function createBuild(): Build {
   return {
     level: 1, xp: 0, pending: 0, spear: 1, halo: 0, might: 0, haste: 0, swift: 0, vitality: 0,
-    lodestone: 0, wide: 0, flare: 0, bell: 0, longday: 0, searing: 0, spearJump: 0, haloJump: 0, flareJump: 0, bellJump: 0,
+    lodestone: 0, wide: 0, flare: 0, bell: 0, longday: 0, searing: 0, mirage: 0, spearJump: 0, haloJump: 0, flareJump: 0, bellJump: 0,
   }
 }
 
@@ -93,6 +95,7 @@ export function rankOf(build: Build, id: number): number {
   if (id === CARD.bell) return build.bell
   if (id === CARD.longday) return build.longday
   if (id === CARD.searing) return build.searing
+  if (id === CARD.mirage) return build.mirage
   return 0
 }
 
@@ -154,6 +157,7 @@ export function rollCards(build: Build, rng: Rng, out: Card[], count = 3): numbe
     add(CARD.longday, build.longday < cap)
     add(CARD.searing, build.searing < cap)
   }
+  if (build.level >= TUNING.temple.cardLevel && build.mirage === 0) add(CARD.mirage, true)
   if (restPool.length + boonPool.length === 0) restPool.push(CARD.heal)
   shuffle(restPool, rng)
   shuffle(boonPool, rng)
@@ -216,6 +220,7 @@ export function describe(build: Build, id: number): Card {
   if (id === CARD.bell) return cardOf(build, id, 'Noon Bell', 'A toll slows nearby shade', 5)
   if (id === CARD.longday) return cardOf(build, id, 'Long Day', 'The sun turns 12% slower', 5)
   if (id === CARD.searing) return cardOf(build, id, 'Searing Light', 'Lit enemies burn for 2s', 5)
+  if (id === CARD.mirage) return cardOf(build, id, 'Mirage Sandals', 'A sidestep that leaves a decoy', 1)
   return { id: CARD.heal, name: 'Heal 30', text: 'Restore 30 HP', from: 'now', to: '+30', rank: 0, max: 1, next: 1 }
 }
 

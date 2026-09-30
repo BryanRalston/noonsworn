@@ -6,12 +6,14 @@ const aimOut = { x: 0, z: 0 }
 
 export function createMouse(canvas: HTMLCanvasElement) {
   let cut = false
+  let alt = false
   let clientX = window.innerWidth * 0.62
   let clientY = window.innerHeight * 0.55
   let have = false
   let lastMove = performance.now() - 10_000
   const api = {
     cut: false,
+    alt: false,
     activity: false,
     idle() {
       return performance.now() - lastMove > TUNING.aimMemory * 1000
@@ -38,11 +40,15 @@ export function createMouse(canvas: HTMLCanvasElement) {
     },
     consume() {
       api.cut = cut
+      api.alt = alt
       cut = false
+      alt = false
     },
     clearCut() {
       cut = false
+      alt = false
       api.cut = false
+      api.alt = false
     },
   }
   window.addEventListener('pointerdown', (e) => {
@@ -53,7 +59,7 @@ export function createMouse(canvas: HTMLCanvasElement) {
     clientX = e.clientX
     clientY = e.clientY
     lastMove = performance.now()
-    if (e.button === 2) cut = true
+    if (e.button === 2) alt = true
   })
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType === 'touch') return

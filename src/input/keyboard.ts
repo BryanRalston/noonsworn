@@ -10,6 +10,7 @@ export function createKeyboard() {
   let pick = -1
   let claim = false
   let confirm = false
+  let shift = false
   let navX = 0
   let navY = 0
   const api = {
@@ -23,6 +24,7 @@ export function createKeyboard() {
     confirm: false,
     navX: 0,
     navY: 0,
+    shift: false,
     navLock: false,
     activity: false,
     axes() {
@@ -52,7 +54,9 @@ export function createKeyboard() {
       api.confirm = confirm
       api.navX = navX
       api.navY = navY
+      api.shift = shift
       cut = false
+      shift = false
       pause = false
       restart = false
       debug = false
@@ -73,7 +77,8 @@ export function createKeyboard() {
     if (isScrollKey(e.code)) e.preventDefault()
     down.add(e.code)
     api.activity = true
-    if (e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') cut = true
+    if (e.code === 'Space') cut = true
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') shift = true
     if (e.code === 'Escape' || e.code === 'KeyP') pause = true
     if (e.code === 'KeyR' || e.code === 'Enter' || e.code === 'NumpadEnter') restart = true
     if (e.code === 'F3' || e.code === 'Backquote') debug = true

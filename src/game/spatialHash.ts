@@ -1,8 +1,8 @@
 import { TUNING } from '../data/tuning'
 
 const CELL = TUNING.spatialCell
-const ORIGIN = -32
-const CELLS = 32
+const ORIGIN = -48
+const CELLS = 48
 const MAX = 520
 const counts = new Int16Array(CELLS * CELLS)
 const starts = new Int16Array(CELLS * CELLS)

@@ -27,6 +27,9 @@ export interface InputState {
   navY: number
   anyPressed: boolean
   keyPressed: boolean
+  shiftPressed: boolean
+  altPressed: boolean
+  miragePressed: boolean
 }
 
 export function createInput(canvas: HTMLCanvasElement, touch: TouchView, basis: () => Basis) {
@@ -91,6 +94,9 @@ export function createInput(canvas: HTMLCanvasElement, touch: TouchView, basis: 
       out.navY = keys.navY !== 0 ? keys.navY : gp.navY
       out.anyPressed = keyActive || mouseActive || touchActive || gp.any || gp.a || gp.b || gp.lb || gp.navX !== 0 || gp.navY !== 0
       out.keyPressed = keyActive
+      out.shiftPressed = keys.shift
+      out.altPressed = mouse.alt
+      out.miragePressed = pad.mirage
     },
   }
 }

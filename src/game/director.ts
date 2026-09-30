@@ -6,6 +6,12 @@ import type { Horde } from './enemies/horde'
 
 const face = { x: 0, z: 0 }
 
+export interface WingPour {
+  kind: 0 | 1
+  x: number
+  z: number
+}
+
 export interface Director {
   acc: number
   hour: number
@@ -20,6 +26,8 @@ export interface Director {
     rng: Rng,
     camX: number,
     camZ: number,
+    pour?: readonly WingPour[],
+    wingPick?: (px: number, pz: number, rng: Rng, camX: number, camZ: number) => { x: number; z: number } | null,
   ) => void
 }
 
@@ -35,8 +43,15 @@ export function createDirector(): Director {
       forcedHound = false
       forcedRing = false
     },
-    update(dt, time, horde, px, pz, cap, rng, camX, camZ) {
+    update(dt, time, horde, px, pz, cap, rng, camX, camZ, pour, wingPick) {
       if (time >= TUNING.runLength) return
+      if (pour) {
+        for (let i = 0; i < pour.length; i++) {
+          const spot = pour[i]
+          if (!spot) continue
+          horde.spawn(spot.kind, spot.x, spot.z, false, cap, px, pz)
+        }
+      }
       const wave = waveAt(time)
       const rate = wave.rate
       const minCount = Math.min(wave.min, TUNING.designCap)
@@ -68,8 +83,23 @@ export function createDirector(): Director {
         if (director.acc >= 1) director.acc -= 1
         const houndChance = wave.hound
         const kind: 0 | 1 = rng() < houndChance ? 1 : 0
-        const spot = pickSpawn(px, pz, kind === 0 ? TUNING.mite.radius : TUNING.hound.radius, rng, camX, camZ)
-        horde.spawn(kind, spot.x, spot.z, false, cap, px, pz)
+        let spotX = 0
+        let spotZ = 0
+        let fromWing = false
+        if (wingPick && rng() < TUNING.temple.wingSpawn) {
+          const wing = wingPick(px, pz, rng, camX, camZ)
+          if (wing) {
+            spotX = wing.x
+            spotZ = wing.z
+            fromWing = true
+          }
+        }
+        if (!fromWing) {
+          const spot = pickSpawn(px, pz, kind === 0 ? TUNING.mite.radius : TUNING.hound.radius, rng, camX, camZ)
+          spotX = spot.x
+          spotZ = spot.z
+        }
+        horde.spawn(kind, spotX, spotZ, false, cap, px, pz)
         spawned++
         if (horde.count() >= minCount && director.acc < 1) break
       }

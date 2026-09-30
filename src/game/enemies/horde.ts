@@ -38,6 +38,7 @@ export interface Horde {
   x: Float32Array
   z: Float32Array
   alive: Uint8Array
+  state: Uint8Array
   miteMesh: InstancedMesh
   houndMesh: InstancedMesh
   count: () => number
@@ -56,6 +57,11 @@ export interface Horde {
   onExpose: ((x: number, z: number) => void) | null
   visit: (fn: (x: number, z: number, kind: number) => void) => void
   radial: (x: number, z: number, radius: number, amount: number, ctx: HordeCtx) => void
+  soak: (index: number, amount: number, expose: boolean, ctx: HordeCtx) => 0 | 1 | 2
+  punishBox: (cx: number, cz: number, hx: number, hz: number, amount: number, ctx: HordeCtx) => void
+  hurtRadius: (cx: number, cz: number, radius: number, amount: number, ctx: HordeCtx) => void
+  staggerRing: (cx: number, cz: number, inner: number, outer: number, seconds: number) => void
+  knockFrom: (cx: number, cz: number, radius: number, dist: number) => void
   slow: (x: number, z: number, radius: number, seconds: number) => void
   frozen: boolean
   tris: { mite: number; hound: number }
@@ -77,6 +83,11 @@ export interface HordeCtx {
   might: number
   searing: number
   isLit: (x: number, z: number) => boolean
+  guide: ((x: number, z: number, px: number, pz: number) => { x: number; z: number } | null) | null
+  lureX: number
+  lureZ: number
+  lureR2: number
+  pass: boolean
   onHurt: (amount: number) => void
   onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
   onExpose: ((x: number, z: number) => void) | null
@@ -170,6 +181,7 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
     x,
     z,
     alive,
+    state,
     miteMesh,
     houndMesh,
     count() {
@@ -272,6 +284,81 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         const killed = (hp[i] ?? 0) <= 0
         horde.onHit?.(x[i] ?? 0, z[i] ?? 0, dealt, litNow, killed, i)
         if (killed) kill(i, hitCtx)
+      }
+    },
+    soak(index, amount, expose, hitCtx) {
+      if (horde.frozen) return 0
+      if (!alive[index] || state[index] === DYING || bench[index]) return 0
+      if (expose) {
+        lit[index] = 1
+        litKnown[index] = 1
+        if (hitCtx.searing > 0 && (burnT[index] ?? 0) <= 0) {
+          burnT[index] = 2
+          hitCtx.onEmber(x[index] ?? 0, z[index] ?? 0)
+        }
+      }
+      hp[index] = (hp[index] ?? 0) - amount
+      flash[index] = TUNING.hitFlash
+      const killed = (hp[index] ?? 0) <= 0
+      horde.onHit?.(x[index] ?? 0, z[index] ?? 0, amount, lit[index] === 1, killed, index)
+      if (killed) kill(index, hitCtx)
+      return killed ? 2 : 1
+    },
+    punishBox(cx, cz, hx, hz, amount, hitCtx) {
+      if (horde.frozen) return
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || state[i] === DYING || bench[i]) continue
+        if (Math.abs((x[i] ?? 0) - cx) > hx || Math.abs((z[i] ?? 0) - cz) > hz) continue
+        hp[i] = (hp[i] ?? 0) - amount
+        flash[i] = TUNING.hitFlash
+        const killed = (hp[i] ?? 0) <= 0
+        horde.onHit?.(x[i] ?? 0, z[i] ?? 0, amount, lit[i] === 1, killed, i)
+        if (killed) kill(i, hitCtx)
+      }
+    },
+    hurtRadius(cx, cz, radius, amount, hitCtx) {
+      if (horde.frozen) return
+      const r2 = radius * radius
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || state[i] === DYING || bench[i]) continue
+        const dx = (x[i] ?? 0) - cx
+        const dz = (z[i] ?? 0) - cz
+        if (dx * dx + dz * dz > r2) continue
+        hp[i] = (hp[i] ?? 0) - amount
+        flash[i] = TUNING.hitFlash
+        const killed = (hp[i] ?? 0) <= 0
+        horde.onHit?.(x[i] ?? 0, z[i] ?? 0, amount, lit[i] === 1, killed, i)
+        if (killed) kill(i, hitCtx)
+      }
+    },
+    staggerRing(cx, cz, inner, outer, seconds) {
+      const i2 = inner * inner
+      const o2 = outer * outer
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || state[i] === DYING || bench[i]) continue
+        const dx = (x[i] ?? 0) - cx
+        const dz = (z[i] ?? 0) - cz
+        const d2 = dx * dx + dz * dz
+        if (d2 < i2 || d2 > o2) continue
+        state[i] = STAGGER
+        stateT[i] = seconds
+      }
+    },
+    knockFrom(cx, cz, radius, dist) {
+      const r2 = radius * radius
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || state[i] === DYING || bench[i]) continue
+        const dx = (x[i] ?? 0) - cx
+        const dz = (z[i] ?? 0) - cz
+        const d2 = dx * dx + dz * dz
+        if (d2 > r2 || d2 < 1e-6) continue
+        const d = Math.sqrt(d2)
+        x[i] = (x[i] ?? 0) + (dx / d) * dist
+        z[i] = (z[i] ?? 0) + (dz / d) * dist
+        const spec = type[i] === 0 ? TUNING.mite : TUNING.hound
+        const slid = resolveCircle(x[i] ?? 0, z[i] ?? 0, spec.radius)
+        x[i] = slid.x
+        z[i] = slid.z
       }
     },
     slow(cx, cz, radius, seconds) {
@@ -387,6 +474,25 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         }
         let sx = nx
         let sz = nz
+        let lured = false
+        if (ctx.lureR2 > 0) {
+          const lx = ctx.lureX - (x[i] ?? 0)
+          const lz = ctx.lureZ - (z[i] ?? 0)
+          const ld2 = lx * lx + lz * lz
+          if (ld2 < ctx.lureR2 && ld2 > 0.04) {
+            const ld = Math.sqrt(ld2)
+            sx = lx / ld
+            sz = lz / ld
+            lured = true
+          }
+        }
+        if (!lured && ctx.guide) {
+          const g = ctx.guide(x[i] ?? 0, z[i] ?? 0, ctx.px, ctx.pz)
+          if (g) {
+            sx = g.x
+            sz = g.z
+          }
+        }
         if (ctx.separate) {
           const n = hashQuery(x[i] ?? 0, z[i] ?? 0, TUNING.separationRadius, QUERY)
           for (let k = 0; k < n; k++) {
@@ -430,6 +536,7 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         z[i] = slid.z
         yaw[i] = yawFromDirection(sx, sz)
       }
+      if (!ctx.pass) {
       const pushR = 0.9
       const pushR2 = pushR * pushR
       for (let i = 0; i < MAX; i++) {
@@ -448,8 +555,9 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         x[i] = slid.x
         z[i] = slid.z
       }
+      }
       hashBuild(x, z, alive, MAX)
-      if (!ctx.vulnerable()) return
+      if (ctx.pass || !ctx.vulnerable()) return
       const near = hashQuery(ctx.px, ctx.pz, 2.2, QUERY)
       for (let k = 0; k < near; k++) {
         const i = QUERY[k] ?? -1

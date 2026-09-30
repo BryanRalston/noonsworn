@@ -23,7 +23,9 @@ export interface Basis {
 export function createTouch(view: TouchView, basis: () => Basis) {
   const ptrs = new Map<number, Ptr>()
   let cut = false
+  let mirage = false
   let debug = false
+  let lastStickTap = 0
   let stickX = 0
   let stickY = 0
   let stickId = -1
@@ -32,6 +34,7 @@ export function createTouch(view: TouchView, basis: () => Basis) {
   let flickZ = 0
   const api = {
     cut: false,
+    mirage: false,
     debug: false,
     flickX: null as number | null,
     flickZ: null as number | null,
@@ -43,17 +46,21 @@ export function createTouch(view: TouchView, basis: () => Basis) {
     },
     consume() {
       api.cut = cut
+      api.mirage = mirage
       api.debug = debug
       api.flickX = hasFlick ? flickX : null
       api.flickZ = hasFlick ? flickZ : null
       cut = false
+      mirage = false
       debug = false
       hasFlick = false
     },
     clearCut() {
       cut = false
+      mirage = false
       hasFlick = false
       api.cut = false
+      api.mirage = false
       api.flickX = null
       api.flickZ = null
     },
@@ -97,9 +104,13 @@ export function createTouch(view: TouchView, basis: () => Basis) {
 
   window.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch') return
-    const target = e.target
-    if (target instanceof Element && target.closest('#ui button, #feature-map, #debug, #level-up, #screens, #jit, #coach')) return
     api.activity = true
+    const target = e.target
+    if (target instanceof Element && target.closest('#btn-mirage')) {
+      mirage = true
+      return
+    }
+    if (target instanceof Element && target.closest('#ui button, #feature-map, #debug, #level-up, #screens, #jit, #coach')) return
     view.show()
     view.layout()
     const right = e.clientX >= window.innerWidth * TUNING.touch.left
@@ -108,6 +119,9 @@ export function createTouch(view: TouchView, basis: () => Basis) {
     else if (!right && stickId < 0) {
       role = 'stick'
       stickId = e.pointerId
+      const now = performance.now()
+      if (now - lastStickTap < 280) mirage = true
+      lastStickTap = now
     } else if (right) role = 'flick'
     const p: Ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, role, t: performance.now() }
     ptrs.set(e.pointerId, p)

@@ -1,6 +1,6 @@
 export interface Sundial {
   root: HTMLElement
-  set: (angle: number, seconds: number) => void
+  set: (angle: number, seconds: number, gate?: boolean) => void
 }
 
 export function createSundial(parent: HTMLElement): Sundial {
@@ -10,6 +10,7 @@ export function createSundial(parent: HTMLElement): Sundial {
   root.innerHTML = `
     <svg viewBox="0 0 72 72" aria-hidden="true">
       <circle cx="36" cy="36" r="28" class="dial"></circle>
+      <circle id="gate-tick" cx="36" cy="12" r="2.4"></circle>
       <circle id="sun-dot" cx="36" cy="8" r="4"></circle>
     </svg>
     <span id="clock">00:00</span>`
@@ -18,7 +19,8 @@ export function createSundial(parent: HTMLElement): Sundial {
   const clock = root.querySelector('#clock') as HTMLElement
   return {
     root,
-    set(angle, seconds) {
+    set(angle, seconds, gate = false) {
+      root.classList.toggle('gate', gate)
       const c = Math.cos(angle)
       const s = Math.sin(angle)
       dot.setAttribute('cx', `${36 + c * 28}`)

@@ -1,8 +1,8 @@
 import { FEATURES } from '../data/features'
 
 export function shortSha(sha: string): string {
-  if (!sha || sha === 'dev' || sha.length <= 7) return sha || 'dev'
-  return sha.slice(0, 7)
+  if (!sha || sha === 'dev') return 'unknown'
+  return sha.length > 7 ? sha.slice(0, 7) : sha
 }
 
 export interface FeatureMap {

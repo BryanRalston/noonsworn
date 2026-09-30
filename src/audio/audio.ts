@@ -14,6 +14,8 @@ const NAMES = [
   'death_jingle', 'win_jingle',
   'footstep_stone_1', 'footstep_stone_2',
   'amb_wind_loop',
+  'gate_rumble', 'mirror_hum_loop', 'mirror_fire', 'slab_warn', 'slab_slam',
+  'spring_launch', 'spring_land', 'mirage_step', 'relic_get',
 ] as const
 
 const PENTA = [1, 1.122, 1.26, 1.335, 1.414, 1.498]
@@ -42,6 +44,16 @@ export interface AudioBus {
   win: () => void
   bell: () => void
   step: () => void
+  rumble: () => void
+  mirrorFire: () => void
+  slabWarn: () => void
+  slabSlam: () => void
+  springLaunch: () => void
+  springLand: () => void
+  mirage: () => void
+  relic: () => void
+  setHums: (n: number) => void
+  duckTap: () => void
   sample: () => void
   counts: () => Record<string, number>
   meter: () => { peak: number; clipped: number; voices: number; duck: number }
@@ -80,7 +92,7 @@ export function createAudio(fxRng: () => number): AudioBus {
   }
   const live: Record<string, number> = { hit: 0, armored: 0, kill: 0, xp: 0, spear: 0, shimmer: 0, exposed: 0, hurt: 0, level: 0, total: 0 }
   let voicePeak = 0
-  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1 }
+  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1, slam: 3, land: 1, hum: 2 }
   let clipped = 0
   let held = 0
   let xpWindow = 0
@@ -201,6 +213,36 @@ export function createAudio(fxRng: () => number): AudioBus {
   function one(names: string[], gain: number, kind: string | null) {
     const v = vary(gain)
     play(pick(names), sfxBus, v.gain, v.rate, kind)
+  }
+
+  function duckTap() {
+    if (!ctx || !duckGain) return
+    const now = ctx.currentTime
+    const g = duckGain.gain
+    if (g.value < 0.7) return
+    g.cancelScheduledValues(now)
+    g.setValueAtTime(g.value, now)
+    g.linearRampToValueAtTime(0.708, now + 0.02)
+    g.linearRampToValueAtTime(0.708, now + 0.25)
+    g.linearRampToValueAtTime(1, now + 0.42)
+  }
+
+  const hums: AudioBufferSourceNode[] = []
+  function setHums(n: number) {
+    const want = Math.max(0, Math.min(2, n | 0))
+    while (hums.length < want) {
+      const src = loop('mirror_hum_loop', sfxBus)
+      if (!src) break
+      hums.push(src)
+    }
+    while (hums.length > want) {
+      const src = hums.pop()
+      try {
+        src?.stop()
+      } catch {
+        /* already ended */
+      }
+    }
   }
 
   function duck() {
@@ -409,5 +451,39 @@ export function createAudio(fxRng: () => number): AudioBus {
       mark('step')
       one(feet, Math.pow(10, -18 / 20), null)
     },
+    rumble() {
+      mark('rumble')
+      one(['gate_rumble'], 0.55, null)
+    },
+    mirrorFire() {
+      mark('mirror')
+      one(['mirror_fire'], 0.4, null)
+    },
+    slabWarn() {
+      mark('slab')
+      one(['slab_warn'], 0.38, null)
+    },
+    slabSlam() {
+      mark('slab')
+      one(['slab_slam'], 0.5, 'slam')
+    },
+    springLaunch() {
+      mark('spring')
+      one(['spring_launch'], 0.42, null)
+    },
+    springLand() {
+      mark('spring')
+      one(['spring_land'], 0.48, 'land')
+    },
+    mirage() {
+      mark('mirage')
+      one(['mirage_step'], 0.4, null)
+    },
+    relic() {
+      mark('relic')
+      one(['relic_get'], 0.45, null)
+    },
+    setHums,
+    duckTap,
   }
 }

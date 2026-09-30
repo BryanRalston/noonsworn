@@ -1,6 +1,7 @@
 import { PerspectiveCamera, Vector3 } from 'three'
 import { TUNING } from '../data/tuning'
 import { smoothDamp } from '../core/math'
+import { slideFocus } from '../game/collision'
 
 const UP = new Vector3(0, 1, 0)
 const _fwd = new Vector3()
@@ -72,15 +73,7 @@ export function createFollowCamera(): FollowCamera {
   }
 
   function slide(x: number, z: number) {
-    const half = TUNING.arena.size / 2
-    const band = TUNING.camera.slideBand
-    const shift = (v: number) => {
-      const over = Math.abs(v) - (half - band)
-      if (over <= 0) return v
-      const t = Math.min(1, over / band)
-      return v - Math.sign(v) * t * TUNING.camera.slide
-    }
-    return { x: shift(x), z: shift(z) }
+    return slideFocus(x, z)
   }
 
   function snap(x: number, z: number) {

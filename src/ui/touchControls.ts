@@ -18,6 +18,7 @@ export interface TouchView {
   setCooldown: (ready: number) => void
   hit: (x: number, y: number) => boolean
   layout: () => void
+  setOwned: (on: boolean) => void
 }
 
 export function createTouchControls(parent: HTMLElement): TouchView {
@@ -29,7 +30,8 @@ export function createTouchControls(parent: HTMLElement): TouchView {
     <button type="button" id="btn-cut" tabindex="-1">
       <svg viewBox="0 0 36 36" class="ring" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"></circle><circle id="touch-ring" cx="18" cy="18" r="15" class="ring-fg"></circle></svg>
       <span>Cut</span>
-    </button>`
+    </button>
+    <button type="button" id="btn-mirage" tabindex="-1" aria-label="Mirage">◇</button>`
   parent.append(root)
   const stick = root.querySelector('#stick') as HTMLElement
   const knob = root.querySelector('.stick-knob') as HTMLElement
@@ -71,6 +73,9 @@ export function createTouchControls(parent: HTMLElement): TouchView {
     },
     hit(x, y) {
       return x >= rect.l && x <= rect.r && y >= rect.t && y <= rect.b
+    },
+    setOwned(on) {
+      root.classList.toggle('has-mirage', on)
     },
     layout() {
       const r = button.getBoundingClientRect()

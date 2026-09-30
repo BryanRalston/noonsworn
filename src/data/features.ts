@@ -56,4 +56,8 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Platform/Ads', feature: 'Ads provider interface (Noop only)', status: 'partial', since: 'M1' },
   { area: 'Platform/Ads', feature: 'Sampled audio, music, and mixer', status: 'shipped', since: 'M2.2' },
   { area: 'Platform/Ads', feature: 'Real ad SDK and portal build', status: 'planned', since: 'M3' },
+  { area: 'Shadow-Clock', feature: 'Temple wings open on the sun clock', status: 'shipped', since: 'M3b' },
+  { area: 'Shadow-Clock', feature: 'Mirror plates, pressure slabs, and Sunspring', status: 'shipped', since: 'M3b' },
+  { area: 'Combat & Weapons', feature: 'Mirage Sandals altar and level-8 card', status: 'shipped', since: 'M3b' },
+  { area: 'Controls', feature: 'Flow field through open wings', status: 'shipped', since: 'M3b' },
 ]

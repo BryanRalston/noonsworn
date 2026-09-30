@@ -246,6 +246,46 @@ h1 { color: var(--goldHot); font-size: 40px; }
   padding: 0;
 }
 #btn-cut .ring { position: absolute; inset: -7px; width: calc(100% + 14px); height: calc(100% + 14px); }
+#btn-mirage {
+  display: none;
+  position: fixed;
+  right: calc(118px + env(safe-area-inset-right));
+  bottom: calc(136px + env(safe-area-inset-bottom));
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  padding: 0;
+  border: 2px solid var(--gold);
+  background: color-mix(in srgb, var(--ink) 72%, var(--gold));
+  color: var(--goldHot);
+  font: 700 22px/1 system-ui, sans-serif;
+}
+#touch-root.has-mirage #btn-mirage { display: grid; place-items: center; }
+#mirage-pip {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--goldHot);
+  top: calc(40px + env(safe-area-inset-top));
+  left: calc(248px + env(safe-area-inset-left));
+}
+#mirage-pip[hidden] { display: none !important; }
+#gate-arrow {
+  position: fixed;
+  z-index: 6;
+  width: 0;
+  height: 0;
+  margin: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 14px solid var(--goldHot);
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+}
+#gate-arrow[hidden] { display: none !important; }
+#sundial.gate #gate-tick { fill: var(--goldHot); }
+#gate-tick { fill: var(--sandstone); }
 
 #level-up { background: none; }
 #level-up[hidden], #feature-map[hidden], #debug[hidden] { display: none !important; }
@@ -379,6 +419,7 @@ h1 { color: var(--goldHot); font-size: 40px; }
 }
 #hud.touch #btn-halo.ready,
 #btn-halo.thumb.ready { animation: halo-pulse 1.15s ease-out infinite; }
+#hud.touch #btn-halo:not(.ready) { opacity: 0.38; }
 @keyframes halo-pulse {
   0% { box-shadow: 0 0 0 0 rgba(242, 182, 50, 0.85); }
   100% { box-shadow: 0 0 0 16px rgba(242, 182, 50, 0); }

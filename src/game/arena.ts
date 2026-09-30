@@ -58,26 +58,49 @@ function addQuad(
   }
 }
 
+function addBox(b: WallBucket, x0: number, x1: number, z0: number, z1: number, h: number) {
+  addQuad(b, [x0, 0, z1], [x0, h, z1], [x1, h, z1], [x1, 0, z1], 0, 1)
+  addQuad(b, [x1, 0, z0], [x1, h, z0], [x0, h, z0], [x0, 0, z0], 0, 1)
+  addQuad(b, [x1, 0, z1], [x1, h, z1], [x1, h, z0], [x1, 0, z0], 0, 1)
+  addQuad(b, [x0, 0, z0], [x0, h, z0], [x0, h, z1], [x0, 0, z1], 0, 1)
+  addQuad(b, [x0, h, z1], [x0, h, z0], [x1, h, z0], [x1, h, z1], 0, 1)
+}
+
 export function buildWalls(): BufferGeometry {
   const b: WallBucket = { pos: [], uv: [] }
   const half = TUNING.arena.size / 2
   const t = TUNING.arena.wallThick
   const h = TUNING.arena.wallHeight
   const o = half + t
-  const span = TUNING.arena.size / 4
-  addQuad(b, [-half, 0, half], [-half, h, half], [half, h, half], [half, 0, half], 0, span)
-  addQuad(b, [half, 0, -half], [half, h, -half], [-half, h, -half], [-half, 0, -half], 0, span)
-  addQuad(b, [half, 0, o], [half, h, o], [half, h, -o], [half, 0, -o], 0, span)
-  addQuad(b, [-half, 0, -o], [-half, h, -o], [-half, h, o], [-half, 0, o], 0, span)
-  addQuad(b, [o, 0, o], [o, h, o], [-o, h, o], [-o, 0, o], 0, span)
-  addQuad(b, [-o, 0, -o], [-o, h, -o], [o, h, -o], [o, 0, -o], 0, span)
-  addQuad(b, [o, 0, -o], [o, h, -o], [o, h, o], [o, 0, o], 0, span * 0.2)
-  addQuad(b, [-o, 0, o], [-o, h, o], [-o, h, -o], [-o, 0, -o], 0, span * 0.2)
-  const g = new BufferGeometry()
-  g.setAttribute('position', new Float32BufferAttribute(b.pos, 3))
-  g.setAttribute('uv', new Float32BufferAttribute(b.uv, 2))
-  g.computeVertexNormals()
-  return g
+  const g = TUNING.temple.gate / 2
+  addBox(b, -o, -g, half, o, h)
+  addBox(b, g, o, half, o, h)
+  addBox(b, -o, -g, -o, -half, h)
+  addBox(b, g, o, -o, -half, h)
+  addBox(b, half, o, -half, -g, h)
+  addBox(b, half, o, g, half, h)
+  addBox(b, -o, -half, -half, -g, h)
+  addBox(b, -o, -half, g, half, h)
+  const geo = new BufferGeometry()
+  geo.setAttribute('position', new Float32BufferAttribute(b.pos, 3))
+  geo.setAttribute('uv', new Float32BufferAttribute(b.uv, 2))
+  geo.computeVertexNormals()
+  return geo
+}
+
+export function buildSeal(side: number): BufferGeometry {
+  const half = TUNING.arena.size / 2
+  const t = TUNING.arena.wallThick
+  const h = TUNING.arena.wallHeight
+  const g = TUNING.temple.gate / 2
+  const geo = new BoxGeometry(side % 2 === 0 ? t : g * 2, h, side % 2 === 0 ? g * 2 : t)
+  if (side === 0) geo.translate(half + t / 2, h / 2, 0)
+  else if (side === 2) geo.translate(-(half + t / 2), h / 2, 0)
+  else if (side === 1) geo.translate(0, h / 2, half + t / 2)
+  else geo.translate(0, h / 2, -(half + t / 2))
+  paint(geo, COLOR.bronze.r, COLOR.bronze.g, COLOR.bronze.b)
+  geo.computeVertexNormals()
+  return geo
 }
 
 export function buildWallTrim(): BufferGeometry {
@@ -85,12 +108,17 @@ export function buildWallTrim(): BufferGeometry {
   const t = TUNING.arena.wallThick
   const h = TUNING.arena.wallHeight
   const o = half + t
+  const g = TUNING.temple.gate / 2
   const parts: BufferGeometry[] = []
   const strips: Array<[number, number, number, number]> = [
-    [-half, half, half, o],
-    [-half, half, -o, -half],
-    [half, o, -o, o],
-    [-o, -half, -o, o],
+    [-o, -g, half, o],
+    [g, o, half, o],
+    [-o, -g, -o, -half],
+    [g, o, -o, -half],
+    [half, o, -half, -g],
+    [half, o, g, half],
+    [-o, -half, -half, -g],
+    [-o, -half, g, half],
   ]
   for (let i = 0; i < strips.length; i++) {
     const s = strips[i]
@@ -105,6 +133,100 @@ export function buildWallTrim(): BufferGeometry {
   for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
   if (!merged) throw new Error('trim merge failed')
   return merged
+}
+
+export function buildWingFloors(): BufferGeometry {
+  const half = TUNING.arena.size / 2
+  const depth = TUNING.temple.wingD
+  const width = TUNING.temple.wingW
+  const parts: BufferGeometry[] = []
+  const add = (x: number, z: number, w: number, d: number) => {
+    const geo = new PlaneGeometry(w, d)
+    geo.rotateX(-Math.PI / 2)
+    geo.translate(x, 0.02, z)
+    parts.push(geo)
+  }
+  add(half + depth / 2, 0, depth, width)
+  add(-(half + depth / 2), 0, depth, width)
+  add(0, half + depth / 2, width, depth)
+  add(0, -(half + depth / 2), width, depth)
+  const merged = mergeGeometries(parts, false)
+  for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
+  if (!merged) throw new Error('wing floor merge failed')
+  return merged
+}
+
+let courtyardGeo: BufferGeometry | null = null
+let sealGeos: BufferGeometry[] | null = null
+let wingGeos: BufferGeometry[] | null = null
+
+function templeSources(): { courtyard: BufferGeometry; seals: BufferGeometry[]; wings: BufferGeometry[] } {
+  if (!courtyardGeo || !sealGeos || !wingGeos) {
+    const walls = flatGeo(buildWalls())
+    paint(walls, COLOR.sandstone.r, COLOR.sandstone.g, COLOR.sandstone.b)
+    const trim = flatGeo(buildWallTrim())
+    paint(trim, COLOR.sandstoneDeep.r, COLOR.sandstoneDeep.g, COLOR.sandstoneDeep.b)
+    const merged = mergeGeometries([walls, trim], false)
+    walls.dispose()
+    trim.dispose()
+    if (!merged) throw new Error('courtyard merge failed')
+    courtyardGeo = merged
+    sealGeos = [0, 1, 2, 3].map((side) => flatGeo(buildSeal(side)))
+    wingGeos = [0, 1, 2, 3].map((side) => {
+      const wing = flatGeo(buildWingWall(side))
+      paint(wing, COLOR.sandstone.r, COLOR.sandstone.g, COLOR.sandstone.b)
+      return wing
+    })
+  }
+  return { courtyard: courtyardGeo, seals: sealGeos, wings: wingGeos }
+}
+
+/** Courtyard, shut seals, and the outer walls of wings that have opened. */
+export function composeShell(closed: readonly boolean[]): BufferGeometry {
+  const src = templeSources()
+  const parts: BufferGeometry[] = [src.courtyard]
+  for (let i = 0; i < 4; i++) parts.push(closed[i] ? (src.seals[i] ?? src.courtyard) : (src.wings[i] ?? src.courtyard))
+  const merged = mergeGeometries(parts, false)
+  if (!merged) throw new Error('shell merge failed')
+  return merged
+}
+
+export function sealGeometry(side: number): BufferGeometry {
+  return templeSources().seals[side] ?? templeSources().seals[0]!
+}
+
+function buildWingWall(side: number): BufferGeometry {
+  const b: WallBucket = { pos: [], uv: [] }
+  const half = TUNING.arena.size / 2
+  const t = TUNING.arena.wallThick
+  const h = TUNING.arena.wallHeight
+  const o = half + t
+  const wing = TUNING.temple.wingW / 2
+  const far = TUNING.temple.outer
+  const farT = far + t
+  const sideT = wing + t
+  if (side === 0) {
+    addBox(b, o, farT, wing, sideT, h)
+    addBox(b, o, farT, -sideT, -wing, h)
+    addBox(b, far, farT, -sideT, sideT, h)
+  } else if (side === 2) {
+    addBox(b, -farT, -o, wing, sideT, h)
+    addBox(b, -farT, -o, -sideT, -wing, h)
+    addBox(b, -farT, -far, -sideT, sideT, h)
+  } else if (side === 1) {
+    addBox(b, wing, sideT, o, farT, h)
+    addBox(b, -sideT, -wing, o, farT, h)
+    addBox(b, -sideT, sideT, far, farT, h)
+  } else {
+    addBox(b, wing, sideT, -farT, -o, h)
+    addBox(b, -sideT, -wing, -farT, -o, h)
+    addBox(b, -sideT, sideT, -farT, -far, h)
+  }
+  const geo = new BufferGeometry()
+  geo.setAttribute('position', new Float32BufferAttribute(b.pos, 3))
+  geo.setAttribute('uv', new Float32BufferAttribute(b.uv, 2))
+  geo.computeVertexNormals()
+  return geo
 }
 
 function paint(geo: BufferGeometry, r: number, g: number, b: number) {
@@ -159,15 +281,7 @@ function flatGeo(geo: BufferGeometry): BufferGeometry {
 }
 
 export function buildShell(): BufferGeometry {
-  const walls = flatGeo(buildWalls())
-  paint(walls, COLOR.sandstone.r, COLOR.sandstone.g, COLOR.sandstone.b)
-  const trim = flatGeo(buildWallTrim())
-  paint(trim, COLOR.sandstoneDeep.r, COLOR.sandstoneDeep.g, COLOR.sandstoneDeep.b)
-  const merged = mergeGeometries([walls, trim], false)
-  walls.dispose()
-  trim.dispose()
-  if (!merged) throw new Error('shell merge failed')
-  return merged
+  return composeShell([true, true, true, true])
 }
 
 export function createScatter(material: MeshToonMaterial): InstancedMesh {
@@ -190,7 +304,8 @@ export function createScatter(material: MeshToonMaterial): InstancedMesh {
   for (let s = 0; s < 4; s++) {
     for (let i = 0; i < 4; i++) {
       const along = -16 + i * 11
-      const out = outs[i] ?? 6
+      let out = outs[i] ?? 6
+      if (Math.abs(along) < 15) out = TUNING.temple.wingD + 8
       let x = 0
       let z = 0
       let yaw = 0.35 * i

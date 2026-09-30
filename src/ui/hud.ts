@@ -9,6 +9,7 @@ export interface Hud {
   setKills: (kills: number) => void
   setCooldown: (ready: number) => void
   setCharges: (n: number) => void
+  setMirage: (owned: boolean, ready: number) => void
   pulse: () => void
   onPause: (() => void) | null
   onHalo: (() => void) | null
@@ -23,6 +24,7 @@ export function createHud(parent: HTMLElement): Hud {
     <span id="level">Lv 1</span>
     <div class="hp-wrap"><div class="hp-bar"><div id="hp-fill"></div><span id="hp-num">100</span></div></div>
     <svg id="hud-ring" viewBox="0 0 36 36" class="ring" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"></circle><circle id="hud-ring-fg" cx="18" cy="18" r="15" class="ring-fg"></circle></svg>
+    <span id="mirage-pip" hidden></span>
     <div id="kills">0</div>
     <button type="button" id="btn-pause" aria-label="Pause">II</button>
     <button type="button" id="btn-halo" aria-label="Power-up"><span id="halo-count">0</span></button>`
@@ -35,6 +37,7 @@ export function createHud(parent: HTMLElement): Hud {
   const ring = root.querySelector('#hud-ring-fg') as SVGCircleElement
   const ringSvg = root.querySelector('#hud-ring') as SVGElement
   const haloBtn = root.querySelector('#btn-halo') as HTMLButtonElement
+  const miragePip = root.querySelector('#mirage-pip') as HTMLElement
   const haloCount = root.querySelector('#halo-count') as HTMLElement
   ring.style.strokeDasharray = `${RING}`
   let touch = false
@@ -69,6 +72,12 @@ export function createHud(parent: HTMLElement): Hud {
       if (touch) return
       const t = ready < 0 ? 0 : ready > 1 ? 1 : ready
       ring.style.strokeDashoffset = `${RING * (1 - t)}`
+    },
+    setMirage(owned, ready) {
+      miragePip.hidden = !owned
+      if (!owned) return
+      const t = ready < 0 ? 0 : ready > 1 ? 1 : ready
+      miragePip.style.opacity = `${0.35 + 0.65 * t}`
     },
     setCharges(n) {
       if (n === charges) return
