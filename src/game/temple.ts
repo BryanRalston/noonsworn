@@ -135,20 +135,11 @@ export function toWorld(side: number, depth: number, lat: number): { x: number; 
 function rollOrder(rng: Rng): WingKind[] {
   const first: WingKind = rng() < 0.5 ? 'mirror' : 'slab'
   const other: WingKind = first === 'mirror' ? 'slab' : 'mirror'
-  const rest: WingKind[] = [other, 'spring', 'reliquary']
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = (rng() * (i + 1)) | 0
-    const swap = rest[i] ?? 'spring'
-    rest[i] = rest[j] ?? 'spring'
-    rest[j] = swap
-  }
-  if (rest[2] === 'spring') {
-    const slot = rest[0] === 'spring' ? 1 : 0
-    const swap = rest[2] ?? 'spring'
-    rest[2] = rest[slot] ?? 'mirror'
-    rest[slot] = swap
-  }
-  return [first, rest[0] ?? 'mirror', rest[1] ?? 'slab', rest[2] ?? 'reliquary']
+  const springFirst = rng() < 0.5
+  rng()
+  const second: WingKind = springFirst ? 'spring' : 'reliquary'
+  const third: WingKind = springFirst ? 'reliquary' : 'spring'
+  return [first, second, third, other]
 }
 
 function cellIndex(x: number, z: number): number {
@@ -179,6 +170,7 @@ export interface Temple {
   reset: (rng: Rng) => void
   update: (dt: number, runTime: number, sunTime: number, px: number, pz: number, frozen: boolean) => void
   mask: (out: Vector4) => void
+  kinds: (out: Vector4) => void
   plates: TemplePlate[]
   takeSpawns: () => TempleSpawn[]
   guide: (x: number, z: number, px: number, pz: number) => { x: number; z: number } | null
@@ -662,6 +654,17 @@ export function createTemple(): Temple {
         else if (side === 1) out.y = 1
         else if (side === 2) out.z = 1
         else out.w = 1
+      }
+    },
+    kinds(out) {
+      for (let i = 0; i < 4; i++) {
+        const side = sides[i] ?? 0
+        const name = order[i] ?? 'mirror'
+        const code = name === 'slab' ? 1 : name === 'spring' ? 2 : name === 'reliquary' ? 3 : 0
+        if (side === 0) out.x = code
+        else if (side === 1) out.y = code
+        else if (side === 2) out.z = code
+        else out.w = code
       }
     },
   }

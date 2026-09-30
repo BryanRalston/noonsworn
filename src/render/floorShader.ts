@@ -98,6 +98,7 @@ export interface FloorUniforms {
   uTexMix: { value: number }
   uEdgeBoost: { value: number }
   uWing: { value: Vector4 }
+  uKind: { value: Vector4 }
 }
 
 function whiteTex(): DataTexture {
@@ -145,6 +146,7 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
     uTexMix: { value: 0 },
     uEdgeBoost: { value: 0 },
     uWing: { value: new Vector4(0, 0, 0, 0) },
+    uKind: { value: new Vector4(0, 1, 2, 3) },
   }
   const material = new ShaderMaterial({
     uniforms: uniforms as unknown as ShaderMaterial['uniforms'],
@@ -157,7 +159,7 @@ export function createFloorMaterial(): { material: ShaderMaterial; uniforms: Flo
 /** Same sun shader as the sanctum, tinted, drawn only for wings that are opening. */
 export function createWingFloorMaterial(uniforms: FloorUniforms): ShaderMaterial {
   const frag = fragment
-    .replace('uniform float uEdgeBoost;', 'uniform float uEdgeBoost;\nuniform vec4 uWing;')
+    .replace('uniform float uEdgeBoost;', 'uniform float uEdgeBoost;\nuniform vec4 uWing;\nuniform vec4 uKind;')
     .replace(
       'void main() {\n  vec2 p = vWorld.xz;',
       `void main() {
@@ -171,7 +173,36 @@ export function createWingFloorMaterial(uniforms: FloorUniforms): ShaderMaterial
     )
     .replace(
       'col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));',
-      'col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));\n  col *= 0.9;',
+      `col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));
+  float depth = 0.0;
+  float lat = 0.0;
+  float kind = uKind.x;
+  if (p.x > 24.15) { depth = p.x - 24.0; lat = p.y; kind = uKind.x; }
+  else if (p.x < -24.15) { depth = -p.x - 24.0; lat = -p.y; kind = uKind.z; }
+  else if (p.y > 24.15) { depth = p.y - 24.0; lat = -p.x; kind = uKind.y; }
+  else { depth = -p.y - 24.0; lat = p.x; kind = uKind.w; }
+  vec3 accent = vec3(0.78, 0.82, 0.88);
+  float mark = 0.0;
+  if (kind < 0.5) {
+    float rr = length(vec2(depth - 9.0, lat * 0.85));
+    mark = smoothstep(0.16, 0.0, abs(fract(rr * 0.28) - 0.5) - 0.32);
+    accent = mix(vec3(0.70, 0.75, 0.82), vec3(0.96, 0.78, 0.36), mark);
+  } else if (kind < 1.5) {
+    float gx = abs(fract(depth * 0.24) - 0.5);
+    float gy = abs(fract(lat * 0.30) - 0.5);
+    mark = 1.0 - smoothstep(0.40, 0.48, min(gx, gy));
+    accent = mix(vec3(0.66, 0.44, 0.18), vec3(0.40, 0.26, 0.11), mark);
+  } else if (kind < 2.5) {
+    float rip = sin(depth * 1.35 + lat * 0.45) * 0.5 + sin(lat * 1.15) * 0.5;
+    mark = smoothstep(0.25, 0.85, rip);
+    accent = mix(vec3(0.14, 0.40, 0.40), vec3(0.21, 0.84, 0.77), mark);
+  } else {
+    float d1 = abs(fract((depth + lat) * 0.16) - 0.5);
+    float d2 = abs(fract((depth - lat) * 0.16) - 0.5);
+    mark = 1.0 - smoothstep(0.015, 0.07, min(d1, d2));
+    accent = mix(vec3(0.42, 0.07, 0.11), vec3(0.95, 0.72, 0.22), mark);
+  }
+  col = mix(col, col * accent * 1.45, 0.5);`,
     )
   return new ShaderMaterial({
     uniforms: uniforms as unknown as ShaderMaterial['uniforms'],

@@ -1,5 +1,7 @@
 import {
   BackSide,
+  BufferAttribute,
+  Color,
   CylinderGeometry,
   InstancedMesh,
   Mesh,
@@ -57,6 +59,26 @@ import { createTraps } from './traps'
 import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
+
+function paintCaster(geo: CylinderGeometry) {
+  const pos = geo.getAttribute('position')
+  const colors = new Float32Array(pos.count * 3)
+  const tmp = new Color()
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    const radial = Math.hypot(x, z)
+    const onTop = y > 2.15
+    if (onTop && radial > 0.78) tmp.copy(COLOR.gold)
+    else if (onTop) tmp.copy(COLOR.sandstone).lerp(COLOR.linen, 0.35)
+    else tmp.copy(COLOR.bronze).lerp(COLOR.sandstone, 0.35 + 0.5 * ((y + 2.5) / 5))
+    colors[i * 3] = tmp.r
+    colors[i * 3 + 1] = tmp.g
+    colors[i * 3 + 2] = tmp.b
+  }
+  geo.setAttribute('color', new BufferAttribute(colors, 3))
+}
 
 function blankInput(): InputState {
   return {
@@ -225,7 +247,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const wingFloor = new Mesh(buildWingFloors(), createWingFloorMaterial(floor.uniforms))
   wingFloor.frustumCulled = false
   wingFloor.visible = false
-  const wingPillars = new InstancedMesh(new CylinderGeometry(1, 1, 5, 8), pillarMat, 7)
+  const casterGeo = new CylinderGeometry(1, 1, 5, 8)
+  paintCaster(casterGeo)
+  const casterMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true })
+  const wingPillars = new InstancedMesh(casterGeo, casterMat, 7)
   wingPillars.count = 0
   wingPillars.visible = false
   wingPillars.frustumCulled = false
@@ -266,7 +291,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const bloom = createBloom()
   gpu.scene.add(sky, outer, scatter, floorMesh, wingFloor, shell, pillars, wingPillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
   temple.attach(shell, wingFloor, wingPillars, gpu.scene, wallMat)
-  traps.attach(gpu.scene, pillarMat)
+  traps.attach(gpu.scene)
   const tutorial = createTutorial(ui, gpu.scene)
 
   const sun = createSunClock()
@@ -1067,6 +1092,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (!sun.frozen) sun.advance(dt)
       temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
       temple.mask(floor.uniforms.uWing.value)
+      temple.kinds(floor.uniforms.uKind.value)
       const wing = floor.uniforms.uWing.value
       wingFloor.visible = wing.x + wing.y + wing.z + wing.w > 0
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)

@@ -1,6 +1,8 @@
 import {
   BoxGeometry,
+  BufferAttribute,
   CapsuleGeometry,
+  Color,
   InstancedBufferAttribute,
   InstancedMesh,
   Mesh,
@@ -28,6 +30,7 @@ import {
 } from './collision'
 import type { Horde, HordeCtx } from './enemies/horde'
 import type { Player } from './player'
+import { toonMap } from '../render/toon'
 import { noteBlocks, type Temple } from './temple'
 
 const MAX_PLATE = 12
@@ -37,6 +40,31 @@ let seenStamp = 1
 const face = { x: 0, z: 0 }
 const dummy = new Object3D()
 const slabBoxes: AABB[] = []
+
+function paintSlab(geo: BoxGeometry, warn: InstancedBufferAttribute) {
+  const pos = geo.getAttribute('position')
+  const colors = new Float32Array(pos.count * 3)
+  const rim = new Float32Array(pos.count)
+  const tmp = new Color()
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    const edge = Math.max(Math.abs(x) / 1.5, Math.abs(z) / 1.5)
+    const onTop = y > 0.2
+    const isRim = onTop && edge > 0.78
+    if (isRim) tmp.copy(COLOR.gold)
+    else if (onTop) tmp.copy(COLOR.sandstone).lerp(COLOR.goldHot, 0.22)
+    else tmp.copy(COLOR.bronze).lerp(COLOR.sandstone, 0.4 + 0.45 * ((y + 0.275) / 0.55))
+    colors[i * 3] = tmp.r
+    colors[i * 3 + 1] = tmp.g
+    colors[i * 3 + 2] = tmp.b
+    rim[i] = isRim ? 1 : 0
+  }
+  geo.setAttribute('color', new BufferAttribute(colors, 3))
+  geo.setAttribute('aRim', new BufferAttribute(rim, 1))
+  geo.setAttribute('iWarn', warn)
+}
 
 const plateVert = /* glsl */ `
 attribute float iType;
@@ -136,7 +164,7 @@ export interface TrapBlobs {
 }
 
 export interface Traps {
-  attach: (scene: Scene, slabMat: MeshToonMaterial) => void
+  attach: (scene: Scene) => void
   reset: (temple: Temple) => void
   begin: (dt: number, player: Player) => boolean
   after: (
@@ -244,7 +272,24 @@ export function createTraps(): Traps {
   plateMesh.visible = false
   plateMesh.frustumCulled = false
   const slabGeo = new BoxGeometry(3, 0.55, 3)
-  const slabMesh = new InstancedMesh(slabGeo, new MeshToonMaterial({ color: COLOR.sandstoneDeep }), 4)
+  const slabWarn = new InstancedBufferAttribute(new Float32Array(4), 1)
+  paintSlab(slabGeo, slabWarn)
+  const slabClock = { value: 0 }
+  const slabMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true })
+  slabMat.customProgramCacheKey = () => 'slab-rim'
+  slabMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uSlabTime = slabClock
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aRim;\nattribute float iWarn;\nvarying float vSlabPulse;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSlabPulse = aRim * iWarn;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uSlabTime;\nvarying float vSlabPulse;')
+      .replace(
+        '#include <color_fragment>',
+        '#include <color_fragment>\ndiffuseColor.rgb += vec3(1.0, 0.58, 0.16) * vSlabPulse * (0.45 + 0.55 * sin(uSlabTime * 9.0));',
+      )
+  }
+  const slabMesh = new InstancedMesh(slabGeo, slabMat, 4)
   slabMesh.count = 0
   slabMesh.visible = false
   slabMesh.frustumCulled = false
@@ -495,6 +540,7 @@ export function createTraps(): Traps {
         dummy.scale.set(1, 1, 1)
         dummy.updateMatrix()
         slabMesh.setMatrixAt(slabs, dummy.matrix)
+        slabWarn.setX(slabs, phase[i] === 1 ? 1 : 0)
         slabs++
         if (phase[i] === 1) {
           const u = 1 - (timer[i] ?? 0) / TUNING.temple.slabTele
@@ -521,6 +567,7 @@ export function createTraps(): Traps {
     slabMesh.count = slabs
     slabMesh.visible = slabs > 0
     slabMesh.instanceMatrix.needsUpdate = slabs > 0
+    slabWarn.needsUpdate = slabs > 0
     let beams = 0
     for (let i = 0; i < 3; i++) {
       if (!bOn[i]) continue
@@ -543,8 +590,7 @@ export function createTraps(): Traps {
   const traps: Traps = {
     events,
     blobs,
-    attach(scene, slabMat) {
-      slabMesh.material = slabMat
+    attach(scene) {
       scene.add(plateMesh, slabMesh, beamMesh, ring, decoy, altarRing)
     },
     reset(temple) {
@@ -641,6 +687,7 @@ export function createTraps(): Traps {
       return false
     },
     after(dt, player, wishX, wishZ, horde, ctx, isLit, owned, haste, use) {
+      slabClock.value += dt
       const hitLand = pendingLand
       pendingLand = false
       clearEvents()
