@@ -135,25 +135,9 @@ function buildWater(): BufferGeometry {
     }
     return ids
   }
-  const center = push(0, -0.9, 0, 0, 0, COLOR.poolDeep)
-  const bands = [2.5, 5.2, 6, 8, 10]
-  const bandColor = [COLOR.poolDeep, COLOR.pool, COLOR.pool, COLOR.pool, COLOR.pool]
-  const rings: number[][] = []
-  for (let b = 0; b < bands.length; b++) rings.push(ring(bands[b] ?? 0, -0.9, 0, bandColor[b] ?? COLOR.pool))
-  const inner = rings[0]
-  if (inner) {
-    for (let i = 0; i < n; i++) idx.push(center, inner[(i + 1) % n] ?? 0, inner[i] ?? 0)
-  }
-  for (let r = 0; r < rings.length - 1; r++) {
-    const a = rings[r]
-    const b = rings[r + 1]
-    if (!a || !b) continue
-    for (let i = 0; i < n; i++) {
-      const i2 = (i + 1) % n
-      idx.push(a[i] ?? 0, b[i2] ?? 0, b[i] ?? 0)
-      idx.push(a[i] ?? 0, a[i2] ?? 0, b[i2] ?? 0)
-    }
-  }
+  const center = push(0, -0.9, 0, 0, 0, COLOR.poolCentre)
+  const outer = ring(10, -0.9, 0, COLOR.poolCentre)
+  for (let i = 0; i < n; i++) idx.push(center, outer[(i + 1) % n] ?? 0, outer[i] ?? 0)
   const wallBot = ring(6, -1.2, 1, COLOR.poolDeep)
   const wallTop = ring(6, -0.35, 1, COLOR.pool)
   for (let i = 0; i < n; i++) {
@@ -173,11 +157,11 @@ function buildWater(): BufferGeometry {
     if (!pad) continue
     const cx = pad[0] ?? 0
     const cz = pad[1] ?? 0
-    const hub = push(cx, -0.86, cz, 0, 2, COLOR.foliage)
+    const hub = push(cx, -0.86, cz, 0, 2, COLOR.foliageDeep)
     const rim: number[] = []
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2
-      rim.push(push(cx + Math.cos(a) * 0.42, -0.86, cz + Math.sin(a) * 0.42, 0, 2, COLOR.foliageDeep))
+      rim.push(push(cx + Math.cos(a) * 0.26, -0.86, cz + Math.sin(a) * 0.26, 0, 2, COLOR.leafInk))
     }
     for (let i = 0; i < 6; i++) idx.push(hub, rim[(i + 1) % 6] ?? hub, rim[i] ?? hub)
   }
@@ -527,16 +511,14 @@ uniform float uTime;
 void main() {
   vec3 p = position;
   if (aKind < 0.5) {
-    float o = max(aOct, 0.001);
-    float shown = o;
-    if (o > 6.0) shown = mix(6.0, o, smoothstep(0.02, 0.35, uLevel));
+    float edgeR = mix(6.0, 10.0, smoothstep(0.02, 0.35, uLevel));
     if (aOct > 0.02) {
-      float s = shown / o;
+      float s = edgeR / 10.0;
       p.x *= s;
       p.z *= s;
     }
     p.y = mix(-0.82, -0.04, uLevel);
-    p.y += sin(p.x * 1.7 + uTime * 1.4) * cos(p.z * 1.3 - uTime) * 0.012 * uLevel;
+    p.y += sin(p.x * 1.7 + uTime * 1.4) * cos(p.z * 1.3 - uTime) * 0.008 * uLevel;
   } else if (aKind > 1.5) {
     p.y = mix(-0.82, -0.04, uLevel) + 0.045;
   }
@@ -557,7 +539,6 @@ uniform vec3 uFogColor;
 uniform float uFog;
 uniform float uFogNear;
 uniform float uFogFar;
-uniform vec3 uGold;
 uniform vec3 uPoolDeep;
 uniform vec3 uPoolShoal;
 uniform vec2 uAxis;
@@ -573,31 +554,33 @@ float octDist(vec2 p) {
 void main() {
   vec2 p = vWorld.xz;
   float o = octDist(p);
-  float t = smoothstep(0.2, 6.2, o);
-  vec3 water = mix(uPoolDeep, uPoolShoal, t);
-  float rip = sin(o * 3.4 - uTime * 0.65) * 0.5 + 0.5;
-  float line = smoothstep(0.72, 0.96, rip);
-  float ca = sin(p.x * 1.5 + uTime * 0.45) * sin(p.y * 1.2 - uTime * 0.3);
-  water += uPoolShoal * smoothstep(0.45, 0.95, ca) * 0.16;
-  water += vec3(0.75, 0.9, 0.82) * line * 0.18;
-  vec3 col = vKind > 1.5 ? vColor : (vKind > 0.5 ? mix(uPoolDeep, uPoolShoal, 0.25) : water);
-  float len = length(p);
-  if (vKind < 0.5 && len > 0.2 && uGlow > 0.01) {
-    float side = abs(p.x * uAxis.y - p.y * uAxis.x) / len;
-    float along = dot(p / len, uAxis);
-    float streak = smoothstep(0.22, 0.0, side) * smoothstep(0.15, 0.75, along);
-    col += uGold * streak * min(uGlow, 1.2) * 0.55;
+  float edgeR = mix(6.0, 10.0, smoothstep(0.02, 0.35, uLevel));
+  float fromWall = edgeR - o;
+  float t = smoothstep(0.0, max(edgeR, 0.001), o);
+  vec3 water = mix(uPoolDeep, uPoolShoal, t) * 0.72;
+  float contact = 1.0 - smoothstep(0.0, 0.4, max(fromWall, 0.0));
+  water = mix(water, water * vec3(0.42, 0.52, 0.56), contact);
+  float nearRim = smoothstep(1.2, 0.45, fromWall) * (1.0 - contact);
+  vec2 cell = abs(fract(p * 1.15) - 0.5);
+  float grout = smoothstep(0.42, 0.49, max(cell.x, cell.y));
+  water = mix(water, water * vec3(0.62, 0.7, 0.72), grout * nearRim);
+  float rim = smoothstep(1.7, 0.12, fromWall);
+  float rip = sin(o * 11.0 - uTime * 0.8) * 0.5 + 0.5;
+  float line = smoothstep(0.78, 0.98, rip);
+  water *= 1.0 + line * rim * 0.08;
+  vec3 col = vKind > 1.5 ? vColor * 0.9 : (vKind > 0.5 ? uPoolDeep * 0.5 : water);
+  if (vKind < 0.5 && uGlow > 0.05) {
+    float travel = 0.58 + 0.3 * sin(uTime * 0.42);
+    vec2 g = uAxis * edgeR * travel;
+    float glint = smoothstep(0.62, 0.0, length(p - g));
+    col += vec3(1.0, 0.94, 0.72) * glint * min(uGlow, 1.2) * 0.7;
   }
-  if (vKind < 0.5) {
-    float edgeR = mix(6.0, 10.0, smoothstep(0.02, 0.35, uLevel));
-    float foam = 1.0 - smoothstep(0.0, 0.16, abs(o - edgeR));
-    col = mix(col, vec3(0.93, 0.96, 0.9), foam * 0.8);
+  if (uFront > 0.0 && vKind < 0.5) {
+    float band = 1.0 - smoothstep(0.0, 0.55, abs(o - uFront));
+    col *= 1.0 + band * 0.07;
   }
-  if (uFront > 0.0) {
-    float band = 1.0 - smoothstep(0.0, 0.4, abs(o - uFront));
-    col = mix(col, vec3(1.0, 0.93, 0.7), band * 0.75);
-  }
-  col *= mix(0.92, 1.0, uLevel * 0.35 + 0.65);
+  float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  col += (dither - 0.5) * (2.5 / 255.0);
   float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
@@ -886,9 +869,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uFog: src.uFog,
       uFogNear: src.uFogNear,
       uFogFar: src.uFogFar,
-      uGold: src.uGold,
-      uPoolDeep: { value: COLOR.poolTeal },
-      uPoolShoal: { value: COLOR.poolShoal },
+      uPoolDeep: { value: COLOR.poolCentre },
+      uPoolShoal: { value: COLOR.poolEdge },
       uAxis,
       uGlow,
       uFront,
