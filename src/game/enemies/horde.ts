@@ -126,7 +126,8 @@ export interface Horde {
   update: (ctx: HordeCtx) => void
   sync: (camX: number, camZ: number, high: boolean) => void
   /** World y of a foot point. Lattice terraces override this; Sundial stays at 0. */
-  ground: (z: number) => number
+  ground: (z: number, x?: number) => number
+  shove: (apply: (x: number, z: number, radius: number) => { x: number; z: number } | null) => void
   face: (yaw: number) => void
   nearest: (x: number, z: number, range: number) => number
   onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
@@ -167,6 +168,7 @@ export interface HordeCtx {
   shadeZ: number
   bloomLive: boolean
   guide: ((x: number, z: number, px: number, pz: number) => { x: number; z: number } | null) | null
+  deep: ((x: number, z: number) => boolean) | null
   lureX: number
   lureZ: number
   lureR2: number
@@ -265,6 +267,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const body = new Float32Array(MAX)
   const squash = new Float32Array(MAX)
   let stepDt = 0
+  let deepFn: ((x: number, z: number) => boolean) | null = null
   const miteTris = triCount(miteSrc.geometry)
   const houndTris = triCount(houndSrc.geometry)
   const darterTris = triCount(darterGeo)
@@ -551,11 +554,21 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         fn(x[i] ?? 0, z[i] ?? 0, type[i] ?? 0)
       }
     },
+    shove(apply) {
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || bench[i] || state[i] === DYING) continue
+        const next = apply(x[i] ?? 0, z[i] ?? 0, specOf(type[i] ?? 0).radius)
+        if (!next) continue
+        x[i] = next.x
+        z[i] = next.z
+      }
+    },
     damage(index, base, source, might) {
       if (horde.frozen) return 0
       if (!alive[index] || state[index] === DYING || bench[index]) return 0
       const darting = type[index] === 2 && state[index] === DART
-      let amount = damageAmount(base, lit[index] === 1 || darting, source, might)
+      const inDeep = lit[index] !== 1 && !darting && (deepFn?.(x[index] ?? 0, z[index] ?? 0) ?? false)
+      let amount = damageAmount(base, lit[index] === 1 || darting, source, might, inDeep)
       if (darting && source === 'cut') amount *= 1.5
       hp[index] = (hp[index] ?? 0) - amount
       sting(index)
@@ -567,6 +580,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       kill(index, ctx)
     },
     update(ctx) {
+      deepFn = ctx.deep
       stepDt = horde.frozen ? 0 : ctx.dt
       hashBuild(x, z, alive, MAX)
       if (horde.frozen) return
@@ -916,7 +930,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           }
           darters++
         } else if (type[i] === 0) {
-          writeInstance(miteMesh, mites, x[i] ?? 0, horde.ground(z[i] ?? 0), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
+          writeInstance(miteMesh, mites, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
           if (moving && state[i] !== DYING) phase[i] = ((phase[i] ?? 0) + stepDt / 0.4) % 1
           else phase[i] = 0
           if (miteSrc.hop && miteMorphN > 0) sampleMorph(miteSrc.hop, phase[i] ?? 0, miteW)
@@ -930,7 +944,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           miteLit = true
           mites++
         } else {
-          writeInstance(houndMesh, hounds, x[i] ?? 0, horde.ground(z[i] ?? 0), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
+          writeInstance(houndMesh, hounds, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
           let morphPhase = 0
           let useLunge = false
           if (state[i] === TELE) {

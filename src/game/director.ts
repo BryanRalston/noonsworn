@@ -28,7 +28,7 @@ export interface Director {
     camZ: number,
     pour?: readonly WingPour[],
     wingPick?: (px: number, pz: number, rng: Rng, camX: number, camZ: number) => { x: number; z: number } | null,
-    lattice?: { darter: number; boss: boolean },
+    lattice?: { darter: number; boss: boolean; rateMul?: number; relocate?: (x: number, z: number, rng: Rng) => { x: number; z: number } },
   ) => void
 }
 
@@ -63,7 +63,7 @@ export function createDirector(): Director {
         }
       }
       const wave = waveAt(time)
-      const rate = wave.rate
+      const rate = wave.rate * (lattice?.rateMul ?? 1)
       const minCount = Math.min(wave.min, TUNING.designCap, boss ? 40 : TUNING.designCap)
       director.acc += rate * dt
       const hour = Math.floor(time / TUNING.packEvery)
@@ -72,20 +72,35 @@ export function createDirector(): Director {
         const base = rng() * Math.PI * 2
         for (let i = 0; i < wave.pack; i++) {
           const a = base + (i / wave.pack - 0.5) * TUNING.packArc
-          horde.spawn(0, px + Math.cos(a) * TUNING.packRadius, pz + Math.sin(a) * TUNING.packRadius, false, cap, px, pz)
+          let packX = px + Math.cos(a) * TUNING.packRadius
+          let packZ = pz + Math.sin(a) * TUNING.packRadius
+          if (lattice?.relocate) {
+            const parked = lattice.relocate(packX, packZ, rng)
+            packX = parked.x
+            packZ = parked.z
+          }
+          horde.spawn(0, packX, packZ, false, cap, px, pz)
         }
       }
       if (!boss && !forcedHound && time >= 18) {
         forcedHound = true
         const spot = pickSpawn(px, pz, TUNING.hound.radius, rng, camX, camZ)
-        horde.spawn(1, spot.x, spot.z, false, cap, px, pz)
+        const parked = lattice?.relocate ? lattice.relocate(spot.x, spot.z, rng) : spot
+        horde.spawn(1, parked.x, parked.z, false, cap, px, pz)
       }
       if (!boss && !forcedRing && time >= 25) {
         forcedRing = true
         const base = rng() * Math.PI * 2
         for (let i = 0; i < 12; i++) {
           const a = base + (i / 12) * Math.PI * 2
-          horde.spawn(0, px + Math.cos(a) * 8, pz + Math.sin(a) * 8, false, cap, px, pz)
+          let ringX = px + Math.cos(a) * 8
+          let ringZ = pz + Math.sin(a) * 8
+          if (lattice?.relocate) {
+            const parked = lattice.relocate(ringX, ringZ, rng)
+            ringX = parked.x
+            ringZ = parked.z
+          }
+          horde.spawn(0, ringX, ringZ, false, cap, px, pz)
         }
       }
       let spawned = 0
@@ -103,7 +118,13 @@ export function createDirector(): Director {
         let spotX = 0
         let spotZ = 0
         let fromWing = false
-        if (wingPick && rng() < TUNING.temple.wingSpawn) {
+        if (lattice?.relocate) {
+          const parked = lattice.relocate(0, 0, rng)
+          spotX = parked.x
+          spotZ = parked.z
+          fromWing = true
+        }
+        if (!fromWing && wingPick && rng() < TUNING.temple.wingSpawn) {
           const wing = wingPick(px, pz, rng, camX, camZ)
           if (wing) {
             spotX = wing.x

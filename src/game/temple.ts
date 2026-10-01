@@ -573,7 +573,7 @@ export function createTemple(): Temple {
       }
       if (arrowT > 0) arrowT -= dt
       pour(dt)
-      if (opened === 0 && !routingOn) return
+      if (opened === 0 && (!routingOn || BEDS.length === 0)) return
       const flowDirty = blocksDirty
       if (blocksDirty) rebuildBlocked()
       flowAcc += dt

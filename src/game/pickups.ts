@@ -13,6 +13,7 @@ export interface Pickups {
   clear: () => void
   used: () => number
   visit: (fn: (x: number, z: number) => void) => void
+  shove: (apply: (x: number, z: number) => { x: number; z: number } | null) => void
 }
 
 export function createPickups(): Pickups {
@@ -38,6 +39,15 @@ export function createPickups(): Pickups {
     },
     visit(fn) {
       for (let i = 0; i < MAX; i++) if (alive[i]) fn(x[i] ?? 0, z[i] ?? 0)
+    },
+    shove(apply) {
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i]) continue
+        const next = apply(x[i] ?? 0, z[i] ?? 0)
+        if (!next) continue
+        x[i] = next.x
+        z[i] = next.z
+      }
     },
     spawn(sx, sz, amount, cap, px, pz) {
       if (free.used >= cap || free.free <= 0) {

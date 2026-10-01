@@ -91,10 +91,10 @@ export function createSunClock(): SunClock {
 }
 
 /** Multiplier shared by weapons and the Noon Cut. */
-export function damageAmount(base: number, lit: boolean, source: 'weapon' | 'cut', might: number): number {
+export function damageAmount(base: number, lit: boolean, source: 'weapon' | 'cut', might: number, deep = false): number {
   let m = 1 + TUNING.passive.might * might
   if (lit) m *= TUNING.exposedDamage
-  else if (source === 'weapon') m *= TUNING.armoredWeapon
+  else if (source === 'weapon') m *= deep ? TUNING.cloister.deepWeapon : TUNING.armoredWeapon
   else m *= TUNING.armoredCut
   return base * m
 }

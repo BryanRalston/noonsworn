@@ -367,6 +367,7 @@ function pushBoxes(cx: number, cz: number, radius: number, list: readonly AABB[]
 }
 
 export function resolveCircle(x0: number, z0: number, radius: number): { x: number; z: number } {
+  if (cloisterOn) return resolveCloister(x0, z0, radius)
   let cx = x0
   let cz = z0
   if (Math.abs(cx) < DEEP && Math.abs(cz) < DEEP) {
@@ -423,6 +424,7 @@ export function resolveCircle(x0: number, z0: number, radius: number): { x: numb
 
 /** Keeps a move that a planter would cancel by sliding along the wall toward a stair. Sundial has no beds, so it only resolves the destination. */
 export function slideCircle(x0: number, z0: number, x1: number, z1: number, radius: number): { x: number; z: number } {
+  if (cloisterOn) return slideCloister(x0, z0, x1, z1, radius)
   if (BEDS.length === 0) return resolveCircle(x1, z1, radius)
   // Open middle of the terraces has no posts and no beds, so the move is already free.
   if (Math.abs(x1) < 22 && Math.abs(z1) < 13 && clearOfBeds(z1, radius)) {
@@ -511,6 +513,7 @@ function inWing(side: number, x: number, z: number, radius: number): boolean {
 }
 
 export function insideArena(x: number, z: number, radius: number): boolean {
+  if (cloisterOn) return cloisterWalk(x, z, radius)
   const limit = HALF - radius - 0.3
   if (Math.abs(x) <= limit && Math.abs(z) <= limit) {
     if (BEDS.length > 0 && hitBeds(x, z, radius)) return false
@@ -558,6 +561,7 @@ function segHitsBox(x0: number, z0: number, x1: number, z1: number, b: AABB): bo
 }
 
 export function segmentBlocked(x0: number, z0: number, x1: number, z1: number): boolean {
+  if (cloisterOn) return cloisterSegment(x0, z0, x1, z1)
   if (BEDS.length > 0) {
     for (let i = 0; i < BEDS.length; i++) {
       const b = BEDS[i]
@@ -584,6 +588,7 @@ export function segmentBlocked(x0: number, z0: number, x1: number, z1: number): 
 }
 
 export function cellBlocked(x: number, z: number): boolean {
+  if (cloisterOn) return !cloisterWalk(x, z, 0.45)
   if (!insideArena(x, z, 0.2)) return true
   if (BEDS.length > 0 && cellTouchesBed(x, z)) return true
   return inSlab(x, z, 0.05)
@@ -637,4 +642,147 @@ export function slideFocus(x: number, z: number): { x: number; z: number } {
   focusOut.x = shift(x, xl.min, xl.max)
   focusOut.z = shift(z, zl.min, zl.max)
   return focusOut
+}
+
+/** Cloister court. Empty until that map applies, so every path above stays the sanctum. */
+let cloisterOn = false
+let crest = false
+let bound = 10
+const COL_CAP = 32
+const colX = new Float32Array(COL_CAP)
+const colZ = new Float32Array(COL_CAP)
+const colR = new Float32Array(COL_CAP)
+let colN = 0
+const COS45 = 0.7071067811865476
+
+export function octDist(x: number, z: number): number {
+  const ax = Math.abs(x)
+  const az = Math.abs(z)
+  const diag = (ax + az) * COS45
+  return ax > az ? (ax > diag ? ax : diag) : az > diag ? az : diag
+}
+
+export function setCloisterCourt(on: boolean, circles: readonly { x: number; z: number; r: number }[]) {
+  cloisterOn = on
+  colN = 0
+  for (let i = 0; i < circles.length && colN < COL_CAP; i++) {
+    const c = circles[i]
+    if (!c) continue
+    colX[colN] = c.x
+    colZ[colN] = c.z
+    colR[colN] = c.r
+    colN++
+  }
+  if (!on) {
+    crest = false
+    bound = 10
+  }
+}
+
+/** Water boundary. During the surge the crest is the line bodies stand on; afterwards the rim is a wall. */
+export function setCloisterBound(minOct: number, onCrest: boolean) {
+  bound = minOct
+  crest = onCrest
+}
+
+export function cloisterCourt(): boolean {
+  return cloisterOn
+}
+
+function cloisterLimit(radius: number): number {
+  return crest ? bound : bound + radius
+}
+
+export function cloisterWalk(x: number, z: number, radius: number): boolean {
+  const edge = 24 - radius - 0.05
+  if (Math.abs(x) > edge || Math.abs(z) > edge) return false
+  if (octDist(x, z) < cloisterLimit(radius) - 1e-3) return false
+  for (let i = 0; i < colN; i++) {
+    const dx = x - (colX[i] ?? 0)
+    const dz = z - (colZ[i] ?? 0)
+    const min = radius + (colR[i] ?? 0)
+    if (dx * dx + dz * dz < min * min) return false
+  }
+  return true
+}
+
+function pushCloister(x: number, z: number, radius: number): { x: number; z: number } {
+  let cx = x
+  let cz = z
+  const edge = 24 - radius - 0.05
+  if (cx > edge) cx = edge
+  if (cx < -edge) cx = -edge
+  if (cz > edge) cz = edge
+  if (cz < -edge) cz = -edge
+  for (let i = 0; i < colN; i++) {
+    const px = colX[i] ?? 0
+    const pz = colZ[i] ?? 0
+    const min = radius + (colR[i] ?? 0)
+    const dx = cx - px
+    const dz = cz - pz
+    const d2 = dx * dx + dz * dz
+    if (d2 >= min * min || d2 < 1e-8) continue
+    const d = Math.sqrt(d2)
+    const push = (min - d) / d
+    cx += dx * push
+    cz += dz * push
+  }
+  const limit = cloisterLimit(radius)
+  const o = octDist(cx, cz)
+  if (o < limit && o > 1e-4) {
+    const s = limit / o
+    cx *= s
+    cz *= s
+  }
+  resolved.x = cx
+  resolved.z = cz
+  return resolved
+}
+
+function resolveCloister(x0: number, z0: number, radius: number): { x: number; z: number } {
+  const once = pushCloister(x0, z0, radius)
+  const twice = pushCloister(once.x, once.z, radius)
+  resolved.x = twice.x
+  resolved.z = twice.z
+  return resolved
+}
+
+function slideCloister(x0: number, z0: number, x1: number, z1: number, radius: number): { x: number; z: number } {
+  const full = resolveCloister(x1, z1, radius)
+  const fx = full.x
+  const fz = full.z
+  const moved = Math.hypot(fx - x0, fz - z0)
+  const want = Math.hypot(x1 - x0, z1 - z0)
+  if (want < 1e-5 || moved > want * 0.45) {
+    resolved.x = fx
+    resolved.z = fz
+    return resolved
+  }
+  const alongX = resolveCloister(x1, z0, radius)
+  const xx = alongX.x
+  const xz = alongX.z
+  const alongZ = resolveCloister(x0, z1, radius)
+  const zx = alongZ.x
+  const zz = alongZ.z
+  const mx = Math.hypot(xx - x0, xz - z0)
+  const mz = Math.hypot(zx - x0, zz - z0)
+  if (mx >= mz && mx > moved) {
+    resolved.x = xx
+    resolved.z = xz
+  } else if (mz > moved) {
+    resolved.x = zx
+    resolved.z = zz
+  } else {
+    resolved.x = fx
+    resolved.z = fz
+  }
+  return resolved
+}
+
+function cloisterSegment(x0: number, z0: number, x1: number, z1: number): boolean {
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8
+    if (!cloisterWalk(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, 0.35)) return true
+  }
+  return false
 }

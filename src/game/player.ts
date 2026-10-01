@@ -2,7 +2,7 @@ import { BoxGeometry, CapsuleGeometry, CylinderGeometry, DoubleSide, Group, Mesh
 import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 import { yawFromDirection } from '../core/math'
-import { resolveCircle } from './collision'
+import { cloisterCourt, resolveCircle, slideCircle } from './collision'
 
 export interface Player {
   x: number
@@ -97,7 +97,7 @@ export function integratePlayer(
   }
   p.x += p.vx * moveDt
   p.z += p.vz * moveDt
-  const slid = resolveCircle(p.x, p.z, p.radius)
+  const slid = cloisterCourt() ? slideCircle(p.px, p.pz, p.x, p.z, p.radius) : resolveCircle(p.x, p.z, p.radius)
   p.x = slid.x
   p.z = slid.z
 }
