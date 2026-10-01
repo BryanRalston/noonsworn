@@ -6,6 +6,8 @@ import {
   CylinderGeometry,
   DoubleSide,
   Float32BufferAttribute,
+  InstancedMesh,
+  Matrix4,
   Mesh,
   PlaneGeometry,
   ShaderMaterial,
@@ -369,6 +371,11 @@ float archPatch(vec2 p) {
   float across = (3.0 - fromCol) * 0.9;
   return 1.0 - smoothstep(1.35, 2.45, length(vec2(across, depth - 0.35)));
 }
+float caustic(vec2 p) {
+  float a = sin(p.x * 1.85 + uTime * 0.8) + sin(p.y * 1.45 - uTime * 0.62);
+  float b = sin(p.x * 0.7 + p.y * 1.15 + uTime * 0.4);
+  return smoothstep(1.15, 1.75, a) * smoothstep(0.2, 0.85, b);
+}
 void main() {
   vec2 p = vWorld.xz;
   float o = octDist(p);
@@ -392,11 +399,13 @@ void main() {
   vec3 arcadeShade = stone * mix(vec3(0.40, 0.34, 0.50), vec3(0.74, 0.62, 0.76), bay);
   arcadeShade = mix(arcadeShade, arcadeShade * vec3(0.55, 0.48, 0.64), uDeep);
   vec3 shaded = mix(garthShade, arcadeShade, roof);
-  float lit = clamp(max(directSoft(p), max(reflectSoft(p), glintSoft(p))), 0.0, 1.0);
+  float reflected = reflectSoft(p);
+  float lit = clamp(max(directSoft(p), max(reflected, glintSoft(p))), 0.0, 1.0);
   float rip = 0.86 + 0.14 * sin(p.x * 1.7 + uTime * 2.1) * sin(p.y * 1.4 - uTime * 1.6);
-  vec3 bright = mix(stone, uGold, 0.42) * vec3(1.22, 1.08, 0.82) * mix(1.0, rip, reflectSoft(p));
+  vec3 bright = mix(stone, uGold, 0.42) * vec3(1.22, 1.08, 0.82) * mix(1.0, rip, reflected);
   bright *= mix(1.0, mix(0.28, 1.0, bay), roof);
   vec3 col = mix(shaded, bright, lit);
+  col += uGold * caustic(p) * reflected * (0.22 + roof * 0.5);
   float cope = smoothstep(9.55, 9.82, o) * (1.0 - smoothstep(10.28, 10.6, o));
   float trim = smoothstep(10.08, 10.2, o) * (1.0 - smoothstep(10.24, 10.42, o));
   col = mix(col, uSand * vec3(1.05, 1.01, 0.92), cope * (1.0 - roof));
@@ -435,10 +444,19 @@ varying vec3 vNormal;
 varying vec3 vColor;
 varying float vMark;
 void main() {
-  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vec3 pos = position;
+  vec3 nrm = normal;
+  #ifdef USE_INSTANCING
+    pos = (instanceMatrix * vec4(position, 1.0)).xyz;
+    nrm = mat3(instanceMatrix) * normal;
+  #endif
+  vec4 wp = modelMatrix * vec4(pos, 1.0);
   vWorld = wp.xyz;
-  vNormal = normalize(mat3(modelMatrix) * normal);
+  vNormal = normalize(mat3(modelMatrix) * nrm);
   vColor = color;
+  #ifdef USE_INSTANCING_COLOR
+    vColor *= instanceColor;
+  #endif
   vMark = aMark;
   gl_Position = projectionMatrix * viewMatrix * wp;
 }
@@ -484,8 +502,9 @@ void main() {
   float west = step(0.45, n.x) * step(vWorld.x, -18.0);
   float roofTop = step(0.45, n.y) * step(3.4, vWorld.y) * max(north, west);
   float shim = max(under, max(north, max(west, roofTop))) * wedge * min(uGlow, 1.25);
-  float rip = 0.5 + 0.5 * sin(vWorld.x * 2.2 + vWorld.z * 1.6 + uTime * 2.4);
-  col += uGold * shim * rip * 0.55;
+  float spot = sin(vWorld.x * 2.4 + uTime * 0.9) * sin(vWorld.z * 2.1 - uTime * 0.7);
+  float dapple = smoothstep(0.35, 0.85, spot);
+  col += uGold * shim * dapple * 0.7;
   if (vMark > 0.5 && uC >= 58.0) {
     float idx = vMark - 1.0;
     float phase = clamp((uC - 58.0) / 0.25, 0.0, 8.0);
@@ -877,7 +896,35 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   water.frustumCulled = false
   water.renderOrder = 1
   water.visible = false
-  opts.scene.add(floor, arch, water)
+  const potGeo = new CylinderGeometry(0.42, 0.3, 0.48, 6)
+  stamp(potGeo, new Color(1, 1, 1), 0)
+  const potAt: [number, number, number][] = [
+    [-21.2, 0.54, -21.2],
+    [21.2, 0.54, -21.2],
+    [-21.2, 0.54, 21.2],
+    [21.2, 0.54, 21.2],
+    [-14.8, 0.24, -14.8],
+    [14.8, 0.24, -14.8],
+  ]
+  const pots = new InstancedMesh(potGeo, archMat, potAt.length)
+  const potM = new Matrix4()
+  const potTint = new Color()
+  for (let i = 0; i < potAt.length; i++) {
+    const at = potAt[i]
+    if (!at) continue
+    potM.makeTranslation(at[0], at[1], at[2])
+    pots.setMatrixAt(i, potM)
+    potTint.copy(i % 2 === 0 ? COLOR.sandstoneDeep : COLOR.bronze)
+    pots.setColorAt(i, potTint)
+  }
+  pots.count = potAt.length
+  pots.instanceMatrix.needsUpdate = true
+  if (pots.instanceColor) pots.instanceColor.needsUpdate = true
+  pots.frustumCulled = false
+  pots.castShadow = false
+  pots.receiveShadow = false
+  pots.visible = false
+  opts.scene.add(floor, arch, water, pots)
 
   const circles: { x: number; z: number; r: number }[] = []
   for (let i = 0; i < columnXZ.length; i += 2) circles.push({ x: columnXZ[i] ?? 0, z: columnXZ[i + 1] ?? 0, r: 0.35 })
@@ -1142,12 +1189,14 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       floor.visible = true
       arch.visible = true
       water.visible = true
+      pots.visible = true
       active = true
     },
     clear(restore) {
       floor.visible = false
       arch.visible = false
       water.visible = false
+      pots.visible = false
       setCloisterCourt(false, [])
       active = false
       if (!restore) return
@@ -1157,21 +1206,24 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       }
     },
     warm(renderer, camera) {
-      const show = [floor.visible, arch.visible, water.visible]
+      const show = [floor.visible, arch.visible, water.visible, pots.visible]
       floor.visible = true
       arch.visible = true
       water.visible = true
+      pots.visible = true
       const prev = uProbe.value
       uProbe.value = 0
       renderer.compile(floor, camera)
       renderer.compile(arch, camera)
       renderer.compile(water, camera)
+      renderer.compile(pots, camera)
       uProbe.value = 1
       renderer.compile(floor, camera)
       uProbe.value = prev
       floor.visible = show[0] ?? false
       arch.visible = show[1] ?? false
       water.visible = show[2] ?? false
+      pots.visible = show[3] ?? false
     },
     pin(sun) {
       sun.frozen = false
@@ -1301,10 +1353,11 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       return { exposed: n ? litN / n : 0, arcade: aN ? aLit / aN : 0, n, arcadeN: aN }
     },
     agree(renderer, camera, points, hide) {
-      const prevOwn = [floor.visible, arch.visible, water.visible]
+      const prevOwn = [floor.visible, arch.visible, water.visible, pots.visible]
       const prevHide = hide.map((mesh) => mesh.visible)
       arch.visible = false
       water.visible = false
+      pots.visible = false
       floor.visible = true
       for (let i = 0; i < hide.length; i++) {
         const mesh = hide[i]
@@ -1371,6 +1424,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       floor.visible = prevOwn[0] ?? false
       arch.visible = prevOwn[1] ?? false
       water.visible = prevOwn[2] ?? false
+      pots.visible = prevOwn[3] ?? false
       for (let i = 0; i < hide.length; i++) {
         const mesh = hide[i]
         if (mesh) mesh.visible = prevHide[i] ?? false
@@ -1389,7 +1443,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     },
     tris: () => ({
       floor: triCount(floor.geometry),
-      arch: triCount(arch.geometry),
+      arch: triCount(arch.geometry) + triCount(potGeo) * pots.count,
       water: triCount(water.geometry),
     }),
   }
