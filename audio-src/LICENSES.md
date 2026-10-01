@@ -59,6 +59,12 @@ These nine clips are original ffmpeg synthesis for the temple. They are not CC0 
 
 `gate_rumble` (1.2 s), `mirror_hum_loop` (1 s, seamless), `mirror_fire`, `slab_warn`, `slab_slam`, `spring_launch`, `spring_land`, `mirage_step`, `relic_get`.
 
+## M4b lattice foley
+
+These seven clips are original synthesis for Lattice Terraces. They are not third-party samples. Shipped copies are `public/assets/audio/<name>.ogg` and the AAC `.m4a` twin. Each file peaks at −3 dBFS or below.
+
+`coin_bloom`, `shutter_open`, `shutter_close`, `darter_dart`, `espalier_rake`, `espalier_slam`, `espalier_wake`.
+
 ## Not downloaded but approved as sources
 - **Sonniss GDC Game Audio Bundles** (https://sonniss.com/gameaudiogdc): royalty-free, commercial use in games allowed, no attribution required; you may not redistribute the raw files as a sound library. Too large to download here (tens of GB); use it only if a Kenney/OGA sound is not good enough (e.g. a better stone-thud or metallic whoosh).
 - **Kenney Impact Sounds** also contains `impactBell_heavy_001-004`, `impactPlate_*`, `impactWood_*` alternates (CC0) if more variety is needed.

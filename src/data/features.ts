@@ -67,4 +67,8 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Shadow-Clock', feature: 'Sun-coins projected through the lattice', status: 'shipped', since: 'M4a' },
   { area: 'Shadow-Clock', feature: 'Tier shade from the north cliff', status: 'shipped', since: 'M4a' },
   { area: 'Platform/Ads', feature: 'Feature Map opens only in dev or with ?dev=1', status: 'shipped', since: 'M4a' },
+  { area: 'Combat & Weapons', feature: 'Shade Darter', status: 'shipped', since: 'M4b' },
+  { area: 'Shadow-Clock', feature: 'Shutter Plate', status: 'shipped', since: 'M4b' },
+  { area: 'Combat & Weapons', feature: 'The Espalier', status: 'shipped', since: 'M4b' },
+  { area: 'Maps', feature: 'Brimming Cloister coming soon after a Lattice clear', status: 'shipped', since: 'M4b' },
 ]

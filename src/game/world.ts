@@ -49,7 +49,7 @@ import { loadCast } from './charpack'
 import { buildInlay, buildPillars, buildShell, buildWingFloors, createScatter, createSunPip } from './arena'
 import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
-import { createDirector } from './director'
+import { createDirector, latticePlan } from './director'
 import { createHorde, type HordeCtx } from './enemies/horde'
 import { CARD, cardStep, createBuild, describe, grantXp, isSunBoon, noteJump, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
 import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
@@ -304,7 +304,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const halo = createHalo(fx)
   const pickups = createPickups()
   const director = createDirector()
-  gpu.scene.add(horde.miteMesh, horde.houndMesh, spears.mesh, halo.mesh, pickups.mesh)
+  gpu.scene.add(horde.miteMesh, horde.houndMesh, horde.darterMesh, spears.mesh, halo.mesh, pickups.mesh)
 
   const bus = createEvents()
   const player = createPlayer()
@@ -474,7 +474,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
     onDeath(x, z, lit) {
       shards.burst(x, z, lit)
-      if (activeMap === 'lattice') lattice?.bloom(x, z, lit)
+      if (activeMap === 'lattice' && lattice?.bloom(x, z, lit)) audio.coinBloom()
     },
   }
 
@@ -520,7 +520,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       endAt = performance.now()
       if (next === 'dead') audio.death()
       else audio.win()
-      if (noteRun(activeMap, time, kills, next === 'clear')) screens.setToast('New temple opened')
+      if (noteRun(activeMap, time, kills, next === 'clear')) {
+        screens.setToast(activeMap === 'lattice' ? 'The Brimming Cloister — coming soon' : 'New temple opened')
+      }
     } else {
       screens.setToast(null)
       if (next === 'menu' || next === 'splash') audio.stopMusic()
@@ -660,6 +662,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   horde.onSpawn = (kind) => {
     if (kind === 1) tips.notify('hound')
   }
+  horde.onDart = () => audio.darterDart()
+  horde.bossHit = (x, z, radius, base, source, might, stamp) => {
+    if (activeMap !== 'lattice' || !lattice) return false
+    return lattice.hitBoss(x, z, radius, base, source, might, stamp)
+  }
 
   function showToast(text: string, seconds = 3.2) {
     toast.textContent = text
@@ -680,8 +687,26 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
             enemyMat: mat,
             mite: horde.miteMesh,
             hound: horde.houndMesh,
+            darter: horde.darterMesh,
             hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay],
             restore: [floorMesh, shell, pillars, inlay],
+            spawn: (kind, x, z) => {
+              horde.spawn(kind, x, z, false, 56, player.x, player.z)
+            },
+            cull: (n) => horde.cullTo(n, player.x, player.z),
+            hurt: (amount) => ctx.onHurt(amount),
+            mark: (x, z, radius, seconds) => fx.ring(x, z, radius, FX.gold, seconds),
+            expose: (x, z, half, freeze) => horde.exposeBox(x, z, half, freeze),
+            track: (at) => {
+              horde.bossAt = at
+            },
+            sfx: {
+              shutterOpen: () => audio.shutterOpen(),
+              shutterClose: () => audio.shutterClose(),
+              rake: () => audio.espalierRake(),
+              slam: () => audio.espalierSlam(),
+              wake: () => audio.espalierWake(),
+            },
           })
           lattice = handle
           await handle.load()
@@ -1194,14 +1219,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     step(dt, first) {
       sparkVis = 0
       const state = first ? frame : held
-      if (time >= TUNING.runLength) {
+      if (activeMap === 'lattice' ? lattice?.cleared() : time >= TUNING.runLength) {
         showMode('clear')
         bus.emit('runEnd', { victory: true, time, kills, level: build.level })
         return false
       }
       sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
-      if (activeMap === 'lattice') lattice?.tick(dt, sun)
+      if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
       temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
       temple.mask(floor.uniforms.uWing.value)
       temple.kinds(floor.uniforms.uKind.value)
@@ -1466,7 +1491,21 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
       if (!horde.frozen && !turnWho) {
         const poured = temple.takeSpawns()
-        director.update(dt, time, horde, player.x, player.z, quality.cap, rng, cam.x, cam.z, poured, temple.pickWing)
+        const bossUp = activeMap === 'lattice' && (lattice?.bossing() ?? false)
+        director.update(
+          dt,
+          time,
+          horde,
+          player.x,
+          player.z,
+          bossUp ? Math.min(quality.cap, 56) : quality.cap,
+          rng,
+          cam.x,
+          cam.z,
+          poured,
+          temple.pickWing,
+          activeMap === 'lattice' ? latticePlan(time, bossUp) : undefined,
+        )
       }
       const hordeT = performance.now()
       horde.update(ctx)
@@ -1502,7 +1541,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         bus.emit('runEnd', { victory: false, time, kills, level: build.level })
         return false
       }
-      if (time >= TUNING.runLength) {
+      if (activeMap === 'lattice' ? lattice?.cleared() : time >= TUNING.runLength) {
         showMode('clear')
         bus.emit('runEnd', { victory: true, time, kills, level: build.level })
         return false
@@ -1789,6 +1828,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       follow.snap(px, pz)
     },
     tick: (dt: number) => loop.step(dt, true),
+    pressCut: () => {
+      frame.cutPressed = true
+    },
     renderNow: () => loop.render(1, 0.016, 16),
     pulseMirage: () => {
       frame.miragePressed = true
@@ -1842,14 +1884,16 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     shadeZ: () => (activeMap === 'lattice' && lattice ? lattice.shadeZ() : null),
     floorLit: (x: number, z: number) => litAt(x, z),
     floorSample: (step: number) => (activeMap === 'lattice' && lattice ? lattice.sample(sunLit, step) : 0),
+    espalier: () => (activeMap === 'lattice' && lattice ? lattice.bossInfo() : null),
+    shutters: () => (activeMap === 'lattice' && lattice ? lattice.plateInfo() : null),
     latticeTris: () => (lattice ? lattice.tris() : null),
     whenReady: () => latticeGate ?? Promise.resolve(),
     coinTest: (points: { x: number; z: number }[]) => {
       if (activeMap !== 'lattice' || !lattice) return { tested: 0, agree: 0 }
-      lattice.tick(0, sun)
+      lattice.tick(0, sun, time, player.x, player.z, sunLit)
       sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
-      return lattice.agree(gpu.renderer, follow.camera, points, [playerView, horde.miteMesh, horde.houndMesh, scatter], sunLit)
+      return lattice.agree(gpu.renderer, follow.camera, points, [playerView, horde.miteMesh, horde.houndMesh, horde.darterMesh, scatter], sunLit)
     },
     offers: () => {
       const buf: Card[] = []

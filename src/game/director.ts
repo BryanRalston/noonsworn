@@ -28,7 +28,16 @@ export interface Director {
     camZ: number,
     pour?: readonly WingPour[],
     wingPick?: (px: number, pz: number, rng: Rng, camX: number, camZ: number) => { x: number; z: number } | null,
+    lattice?: { darter: number; boss: boolean },
   ) => void
+}
+
+/** Shade Darter share of Lattice spawns. Sundial omits the lattice argument and keeps one rng draw. */
+export function latticePlan(time: number, boss: boolean): { darter: number; boss: boolean } {
+  let darter = 0
+  if (boss) darter = 0.35
+  else if (time >= 60) darter = 0.15 * Math.min(1, (time - 60) / 120)
+  return { darter, boss }
 }
 
 export function createDirector(): Director {
@@ -43,9 +52,10 @@ export function createDirector(): Director {
       forcedHound = false
       forcedRing = false
     },
-    update(dt, time, horde, px, pz, cap, rng, camX, camZ, pour, wingPick) {
-      if (time >= TUNING.runLength) return
-      if (pour) {
+    update(dt, time, horde, px, pz, cap, rng, camX, camZ, pour, wingPick, lattice) {
+      const boss = lattice?.boss === true
+      if (!boss && time >= TUNING.runLength) return
+      if (!boss && pour) {
         for (let i = 0; i < pour.length; i++) {
           const spot = pour[i]
           if (!spot) continue
@@ -54,10 +64,10 @@ export function createDirector(): Director {
       }
       const wave = waveAt(time)
       const rate = wave.rate
-      const minCount = Math.min(wave.min, TUNING.designCap)
+      const minCount = Math.min(wave.min, TUNING.designCap, boss ? 40 : TUNING.designCap)
       director.acc += rate * dt
       const hour = Math.floor(time / TUNING.packEvery)
-      if (hour > director.hour && time < TUNING.runLength && wave.pack > 0) {
+      if (!boss && hour > director.hour && time < TUNING.runLength && wave.pack > 0) {
         director.hour = hour
         const base = rng() * Math.PI * 2
         for (let i = 0; i < wave.pack; i++) {
@@ -65,12 +75,12 @@ export function createDirector(): Director {
           horde.spawn(0, px + Math.cos(a) * TUNING.packRadius, pz + Math.sin(a) * TUNING.packRadius, false, cap, px, pz)
         }
       }
-      if (!forcedHound && time >= 18) {
+      if (!boss && !forcedHound && time >= 18) {
         forcedHound = true
         const spot = pickSpawn(px, pz, TUNING.hound.radius, rng, camX, camZ)
         horde.spawn(1, spot.x, spot.z, false, cap, px, pz)
       }
-      if (!forcedRing && time >= 25) {
+      if (!boss && !forcedRing && time >= 25) {
         forcedRing = true
         const base = rng() * Math.PI * 2
         for (let i = 0; i < 12; i++) {
@@ -79,10 +89,17 @@ export function createDirector(): Director {
         }
       }
       let spawned = 0
-      while ((director.acc >= 1 || horde.count() < minCount) && spawned < TUNING.spawnBurst && time < TUNING.runLength) {
+      while ((director.acc >= 1 || horde.count() < minCount) && spawned < TUNING.spawnBurst && (boss || time < TUNING.runLength)) {
         if (director.acc >= 1) director.acc -= 1
         const houndChance = wave.hound
-        const kind: 0 | 1 = rng() < houndChance ? 1 : 0
+        const darterP = lattice?.darter ?? 0
+        let kind: 0 | 1 | 2 = 0
+        if (boss) kind = rng() < darterP ? 2 : 0
+        else if (darterP > 0) {
+          const roll = rng()
+          if (roll < darterP) kind = 2
+          else kind = rng() < houndChance ? 1 : 0
+        } else kind = rng() < houndChance ? 1 : 0
         let spotX = 0
         let spotZ = 0
         let fromWing = false
@@ -95,7 +112,7 @@ export function createDirector(): Director {
           }
         }
         if (!fromWing) {
-          const spot = pickSpawn(px, pz, kind === 0 ? TUNING.mite.radius : TUNING.hound.radius, rng, camX, camZ)
+          const spot = pickSpawn(px, pz, kind === 1 ? TUNING.hound.radius : kind === 2 ? TUNING.darter.radius : TUNING.mite.radius, rng, camX, camZ)
           spotX = spot.x
           spotZ = spot.z
         }

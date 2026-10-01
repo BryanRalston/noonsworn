@@ -18,6 +18,7 @@ import {
   ShaderMaterial,
   Vector2,
   Vector3,
+  Vector4,
   type Camera,
   type WebGLRenderer,
 } from 'three'
@@ -27,7 +28,10 @@ import { COLOR } from '../data/palette'
 import type { FloorUniforms } from '../render/floorShader'
 import { toonMap } from '../render/toon'
 import { PILLARS, setBeds, setOpenStrips, type AABB } from './collision'
+import { createEspalier, type EspalierInfo } from './espalier'
+import { createShutters } from './shutters'
 import { noteBlocks, writeFloorPillars } from './temple'
+import type { DamageSource } from '../data/tuning'
 
 const TILE = 4
 /** Half-width of each open walk. 3.2 m is 40% of the floor, so a sun cycle stays at least 25% Exposed. */
@@ -205,6 +209,8 @@ uniform vec2 uOff;
 uniform float uShadeZ;
 uniform float uProbe;
 uniform float uTime;
+uniform float uInset;
+uniform vec4 uZone[4];
 uniform float uBloomN;
 uniform vec3 uBloom[${BLOOM_N}];
 
@@ -232,6 +238,50 @@ float cookieVis(vec2 roof) {
   return texture(uCookie, fract(roof / ${TILE.toFixed(1)})).r;
 }
 
+float cookieHard(vec2 roof) {
+  float c = cookieAt(roof);
+  if (abs(uInset) < 1e-4) return c;
+  if (uInset > 0.0) {
+    c = min(c, cookieAt(roof + vec2(uInset, 0.0)));
+    c = min(c, cookieAt(roof - vec2(uInset, 0.0)));
+    c = min(c, cookieAt(roof + vec2(0.0, uInset)));
+    c = min(c, cookieAt(roof - vec2(0.0, uInset)));
+    return c;
+  }
+  float d = -uInset;
+  c = max(c, cookieAt(roof + vec2(d, 0.0)));
+  c = max(c, cookieAt(roof - vec2(d, 0.0)));
+  c = max(c, cookieAt(roof + vec2(0.0, d)));
+  c = max(c, cookieAt(roof - vec2(0.0, d)));
+  return c;
+}
+
+float cookieSoft(vec2 roof) {
+  float c = cookieVis(roof);
+  if (abs(uInset) < 1e-4) return c;
+  if (uInset > 0.0) {
+    c = min(c, cookieVis(roof + vec2(uInset, 0.0)));
+    c = min(c, cookieVis(roof - vec2(uInset, 0.0)));
+    c = min(c, cookieVis(roof + vec2(0.0, uInset)));
+    c = min(c, cookieVis(roof - vec2(0.0, uInset)));
+    return c;
+  }
+  float d = -uInset;
+  c = max(c, cookieVis(roof + vec2(d, 0.0)));
+  c = max(c, cookieVis(roof - vec2(d, 0.0)));
+  c = max(c, cookieVis(roof + vec2(0.0, d)));
+  c = max(c, cookieVis(roof - vec2(0.0, d)));
+  return c;
+}
+
+bool zoneLit(vec2 p) {
+  for (int i = 0; i < 4; i++) {
+    if (uZone[i].w < 0.5) continue;
+    if (abs(p.x - uZone[i].x) <= uZone[i].z && abs(p.y - uZone[i].y) <= uZone[i].z) return true;
+  }
+  return false;
+}
+
 float groutAt(vec2 p) {
   float fx = min(fract(p.x * 0.5), 1.0 - fract(p.x * 0.5));
   float fz = min(fract(p.y * 0.5), 1.0 - fract(p.y * 0.5));
@@ -252,6 +302,7 @@ bool bloomHard(vec2 p) {
 }
 
 bool hardLit(vec2 p) {
+  if (zoneLit(p)) return true;
   if (bloomHard(p)) return true;
   vec2 toP = p - uSun;
   float dist = length(toP);
@@ -263,7 +314,7 @@ bool hardLit(vec2 p) {
   }
   if (p.y < uShadeZ) return false;
   if (inOpen(p.x)) return true;
-  return cookieAt(p - uOff) > 0.5;
+  return cookieHard(p - uOff) > 0.5;
 }
 
 void main() {
@@ -276,7 +327,7 @@ void main() {
     vec3 stone = vColor * mix(0.84, 1.08, clamp(vUp, 0.0, 1.0));
     stone *= tileJitter(p);
     stone = mix(stone, stone * 0.42, groutAt(p));
-    if (tier < 0.02 && uBloomN < 0.5) {
+    if (tier < 0.02 && uBloomN < 0.5 && !zoneLit(p)) {
       col = stone * vec3(0.74, 0.66, 0.70);
     } else {
       vec2 toP = p - uSun;
@@ -298,12 +349,16 @@ void main() {
       }
       float gap = 1.0;
       if (vUp > 0.5 && abs(p.x) < 24.0 && abs(p.y) < 24.0 && !inOpen(p.x)) {
-        gap = smoothstep(0.47, 0.53, cookieVis(p - uOff));
+        gap = smoothstep(0.47, 0.53, cookieSoft(p - uOff));
         gap *= 0.92 + 0.08 * sin(uTime * 2.0 + p.x * 0.15);
       }
       vec3 slat = stone * vec3(0.18, 0.14, 0.20);
       vec3 sunlit = stone * 1.24;
       float light = clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * tier;
+      if (zoneLit(p)) {
+        light = 1.0;
+        gap = 1.0;
+      }
       col = mix(slat, sunlit, light * gap);
       float bloom = 0.0;
       if (uBloomN > 0.5) {
@@ -338,13 +393,25 @@ export interface LatticeHandle {
   clear: () => void
   warm: (renderer: WebGLRenderer, camera: Camera) => void
   veil: () => void
-  tick: (dt: number, sun: { z: number; dirX: number; dirZ: number; time: number }) => void
+  tick: (
+    dt: number,
+    sun: { z: number; dirX: number; dirZ: number; time: number },
+    time: number,
+    px: number,
+    pz: number,
+    beam: (x: number, z: number) => boolean,
+  ) => void
+  cleared: () => boolean
+  bossing: () => boolean
+  hitBoss: (x: number, z: number, radius: number, base: number, source: DamageSource, might: number, stamp: number) => boolean
+  bossInfo: () => EspalierInfo | null
+  plateInfo: () => { x: number; z: number; mode: string; charge: number; openFor: number }[]
   floorY: (z: number) => number
   isLit: (base: (x: number, z: number) => boolean, x: number, z: number) => boolean
   shadeZ: () => number
   blooming: () => boolean
   terraceMask: () => number
-  bloom: (x: number, z: number, lit: boolean) => void
+  bloom: (x: number, z: number, lit: boolean) => boolean
   sample: (base: (x: number, z: number) => boolean, step: number) => number
   agree: (
     renderer: WebGLRenderer,
@@ -362,8 +429,22 @@ export function createLattice(opts: {
   enemyMat: ShaderMaterial
   mite: InstancedMesh
   hound: InstancedMesh
+  darter: InstancedMesh
   hide: Object3D[]
   restore: Object3D[]
+  spawn: (kind: 0 | 1 | 2, x: number, z: number) => void
+  cull: (n: number) => void
+  hurt: (amount: number) => void
+  mark: (x: number, z: number, radius: number, seconds: number) => void
+  expose: (x: number, z: number, half: number, freeze: number) => void
+  track: (at: { x: number; z: number; r: number } | null) => void
+  sfx: {
+    shutterOpen: () => void
+    shutterClose: () => void
+    rake: () => void
+    slam: () => void
+    wake: () => void
+  }
 }): LatticeHandle {
   const parts: BufferGeometry[] = []
   const backdropParts: BufferGeometry[] = []
@@ -550,6 +631,8 @@ export function createLattice(opts: {
   const uShadeZ = { value: -24 }
   const uProbe = { value: 0 }
   const uTime = { value: 0 }
+  const uInset = { value: 0 }
+  const uZone = { value: [new Vector4(), new Vector4(), new Vector4(), new Vector4()] }
   const uBloomN = { value: 0 }
   const glsl = latticeShader()
   const material = new ShaderMaterial({
@@ -568,6 +651,8 @@ export function createLattice(opts: {
       uShadeZ,
       uProbe,
       uTime,
+      uInset,
+      uZone,
       uBloomN,
       uBloom: { value: bloomSlots },
     },
@@ -693,6 +778,28 @@ void main() {
     return (bytes[iz * 256 + ix] ?? 0) / 255
   }
 
+  function cookieGate(x: number, z: number): number {
+    const inset = uInset.value
+    let c = cookieAt(x, z)
+    if (Math.abs(inset) < 1e-4) return c
+    if (inset > 0) {
+      c = Math.min(c, cookieAt(x + inset, z), cookieAt(x - inset, z), cookieAt(x, z + inset), cookieAt(x, z - inset))
+      return c
+    }
+    const d = -inset
+    return Math.max(c, cookieAt(x + d, z), cookieAt(x - d, z), cookieAt(x, z + d), cookieAt(x, z - d))
+  }
+
+  function zoneAt(x: number, z: number): boolean {
+    const slots = uZone.value
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i]
+      if (!slot || slot.w < 0.5) continue
+      if (Math.abs(x - slot.x) <= slot.z && Math.abs(z - slot.y) <= slot.z) return true
+    }
+    return false
+  }
+
   function bloomHit(x: number, z: number): boolean {
     const r2 = BLOOM_R * BLOOM_R
     for (let i = 0; i < blooms.length; i++) {
@@ -749,19 +856,48 @@ void main() {
     uShadeZ.value = shade
     uTime.value = sun.time
     uploadBlooms()
-    const next = shade >= 23.9 ? shadeMat : material
+    const zoneOpen = zoneAt(0, 0) || uZone.value.some((slot) => (slot?.w ?? 0) > 0.5)
+    const next = shade >= 23.9 && !zoneOpen && Math.abs(uInset.value) < 1e-4 ? shadeMat : material
     if (terrain.material !== next) terrain.material = next
   }
 
   function isLit(base: (x: number, z: number) => boolean, x: number, z: number): boolean {
+    if (zoneAt(x, z)) return true
     if (bloomHit(x, z)) return true
     if (z < shade) return false
     if (!base(x, z)) return false
     if (inOpen(x)) return true
-    return cookieAt(x, z) > 0.5
+    return cookieGate(x, z) > 0.5
   }
 
-  const own = [terrain, dressing, foliage, bloomMesh, probe]
+  let beam: (x: number, z: number) => boolean = () => false
+  let upperOpen = false
+  const shutters = createShutters(uZone.value, {
+    coin: (x, z) => !inOpen(x) && z >= shade && beam(x, z) && cookieGate(x, z) > 0.5,
+    expose: (x, z, half, freeze) => opts.expose(x, z, half, freeze),
+    mark: opts.mark,
+    open: opts.sfx.shutterOpen,
+    close: opts.sfx.shutterClose,
+    boss: (open) => {
+      upperOpen = open
+    },
+  })
+  const espalier = createEspalier({
+    lit: (x, z) => isLit(beam, x, z),
+    hurt: opts.hurt,
+    spawn: (x, z) => opts.spawn(2, x, z),
+    cull: () => opts.cull(40),
+    cover: (inset) => {
+      uInset.value = inset
+    },
+    floor: floorY,
+    wake: opts.sfx.wake,
+    rake: opts.sfx.rake,
+    slam: opts.sfx.slam,
+  })
+  opts.scene.add(shutters.mesh, espalier.mesh, espalier.tele)
+
+  const own = [terrain, dressing, foliage, bloomMesh, probe, shutters.mesh, espalier.mesh, espalier.tele]
   const pixel = new Uint8Array(4)
   const ndc = new Vector3()
   const drawSize = new Vector2()
@@ -815,6 +951,10 @@ void main() {
       probe.visible = false
       opts.mite.material = lifted
       opts.hound.material = lifted
+      opts.darter.material = lifted
+      shutters.reset()
+      espalier.reset()
+      opts.track(null)
       veiled = true
       heldTime = Number.NaN
     },
@@ -829,6 +969,11 @@ void main() {
       }
       opts.mite.material = opts.enemyMat
       opts.hound.material = opts.enemyMat
+      opts.darter.material = opts.enemyMat
+      shutters.reset()
+      espalier.reset()
+      opts.track(null)
+      uInset.value = 0
       setBeds([])
       setOpenStrips([], 0)
       noteBlocks()
@@ -844,7 +989,7 @@ void main() {
       probe.visible = false
       veiled = true
     },
-    tick(dt, sun) {
+    tick(dt, sun, time, px, pz, beamFn) {
       let live = false
       for (let i = 0; i < blooms.length; i++) {
         const b = blooms[i]
@@ -853,14 +998,25 @@ void main() {
         if (b.life > 0) live = true
       }
       const same = sun.time === heldTime && sun.z === heldZ && sun.dirX === heldDirX && sun.dirZ === heldDirZ
-      if (same && !live && bloomMesh.count === 0) return
-      heldTime = sun.time
-      heldZ = sun.z
-      heldDirX = sun.dirX
-      heldDirZ = sun.dirZ
-      sync(sun)
-      if (live || bloomMesh.count > 0) placeBlooms()
+      beam = beamFn
+      if (!same || live || bloomMesh.count > 0) {
+        heldTime = sun.time
+        heldZ = sun.z
+        heldDirX = sun.dirX
+        heldDirZ = sun.dirZ
+        sync(sun)
+        if (live || bloomMesh.count > 0) placeBlooms()
+      }
+      shutters.update(dt, px, pz)
+      espalier.update(dt, time, px, pz, upperOpen)
+      const boss = espalier.info()
+      opts.track(espalier.alive() ? { x: boss.x, z: boss.z, r: boss.r } : null)
     },
+    cleared: () => espalier.info().dead,
+    bossing: () => espalier.awake() && !espalier.info().dead,
+    hitBoss: (x, z, radius, base, source, might, stamp) => espalier.hit(x, z, radius, base, source, might, stamp),
+    bossInfo: () => (espalier.awake() ? espalier.info() : null),
+    plateInfo: () => shutters.info(),
     floorY,
     isLit,
     shadeZ: () => shade,
@@ -879,7 +1035,7 @@ void main() {
       return mask
     },
     bloom(x, z, lit) {
-      if (!lit || cookieAt(x, z) <= 0.5) return
+      if (!lit || cookieGate(x, z) <= 0.5) return false
       let slot = -1
       let oldest = 1e9
       for (let i = 0; i < blooms.length; i++) {
@@ -895,12 +1051,13 @@ void main() {
         }
       }
       const picked = blooms[slot]
-      if (!picked) return
+      if (!picked) return false
       picked.x = x
       picked.z = z
       picked.life = BLOOM_LIFE
       uploadBlooms()
       placeBlooms()
+      return true
     },
     sample(base, step) {
       let lit = 0
@@ -978,6 +1135,14 @@ void main() {
       renderer.compile(foliage, camera)
       renderer.compile(dressing, camera)
       foliage.visible = show
+      const showS = shutters.mesh.visible
+      const showE = espalier.mesh.visible
+      shutters.mesh.visible = true
+      espalier.mesh.visible = true
+      renderer.compile(shutters.mesh, camera)
+      renderer.compile(espalier.mesh, camera)
+      shutters.mesh.visible = showS
+      espalier.mesh.visible = showE
     },
     tris: () => ({
       terrain: trisOf(terrain.geometry) + backdropTris,

@@ -59,7 +59,7 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
         const title = document.createElement('strong')
         title.textContent = def.name
         const lock = document.createElement('span')
-        lock.textContent = def.id === 'lattice' ? 'Survive Sundial Court to open' : 'Sealed'
+        lock.textContent = !def.playable && unlocked(def.id) ? 'Coming soon' : def.id === 'lattice' ? 'Survive Sundial Court to open' : 'Sealed'
         btn.append(title, lock)
       } else {
         if (def.keyart) {

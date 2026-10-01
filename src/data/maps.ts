@@ -147,6 +147,10 @@ export function noteRun(mapId: string, time: number, kills: number, cleared: boo
     rec.unlocked.push('lattice')
     opened = true
   }
+  if (cleared && mapId === 'lattice' && !rec.unlocked.includes('cloister')) {
+    rec.unlocked.push('cloister')
+    opened = true
+  }
   saveMaps(rec)
   return opened
 }

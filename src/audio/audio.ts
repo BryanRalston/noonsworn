@@ -16,6 +16,8 @@ const NAMES = [
   'amb_wind_loop',
   'gate_rumble', 'mirror_hum_loop', 'mirror_fire', 'slab_warn', 'slab_slam',
   'spring_launch', 'spring_land', 'mirage_step', 'relic_get',
+  'coin_bloom', 'shutter_open', 'shutter_close', 'darter_dart',
+  'espalier_rake', 'espalier_slam', 'espalier_wake',
 ] as const
 
 const PENTA = [1, 1.122, 1.26, 1.335, 1.414, 1.498]
@@ -52,6 +54,13 @@ export interface AudioBus {
   springLand: () => void
   mirage: () => void
   relic: () => void
+  coinBloom: () => void
+  shutterOpen: () => void
+  shutterClose: () => void
+  darterDart: () => void
+  espalierRake: () => void
+  espalierSlam: () => void
+  espalierWake: () => void
   setHums: (n: number) => void
   duckTap: () => void
   sample: () => void
@@ -92,7 +101,7 @@ export function createAudio(fxRng: () => number): AudioBus {
   }
   const live: Record<string, number> = { hit: 0, armored: 0, kill: 0, xp: 0, spear: 0, shimmer: 0, exposed: 0, hurt: 0, level: 0, total: 0 }
   let voicePeak = 0
-  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1, slam: 3, land: 1, hum: 2 }
+  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1, slam: 3, land: 1, hum: 2, bloom: 4, shutter: 2, dart: 4, boss: 2 }
   let clipped = 0
   let held = 0
   let xpWindow = 0
@@ -482,6 +491,34 @@ export function createAudio(fxRng: () => number): AudioBus {
     relic() {
       mark('relic')
       one(['relic_get'], 0.45, null)
+    },
+    coinBloom() {
+      mark('coin')
+      one(['coin_bloom'], 0.42, 'bloom')
+    },
+    shutterOpen() {
+      mark('shutter')
+      one(['shutter_open'], 0.46, 'shutter')
+    },
+    shutterClose() {
+      mark('shutter')
+      one(['shutter_close'], 0.4, 'shutter')
+    },
+    darterDart() {
+      mark('dart')
+      one(['darter_dart'], 0.36, 'dart')
+    },
+    espalierRake() {
+      mark('rake')
+      one(['espalier_rake'], 0.48, 'boss')
+    },
+    espalierSlam() {
+      mark('slam')
+      one(['espalier_slam'], 0.5, 'boss')
+    },
+    espalierWake() {
+      mark('wake')
+      one(['espalier_wake'], 0.5, 'boss')
     },
     setHums,
     duckTap,

@@ -144,6 +144,15 @@ export function sweepCut(
       }
     }
   }
+  const boss = horde.bossAt
+  if (boss) {
+    const d = distPointSeg(boss.x, boss.z, cut.sx, cut.sz, player.x, player.z)
+    if (d <= TUNING.cut.radius + boss.r) {
+      const along = Math.max(0.001, Math.hypot(player.x - cut.sx, player.z - cut.sz))
+      const t = Math.max(0, Math.min(1, ((boss.x - cut.sx) * (player.x - cut.sx) + (boss.z - cut.sz) * (player.z - cut.sz)) / (along * along)))
+      horde.bossHit?.(cut.sx + (player.x - cut.sx) * t, cut.sz + (player.z - cut.sz) * t, TUNING.cut.radius, TUNING.cut.damage, 'cut', might, -cut.id)
+    }
+  }
   if (!cut.boomed && cut.hits >= TUNING.cut.bigHits) {
     cut.boomed = true
     onBig()

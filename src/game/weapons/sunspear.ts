@@ -96,6 +96,8 @@ export function createSunspear(fx: WeaponFx): Sunspear {
   const alive = new Uint8Array(MAX)
   const hits = new Int16Array(MAX * 4)
   const trailAt = new Float32Array(MAX)
+  const serial = new Int32Array(MAX)
+  let nextSerial = 100000
   const free = new FreeList(MAX)
 
   function launch(px: number, pz: number, ang: number, damage: number, pierceLeft: number, cap: number) {
@@ -113,6 +115,7 @@ export function createSunspear(fx: WeaponFx): Sunspear {
     dmg[i] = damage
     alive[i] = 1
     trailAt[i] = 0
+    serial[i] = nextSerial++
     const base = i * 4
     hits[base] = -1
     hits[base + 1] = -1
@@ -148,10 +151,36 @@ export function createSunspear(fx: WeaponFx): Sunspear {
       spear.rank = level
       spear.cooldown -= dt
       if (level > 0 && spear.cooldown <= 0) {
+        const stats = spearStats(level)
+        const boss = horde.bossAt
+        let aimX = 0
+        let aimZ = 0
+        let aimD = 1e9
+        let aimed = false
+        if (boss) {
+          const dx = boss.x - px
+          const dz = boss.z - pz
+          const d = Math.hypot(dx, dz)
+          if (d <= TUNING.spear.range + boss.r) {
+            aimX = dx
+            aimZ = dz
+            aimD = d
+            aimed = true
+          }
+        }
         const target = horde.nearest(px, pz, TUNING.spear.range)
         if (target >= 0) {
-          const stats = spearStats(level)
-          const ang = Math.atan2((horde.z[target] ?? 0) - pz, (horde.x[target] ?? 0) - px)
+          const dx = (horde.x[target] ?? 0) - px
+          const dz = (horde.z[target] ?? 0) - pz
+          const d = Math.hypot(dx, dz)
+          if (d < aimD) {
+            aimX = dx
+            aimZ = dz
+            aimed = true
+          }
+        }
+        if (aimed) {
+          const ang = Math.atan2(aimZ, aimX)
           const spread = (TUNING.spear.fanDeg * Math.PI) / 180
           const hasteMul = Math.max(0.2, 1 - TUNING.passive.haste * haste)
           spear.cooldown = stats.cooldown * hasteMul
@@ -222,6 +251,16 @@ export function createSunspear(fx: WeaponFx): Sunspear {
             life[i] = 0
             free.release(i)
             break
+          }
+        }
+        if (alive[i] && horde.bossHit?.(nx, nz, TUNING.spear.hit, dmg[i] ?? 0, 'weapon', might, serial[i] ?? 0)) {
+          spear.onImpact?.(nx, nz, true)
+          fx.hit(nx, nz, true)
+          pierce[i] = (pierce[i] ?? 1) - 1
+          if ((pierce[i] ?? 0) <= 0) {
+            alive[i] = 0
+            life[i] = 0
+            free.release(i)
           }
         }
       }
