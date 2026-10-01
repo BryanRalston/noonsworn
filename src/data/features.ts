@@ -74,4 +74,6 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Graphics/Performance', feature: 'Sela v7.3 toon rig, spear, and combat clips', status: 'shipped', since: 'P1' },
   { area: 'Combat & Weapons', feature: 'Hit flash, squash, pop damage numbers, and atlas weapon VFX', status: 'shipped', since: 'P1' },
   { area: 'Graphics/Performance', feature: 'Mite and Hound v2 morph swarms', status: 'shipped', since: 'P1' },
+  { area: 'Combat & Weapons', feature: 'Espalier tree, soft telegraphs, and a visible coin shrink', status: 'shipped', since: 'P1' },
+  { area: 'Maps', feature: 'Lush planter foliage spilling over the lip', status: 'shipped', since: 'P1' },
 ]

@@ -7,6 +7,7 @@ import {
   CylinderGeometry,
   DataTexture,
   IcosahedronGeometry,
+  InstancedBufferAttribute,
   InstancedMesh,
   Mesh,
   MeshBasicMaterial,
@@ -210,6 +211,8 @@ uniform float uShadeZ;
 uniform float uProbe;
 uniform float uTime;
 uniform float uInset;
+uniform float uVisExtra;
+uniform float uCoinFlash;
 uniform vec4 uZone[4];
 uniform float uBloomN;
 uniform vec3 uBloom[${BLOOM_N}];
@@ -258,15 +261,16 @@ float cookieHard(vec2 roof) {
 
 float cookieSoft(vec2 roof) {
   float c = cookieVis(roof);
-  if (abs(uInset) < 1e-4) return c;
-  if (uInset > 0.0) {
-    c = min(c, cookieVis(roof + vec2(uInset, 0.0)));
-    c = min(c, cookieVis(roof - vec2(uInset, 0.0)));
-    c = min(c, cookieVis(roof + vec2(0.0, uInset)));
-    c = min(c, cookieVis(roof - vec2(0.0, uInset)));
+  float vis = uInset + uVisExtra;
+  if (abs(vis) < 1e-4) return c;
+  if (vis > 0.0) {
+    c = min(c, cookieVis(roof + vec2(vis, 0.0)));
+    c = min(c, cookieVis(roof - vec2(vis, 0.0)));
+    c = min(c, cookieVis(roof + vec2(0.0, vis)));
+    c = min(c, cookieVis(roof - vec2(0.0, vis)));
     return c;
   }
-  float d = -uInset;
+  float d = -vis;
   c = max(c, cookieVis(roof + vec2(d, 0.0)));
   c = max(c, cookieVis(roof - vec2(d, 0.0)));
   c = max(c, cookieVis(roof + vec2(0.0, d)));
@@ -360,6 +364,7 @@ void main() {
         gap = 1.0;
       }
       col = mix(slat, sunlit, light * gap);
+      col += vec3(1.0, 0.86, 0.32) * uCoinFlash * gap;
       float bloom = 0.0;
       if (uBloomN > 0.5) {
         for (int i = 0; i < ${BLOOM_N}; i++) {
@@ -545,49 +550,92 @@ export function createLattice(opts: {
   }
   clump.dispose()
   potGeo.dispose()
-  const leafGeo = merged([new IcosahedronGeometry(0.22, 0), (() => {
-    const bud = new IcosahedronGeometry(0.14, 0)
-    bud.translate(0.16, 0.1, 0.04)
-    return bud
-  })(), (() => {
-    const bud = new IcosahedronGeometry(0.12, 0)
-    bud.translate(-0.12, 0.12, -0.08)
-    return bud
-  })()])
-  paintFoliage(leafGeo)
-  const leafSpots: { x: number; y: number; z: number }[] = []
+  const leafGeo = new BufferGeometry()
+  leafGeo.setAttribute(
+    'position',
+    new BufferAttribute(new Float32Array([
+      -0.55, 0.04, 0,
+      0.55, 0.04, 0,
+      0, 0.22, 0.7,
+      0, 0.4, 1.25,
+    ]), 3),
+  )
+  const leafCol = new Float32Array(12)
+  const leafSrc = [COLOR.foliageDeep, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim]
+  for (let i = 0; i < leafSrc.length; i++) {
+    const c = leafSrc[i]
+    if (!c) continue
+    leafCol[i * 3] = c.r
+    leafCol[i * 3 + 1] = c.g
+    leafCol[i * 3 + 2] = c.b
+  }
+  leafGeo.setAttribute('color', new BufferAttribute(leafCol, 3))
+  leafGeo.setIndex([0, 1, 2, 1, 3, 2, 0, 2, 3])
+  leafGeo.computeVertexNormals()
+  const leafSpots: { x: number; y: number; z: number; yaw: number; tilt: number; roll: number; s: number }[] = []
+  const stations = [0.16, 0.32, 0.48, 0.64, 0.8]
+  const cluster: [number, number, number, number, number, number][] = [
+    [0, 0.28, 0, 0.2, 0.35, 1.35],
+    [0.42, 0.16, 0.22, 0.9, 0.55, 1.15],
+    [-0.4, 0.2, -0.18, 1.6, -0.4, 1.2],
+    [0.16, -0.05, 0.95, 0.45, 0.9, 1.05],
+    [-0.18, -0.08, -0.92, 2.2, -0.85, 1.1],
+    [0.5, 0.1, 0.12, 1.15, 0.6, 0.95],
+    [-0.48, 0.24, 0.36, 2.5, -0.3, 1.25],
+    [0.05, 0.36, -0.1, 0.55, 0.2, 1.45],
+  ]
   for (let e = 0; e < EDGES.length; e++) {
     const zc = EDGES[e] ?? 0
-    const y = (zc < 0 ? 1.28 : 0.98)
+    const lip = zc < 0 ? 1.12 : 0.82
     for (let s = 0; s < SPANS.length; s++) {
       const span = SPANS[s]
       if (!span) continue
       const width = span[1] - span[0]
-      for (let t = 0.14; t <= 0.86; t += 0.18) {
-        leafSpots.push({ x: span[0] + width * t, y, z: zc })
+      for (let t = 0; t < stations.length; t++) {
+        const cx = span[0] + width * (stations[t] ?? 0)
+        for (let k = 0; k < cluster.length; k++) {
+          const off = cluster[k]
+          if (!off) continue
+          leafSpots.push({
+            x: cx + off[0],
+            y: lip + off[1],
+            z: zc + off[2],
+            yaw: off[3] + t * 0.17,
+            tilt: off[4],
+            roll: (k % 2 === 0 ? 0.4 : -0.35) + e * 0.1,
+            s: off[5],
+          })
+        }
       }
     }
   }
   const foliage = new InstancedMesh(
     leafGeo,
-    new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true }),
+    new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true, side: 2 }),
     Math.max(1, leafSpots.length),
   )
   foliage.frustumCulled = false
   foliage.castShadow = false
   foliage.receiveShadow = false
+  foliage.instanceColor = new InstancedBufferAttribute(new Float32Array(Math.max(1, leafSpots.length) * 3), 3)
+  const leafTint = new Color()
   for (let i = 0; i < leafSpots.length; i++) {
     const spot = leafSpots[i]
     if (!spot) continue
     dummy.position.set(spot.x, spot.y, spot.z)
-    dummy.rotation.set(0, i * 0.73, 0)
-    const s = 0.86 + (i % 4) * 0.08
-    dummy.scale.set(s, s * 0.75, s)
+    dummy.rotation.set(spot.tilt, spot.yaw, spot.roll)
+    dummy.scale.set(spot.s, spot.s * 0.85, spot.s)
     dummy.updateMatrix()
     foliage.setMatrixAt(i, dummy.matrix)
+    const band = i % 3
+    if (band === 0) leafTint.setRGB(0.72, 0.88, 0.68)
+    else if (band === 1) leafTint.setRGB(1, 1, 1)
+    else leafTint.setRGB(1.05, 1.16, 0.72)
+    foliage.setColorAt(i, leafTint)
   }
   foliage.count = leafSpots.length
   foliage.instanceMatrix.needsUpdate = true
+  if (foliage.instanceColor) foliage.instanceColor.needsUpdate = true
   foliage.visible = false
   const foliageTris = trisOf(leafGeo) * leafSpots.length
   const basin = new CylinderGeometry(0.9, 0.72, 0.28, 8)
@@ -632,6 +680,8 @@ export function createLattice(opts: {
   const uProbe = { value: 0 }
   const uTime = { value: 0 }
   const uInset = { value: 0 }
+  const uVisExtra = { value: 0 }
+  const uCoinFlash = { value: 0 }
   const uZone = { value: [new Vector4(), new Vector4(), new Vector4(), new Vector4()] }
   const uBloomN = { value: 0 }
   const glsl = latticeShader()
@@ -652,6 +702,8 @@ export function createLattice(opts: {
       uProbe,
       uTime,
       uInset,
+      uVisExtra,
+      uCoinFlash,
       uZone,
       uBloomN,
       uBloom: { value: bloomSlots },
@@ -888,6 +940,7 @@ void main() {
     spawn: (x, z) => opts.spawn(2, x, z),
     cull: () => opts.cull(40),
     cover: (inset) => {
+      if (inset > 0.05 && uInset.value <= 0.05) uCoinFlash.value = 1
       uInset.value = inset
     },
     floor: floorY,
@@ -970,6 +1023,8 @@ void main() {
       espalier.reset()
       opts.track(null)
       uInset.value = 0
+      uVisExtra.value = 0
+      uCoinFlash.value = 0
       setBeds([])
       setOpenStrips([], 0)
       noteBlocks()
@@ -986,6 +1041,9 @@ void main() {
       veiled = true
     },
     tick(dt, sun, time, px, pz, beamFn) {
+      const visTarget = uInset.value > 0.05 ? 0.55 : 0
+      uVisExtra.value += (visTarget - uVisExtra.value) * Math.min(1, dt * 1.6)
+      uCoinFlash.value = Math.max(0, uCoinFlash.value - dt * 2.2)
       let live = false
       for (let i = 0; i < blooms.length; i++) {
         const b = blooms[i]
@@ -1133,12 +1191,16 @@ void main() {
       foliage.visible = show
       const showS = shutters.mesh.visible
       const showE = espalier.mesh.visible
+      const showT = espalier.tele.visible
       shutters.mesh.visible = true
       espalier.mesh.visible = true
+      espalier.tele.visible = true
       renderer.compile(shutters.mesh, camera)
       renderer.compile(espalier.mesh, camera)
+      renderer.compile(espalier.tele, camera)
       shutters.mesh.visible = showS
       espalier.mesh.visible = showE
+      espalier.tele.visible = showT
     },
     tris: () => ({
       terrain: trisOf(terrain.geometry) + backdropTris,
