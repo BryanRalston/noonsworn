@@ -813,6 +813,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   const info: CloisterInfo = { c: cycle, state: 'fill', level, ringOpen: false, betaR: betaDeg, flowMs: 0, dir: 1, theta: SOUTH }
   const pixel = new Uint8Array(4)
   const ndc = new Vector3()
+  const camPt = new Vector3()
+  const rayTo = new Vector3()
   const drawSize = new Vector2()
 
   function direct(x: number, z: number): boolean {
@@ -1207,10 +1209,37 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       renderer.getDrawingBufferSize(drawSize)
       let tested = 0
       let agreed = 0
+      const floorHit = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number) => {
+        if (dy > -1e-6 && dy < 1e-6) return null
+        const planes = [0.3, 0, -0.3, -0.42, -1.05]
+        let bestT = 1e9
+        let hx = 0
+        let hz = 0
+        let found = false
+        for (let p = 0; p < planes.length; p++) {
+          const y = planes[p] ?? 0
+          const t = (y - oy) / dy
+          if (t <= 0 || t >= bestT) continue
+          const x = ox + dx * t
+          const z = oz + dz * t
+          const span = Math.max(Math.abs(x), Math.abs(z))
+          const dist = octDist(x, z)
+          const expect = span >= 18 ? 0.3 : dist < 6 ? -1.05 : dist < 10 ? (ringOn ? -0.3 : -0.42) : 0
+          if (Math.abs(expect - y) > 0.02) continue
+          bestT = t
+          hx = x
+          hz = z
+          found = true
+        }
+        return found ? { x: hx, z: hz } : null
+      }
       for (let i = 0; i < points.length; i++) {
         const point = points[i]
         if (!point) continue
-        ndc.set(point.x, 2, point.z)
+        const cheb = Math.max(Math.abs(point.x), Math.abs(point.z))
+        const o = octDist(point.x, point.z)
+        const floorY = cheb >= 18 ? 0.3 : o < 6 ? -1.05 : o < 10 ? (ringOn ? -0.3 : -0.42) : 0
+        ndc.set(point.x, floorY, point.z)
         ndc.project(camera)
         if (ndc.z < 0 || ndc.z > 1 || Math.abs(ndc.x) > 0.98 || Math.abs(ndc.y) > 0.98) continue
         const px = Math.min(drawSize.x - 1, Math.max(0, Math.floor((ndc.x * 0.5 + 0.5) * drawSize.x)))
@@ -1222,8 +1251,13 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
         const bright = r > 180 && g > 180 && b > 180
         const dark = r < 40 && g < 40 && b < 40
         if (!bright && !dark) continue
+        camera.getWorldPosition(camPt)
+        rayTo.set((px + 0.5) / drawSize.x * 2 - 1, (py + 0.5) / drawSize.y * 2 - 1, 0.5).unproject(camera)
+        rayTo.sub(camPt)
+        const hit = floorHit(camPt.x, camPt.y, camPt.z, rayTo.x, rayTo.y, rayTo.z)
+        if (!hit) continue
         tested++
-        if (isLit(point.x, point.z) === bright) agreed++
+        if (isLit(hit.x, hit.z) === bright) agreed++
       }
       uProbe.value = 0
       floor.visible = prevOwn[0] ?? false
