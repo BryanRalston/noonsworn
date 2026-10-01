@@ -29,7 +29,7 @@ import { COLOR } from '../data/palette'
 import type { FloorUniforms } from '../render/floorShader'
 import { toonMap } from '../render/toon'
 import { PILLARS, setBeds, setOpenStrips, type AABB } from './collision'
-import { createEspalier, type EspalierInfo } from './espalier'
+import { createEspalier, roundedLeaf, type EspalierInfo } from './espalier'
 import { createShutters } from './shutters'
 import { noteBlocks, writeFloorPillars } from './temple'
 import type { DamageSource } from '../data/tuning'
@@ -550,28 +550,7 @@ export function createLattice(opts: {
   }
   clump.dispose()
   potGeo.dispose()
-  const leafGeo = new BufferGeometry()
-  leafGeo.setAttribute(
-    'position',
-    new BufferAttribute(new Float32Array([
-      -0.55, 0.04, 0,
-      0.55, 0.04, 0,
-      0, 0.22, 0.7,
-      0, 0.4, 1.25,
-    ]), 3),
-  )
-  const leafCol = new Float32Array(12)
-  const leafSrc = [COLOR.foliageDeep, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim]
-  for (let i = 0; i < leafSrc.length; i++) {
-    const c = leafSrc[i]
-    if (!c) continue
-    leafCol[i * 3] = c.r
-    leafCol[i * 3 + 1] = c.g
-    leafCol[i * 3 + 2] = c.b
-  }
-  leafGeo.setAttribute('color', new BufferAttribute(leafCol, 3))
-  leafGeo.setIndex([0, 1, 2, 1, 3, 2, 0, 2, 3])
-  leafGeo.computeVertexNormals()
+  const leafGeo = roundedLeaf(0.52, 0.62, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
   const leafSpots: { x: number; y: number; z: number; yaw: number; tilt: number; roll: number; s: number }[] = []
   const stations = [0.16, 0.32, 0.48, 0.64, 0.8]
   const cluster: [number, number, number, number, number, number][] = [

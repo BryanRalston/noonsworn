@@ -152,27 +152,40 @@ function bodyGeo(): BufferGeometry {
   return geo
 }
 
-function leafGeometry(): BufferGeometry {
-  const geo = new BufferGeometry()
-  const pos = new Float32Array([
-    -0.2, 0, 0,
-    0.2, 0, 0,
-    0, 0.08, 0.28,
-    0, 0.16, 0.5,
-  ])
-  const col = new Float32Array(12)
-  const src = [COLOR.leafInk, COLOR.leafInk, COLOR.foliage, COLOR.foliageRim]
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i]
-    if (!c) continue
+/** Six-sided leaf. Base sits on local z = 0 and the tip reaches +2*rz, so old instance poses still spill the same way. */
+export function roundedLeaf(rx: number, rz: number, base: Color, mid: Color, tip: Color): BufferGeometry {
+  const pos = new Float32Array(21)
+  const col = new Float32Array(21)
+  const paint = (i: number, c: Color) => {
     col[i * 3] = c.r
     col[i * 3 + 1] = c.g
     col[i * 3 + 2] = c.b
   }
+  pos[1] = 0.08 + rz * 0.2
+  pos[2] = rz
+  paint(0, mid)
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 2 + (i / 6) * Math.PI * 2
+    const cx = Math.cos(a)
+    const sz = Math.sin(a)
+    const o = i + 1
+    pos[o * 3] = cx * rx
+    pos[o * 3 + 1] = 0.04 + Math.max(0, sz) * rz * 0.45
+    pos[o * 3 + 2] = rz + sz * rz
+    paint(o, sz > 0.65 ? tip : sz < -0.15 ? base : mid)
+  }
+  const idx: number[] = []
+  for (let i = 0; i < 6; i++) idx.push(0, i + 1, ((i + 1) % 6) + 1)
+  const geo = new BufferGeometry()
   geo.setAttribute('position', new BufferAttribute(pos, 3))
   geo.setAttribute('color', new BufferAttribute(col, 3))
-  geo.setIndex([0, 1, 2, 1, 3, 2, 0, 2, 3])
+  geo.setIndex(idx)
+  geo.computeVertexNormals()
   return geo
+}
+
+function leafGeometry(): BufferGeometry {
+  return roundedLeaf(0.18, 0.24, COLOR.leafInk, COLOR.foliage, COLOR.foliageRim)
 }
 
 export function createEspalier(hooks: EspalierHooks): Espalier {
