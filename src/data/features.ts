@@ -77,4 +77,5 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Espalier tree, soft telegraphs, and a visible coin shrink', status: 'shipped', since: 'P1' },
   { area: 'Maps', feature: 'Lush planter foliage spilling over the lip', status: 'shipped', since: 'P1' },
   { area: 'Graphics/Performance', feature: 'Prewarm pooled materials before the first fight frame', status: 'shipped', since: 'P1.1' },
+  { area: 'Combat & Weapons', feature: 'Espalier trellis scaled into the fight frame', status: 'shipped', since: 'P1.1' },
 ]

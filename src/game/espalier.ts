@@ -20,6 +20,10 @@ import { slideCircle } from './collision'
 const LANES = [-12, -6, 0, 6, 12]
 const SEEN = 64
 const LEAF_N = 64
+// Visual only. The hurt circle stays on the wall at the gameplay x/z.
+const VIS_SCALE = 1.4
+const VIS_X = -1.6
+const VIS_Z = 4.8
 
 export interface EspalierHooks {
   lit: (x: number, z: number) => boolean
@@ -228,6 +232,7 @@ export function createEspalier(hooks: EspalierHooks): Espalier {
   mesh.castShadow = false
   mesh.receiveShadow = false
   mesh.visible = false
+  mesh.scale.setScalar(VIS_SCALE)
 
   const leaves = new InstancedMesh(
     leafGeometry(),
@@ -449,7 +454,7 @@ export function createEspalier(hooks: EspalierHooks): Espalier {
   }
 
   function place() {
-    mesh.position.set(x, hooks.floor(z), z)
+    mesh.position.set(x + VIS_X, hooks.floor(z), z + VIS_Z)
     mesh.visible = woken && !dead
     uPhase.value = phase
     const show = telegraph > 0 && woken && !dead
