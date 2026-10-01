@@ -347,19 +347,15 @@ float groutAt(vec2 p) {
   float fz = min(fract(p.y * 0.5), 1.0 - fract(p.y * 0.5));
   return 1.0 - smoothstep(0.015, 0.045, min(fx, fz));
 }
-float tileJitter(vec2 p) {
-  vec2 cell = floor(p * 0.5);
-  float n = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
-  return mix(0.94, 1.06, n);
-}
 vec3 stoneTone(vec2 p) {
   vec2 cell = floor(p * 0.5);
-  float n = fract(sin(dot(cell, vec2(19.1, 73.7))) * 43758.5453);
+  float n = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+  float toneN = fract(n * 13.137);
   vec3 pale = uSand;
   vec3 warm = uSand * vec3(0.88, 0.76, 0.58);
   vec3 deep = uSand * vec3(0.72, 0.58, 0.42);
-  vec3 tone = n < 0.52 ? pale : (n < 0.82 ? warm : deep);
-  tone *= tileJitter(p);
+  vec3 tone = toneN < 0.52 ? pale : (toneN < 0.82 ? warm : deep);
+  tone *= mix(0.94, 1.06, n);
   return mix(tone, tone * 0.42, groutAt(p));
 }
 float archPatch(vec2 p) {
@@ -394,18 +390,20 @@ void main() {
     stone += vec3(0.5, 0.58, 0.54) * sheen * 0.28;
   }
   float roof = smoothstep(17.7, 18.3, cheb);
-  float bay = archPatch(p);
+  float bay = 0.0;
+  if (roof > 0.001) bay = archPatch(p);
   vec3 garthShade = stone * vec3(0.62, 0.56, 0.66);
   vec3 arcadeShade = stone * mix(vec3(0.30, 0.24, 0.40), vec3(0.98, 0.84, 0.66), bay);
   arcadeShade = mix(arcadeShade, arcadeShade * vec3(0.55, 0.48, 0.64), uDeep);
   vec3 shaded = mix(garthShade, arcadeShade, roof);
   float reflected = reflectSoft(p);
   float lit = clamp(max(directSoft(p), max(reflected, glintSoft(p))), 0.0, 1.0);
-  float rip = 0.86 + 0.14 * sin(p.x * 1.7 + uTime * 2.1) * sin(p.y * 1.4 - uTime * 1.6);
+  float rip = 1.0;
+  if (reflected > 0.02) rip = 0.86 + 0.14 * sin(p.x * 1.7 + uTime * 2.1) * sin(p.y * 1.4 - uTime * 1.6);
   vec3 bright = mix(stone, uGold, 0.42) * vec3(1.22, 1.08, 0.82) * mix(1.0, rip, reflected);
   bright *= mix(1.0, mix(0.28, 1.0, bay), roof);
   vec3 col = mix(shaded, bright, lit);
-  col += uGold * caustic(p) * reflected * (0.45 + roof * 0.75);
+  if (reflected > 0.02) col += uGold * caustic(p) * reflected * (0.45 + roof * 0.75);
   float cope = smoothstep(9.55, 9.82, o) * (1.0 - smoothstep(10.28, 10.6, o));
   float trim = smoothstep(10.08, 10.2, o) * (1.0 - smoothstep(10.24, 10.42, o));
   col = mix(col, uSand * vec3(1.05, 1.01, 0.92), cope * (1.0 - roof));
@@ -502,8 +500,11 @@ void main() {
   float west = step(0.45, n.x) * step(vWorld.x, -18.0);
   float roofTop = step(0.45, n.y) * step(3.4, vWorld.y) * max(north, west);
   float shim = max(under, max(north, max(west, roofTop))) * wedge * min(uGlow, 1.25);
-  float spot = sin(vWorld.x * 2.4 + uTime * 0.9) * sin(vWorld.z * 2.1 - uTime * 0.7);
-  float dapple = smoothstep(0.35, 0.85, spot);
+  float dapple = 0.0;
+  if (shim > 0.001) {
+    float spot = sin(vWorld.x * 2.4 + uTime * 0.9) * sin(vWorld.z * 2.1 - uTime * 0.7);
+    dapple = smoothstep(0.35, 0.85, spot);
+  }
   col += uGold * shim * dapple * 1.15;
   if (vMark > 0.5 && uC >= 58.0) {
     float idx = vMark - 1.0;
