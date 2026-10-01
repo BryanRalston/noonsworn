@@ -16,7 +16,6 @@ import {
   type WebGLRenderer,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { segmentHitsCircle } from '../core/math'
 import type { Rng } from '../core/rng'
 import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
@@ -820,19 +819,28 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   function direct(x: number, z: number): boolean {
     return sunRef ? sunRef.isLit(x, z) : false
   }
+  function originBlocked(px: number, pz: number, len2: number, cx: number, cz: number, r: number): boolean {
+    let t = (cx * px + cz * pz) / len2
+    if (t < 0) t = 0
+    else if (t > 1) t = 1
+    const ex = px * t - cx
+    const ez = pz * t - cz
+    return ex * ex + ez * ez <= r * r
+  }
   function reflected(x: number, z: number): boolean {
     if (!brimOn) return false
-    const len = Math.hypot(x, z)
-    if (len < 1e-4) return false
+    const len2 = x * x + z * z
+    if (len2 < 1e-8) return false
+    const len = Math.sqrt(len2)
     if ((x / len) * axisX + (z / len) * axisZ < cosR) return false
     if (octDist(x, z) < 10) return false
     for (let i = 0; i < PILLARS.length; i++) {
       const p = PILLARS[i]
-      if (p && segmentHitsCircle(0, 0, x, z, p.x, p.z, p.r)) return false
+      if (p && originBlocked(x, z, len2, p.x, p.z, p.r)) return false
     }
     for (let i = 0; i < 4; i++) {
       const r = occR[i] ?? 0
-      if (r > 0 && segmentHitsCircle(0, 0, x, z, occX[i] ?? 0, occZ[i] ?? 0, r)) return false
+      if (r > 0 && originBlocked(x, z, len2, occX[i] ?? 0, occZ[i] ?? 0, r)) return false
     }
     return true
   }
@@ -843,7 +851,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     return direct(x, z)
   }
   function isLit(x: number, z: number): boolean {
-    if (direct(x, z) && !roofAt(x, z)) return true
+    if (roofAt(x, z)) return reflected(x, z)
+    if (direct(x, z)) return true
     if (reflected(x, z)) return true
     return glint(x, z)
   }
