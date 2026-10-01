@@ -127,9 +127,39 @@ function merged(parts: BufferGeometry[]): BufferGeometry {
   return geo
 }
 
-function addBox(parts: BufferGeometry[], w: number, h: number, d: number, x: number, y: number, z: number, color: Color, rotX = 0) {
+function paintFaces(geo: BufferGeometry, side: Color, top: Color) {
+  const pos = geo.getAttribute('position')
+  const norm = geo.getAttribute('normal')
+  const colors = new Float32Array(pos.count * 3)
+  for (let i = 0; i < pos.count; i++) {
+    const c = (norm?.getY(i) ?? 0) > 0.6 ? top : side
+    colors[i * 3] = c.r
+    colors[i * 3 + 1] = c.g
+    colors[i * 3 + 2] = c.b
+  }
+  geo.setAttribute('color', new BufferAttribute(colors, 3))
+}
+
+function paintFoliage(geo: BufferGeometry) {
+  const pos = geo.getAttribute('position')
+  const norm = geo.getAttribute('normal')
+  const colors = new Float32Array(pos.count * 3)
+  let maxY = -1e9
+  for (let i = 0; i < pos.count; i++) maxY = Math.max(maxY, pos.getY(i))
+  for (let i = 0; i < pos.count; i++) {
+    const up = (norm?.getY(i) ?? 0) > 0.4 || pos.getY(i) > maxY - 0.06
+    const c = up ? COLOR.foliageRim : pos.getY(i) < maxY - 0.22 ? COLOR.foliageDeep : COLOR.foliage
+    colors[i * 3] = c.r
+    colors[i * 3 + 1] = c.g
+    colors[i * 3 + 2] = c.b
+  }
+  geo.setAttribute('color', new BufferAttribute(colors, 3))
+}
+
+function addBox(parts: BufferGeometry[], w: number, h: number, d: number, x: number, y: number, z: number, color: Color, rotX = 0, top?: Color) {
   const geo = new BoxGeometry(w, h, d)
-  paint(geo, color)
+  if (top) paintFaces(geo, color, top)
+  else paint(geo, color)
   if (rotX !== 0) geo.rotateX(rotX)
   geo.translate(x, y, z)
   parts.push(geo)
@@ -202,6 +232,12 @@ float cookieVis(vec2 roof) {
   return texture(uCookie, fract(roof / ${TILE.toFixed(1)})).r;
 }
 
+float groutAt(vec2 p) {
+  float fx = min(fract(p.x * 0.5), 1.0 - fract(p.x * 0.5));
+  float fz = min(fract(p.y * 0.5), 1.0 - fract(p.y * 0.5));
+  return 1.0 - smoothstep(0.015, 0.045, min(fx, fz));
+}
+
 bool bloomHard(vec2 p) {
   for (int i = 0; i < ${BLOOM_N}; i++) {
     if (uBloom[i].z > 0.5 && distance(p, uBloom[i].xy) <= ${BLOOM_R.toFixed(1)}) return true;
@@ -231,9 +267,10 @@ void main() {
     col = vec3(hardLit(p) ? 1.0 : 0.0);
   } else {
     float tier = smoothstep(uShadeZ - 0.05, uShadeZ + 0.45, p.y);
-    vec3 stone = vColor * mix(0.72, 1.0, vUp * 0.5 + 0.5);
+    vec3 stone = vColor * mix(0.84, 1.08, clamp(vUp, 0.0, 1.0));
+    stone = mix(stone, stone * 0.42, groutAt(p));
     if (tier < 0.02 && uBloomN < 0.5) {
-      col = mix(stone, vec3(0.14, 0.17, 0.37), 0.78);
+      col = stone * vec3(0.74, 0.66, 0.70);
     } else {
       vec2 toP = p - uSun;
       float dist2 = dot(toP, toP);
@@ -252,16 +289,15 @@ void main() {
           shadow = min(shadow, smoothstep(r * r, (r + 0.45) * (r + 0.45), dot(diff, diff)));
         }
       }
-      float coin = 0.0;
+      float gap = 1.0;
       if (vUp > 0.5 && abs(p.x) < 24.0 && abs(p.y) < 24.0 && !inOpen(p.x)) {
-        coin = smoothstep(0.35, 0.65, cookieVis(p - uOff));
-        coin *= 0.85 + 0.15 * sin(uTime * 2.0 + p.x * 0.15);
+        gap = smoothstep(0.47, 0.53, cookieVis(p - uOff));
+        gap *= 0.92 + 0.08 * sin(uTime * 2.0 + p.x * 0.15);
       }
-      vec3 coinCol = mix(vec3(0.95, 0.71, 0.20), vec3(1.0, 0.95, 0.69), coin);
-      vec3 base = mix(stone, coinCol, coin);
-      vec3 shadeCol = mix(base, vec3(0.14, 0.17, 0.37), 0.78);
+      vec3 slat = stone * vec3(0.18, 0.14, 0.20);
+      vec3 sunlit = stone * 1.24;
       float light = clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0) * tier;
-      col = mix(shadeCol, base * 1.18, light);
+      col = mix(slat, sunlit, light * gap);
       float bloom = 0.0;
       if (uBloomN > 0.5) {
         for (int i = 0; i < ${BLOOM_N}; i++) {
@@ -323,22 +359,29 @@ export function createLattice(opts: {
 }): LatticeHandle {
   const parts: BufferGeometry[] = []
   const backdropParts: BufferGeometry[] = []
-  addBox(parts, 48, 0.6, 15.96, 0, 0.3, -16.02, COLOR.sandstone)
-  addBox(parts, 48, 0.3, 16, 0, 0.15, 0, COLOR.sandstoneMid)
-  addBox(parts, 48, 0.16, 16, 0, -0.08, 16, COLOR.sandstoneDeep)
+  const upperTint = COLOR.sandstone.clone().lerp(COLOR.gold, 0.62)
+  const midTint = COLOR.bronze.clone().lerp(COLOR.gold, 0.22)
+  const lowerTint = COLOR.sandstoneDeep.clone().lerp(COLOR.shade, 0.22)
+  const soil = COLOR.bronze.clone().lerp(COLOR.ink, 0.35)
+  addBox(parts, 48, 0.6, 15.96, 0, 0.3, -16.02, upperTint)
+  addBox(parts, 48, 0.3, 16, 0, 0.15, 0, midTint)
+  addBox(parts, 48, 0.16, 16, 0, -0.08, 16, lowerTint)
   const stair = Math.atan(0.3)
   for (let i = 0; i < GAPS.length; i++) {
     const x = GAPS[i] ?? 0
-    addBox(parts, OPEN * 2, 0.08, 1.05, x, 0.45, -8, COLOR.sandstone, stair)
-    addBox(parts, OPEN * 2, 0.08, 1.05, x, 0.15, 8, COLOR.sandstoneMid, stair)
+    addBox(parts, OPEN * 2, 0.08, 1.05, x, 0.45, -8, upperTint, stair)
+    addBox(parts, OPEN * 2, 0.08, 1.05, x, 0.15, 8, midTint, stair)
   }
   for (let s = 0; s < SPANS.length; s++) {
     const span = SPANS[s]
     if (!span) continue
     const w = span[1] - span[0]
     const mid = (span[0] + span[1]) / 2
-    addBox(parts, w, 0.6, 1, mid, 0.6, -8, COLOR.sandstoneDeep)
-    addBox(parts, w, 0.6, 1, mid, 0.3, 8, COLOR.bronze)
+    addBox(parts, w, 0.6, 1, mid, 0.6, -8, soil, 0, COLOR.foliage)
+    addBox(parts, w, 0.6, 1, mid, 0.3, 8, soil, 0, COLOR.foliage)
+    addBox(parts, w, 0.14, 0.16, mid, 0.68, -8.46, COLOR.gold)
+    addBox(parts, w, 0.12, 0.14, mid, 0.38, -7.52, midTint)
+    addBox(parts, w, 0.1, 0.14, mid, 0.12, 8.46, COLOR.shade)
   }
   addBox(backdropParts, 64, 10, 2.2, 0, 5, -28.2, COLOR.sandstoneDeep)
   for (let i = -3; i <= 3; i++) addBox(backdropParts, 1.4, 2.4, 0.25, i * 6, 3.2, -26.85, COLOR.shade)
@@ -397,7 +440,7 @@ export function createLattice(opts: {
     const post = LATTICE_POSTS[i]
     if (!post) continue
     const geo = clump.clone()
-    paint(geo, i % 2 === 0 ? COLOR.shade : COLOR.gold)
+    paintFoliage(geo)
     geo.rotateY(i * 0.7)
     geo.translate(post.x, 3.55, post.z)
     vineGeos.push(geo)
@@ -496,9 +539,15 @@ uniform vec3 uFogColor;
 uniform float uFog;
 uniform float uFogNear;
 uniform float uFogFar;
+float groutAt(vec2 p) {
+  float fx = min(fract(p.x * 0.5), 1.0 - fract(p.x * 0.5));
+  float fz = min(fract(p.y * 0.5), 1.0 - fract(p.y * 0.5));
+  return 1.0 - smoothstep(0.015, 0.045, min(fx, fz));
+}
 void main() {
-  vec3 stone = vColor * mix(0.72, 1.0, vUp * 0.5 + 0.5);
-  vec3 col = mix(stone, vec3(0.14, 0.17, 0.37), 0.78);
+  vec3 stone = vColor * mix(0.84, 1.08, clamp(vUp, 0.0, 1.0));
+  stone = mix(stone, stone * 0.42, groutAt(vWorld.xz));
+  vec3 col = stone * vec3(0.74, 0.66, 0.70);
   float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
@@ -538,11 +587,9 @@ void main() {
   const sharedTime = opts.enemyMat.uniforms.uTime
   if (sharedTime) lifted.uniforms.uTime = sharedTime
   const terrace = `float terraceOf(float z) {
-    if (z <= -8.5) return 0.6;
-    if (z < -7.5) return 0.6 + (z + 8.5) * -0.3;
-    if (z <= 7.5) return 0.3;
-    if (z < 8.5) return 0.3 + (z - 7.5) * -0.3;
-    return 0.0;
+    float north = clamp((-7.5 - z), 0.0, 1.0);
+    float south = clamp((z - 7.5), 0.0, 1.0);
+    return 0.3 + north * 0.3 - south * 0.3;
   }
   void main() {`
   lifted.vertexShader = opts.enemyMat.vertexShader.replace('void main() {', terrace).replace(

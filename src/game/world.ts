@@ -1630,7 +1630,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         const blob = marks[i]
         if (blob) shadows.put(blob.x, blob.z, blob.scale)
       }
-      horde.visit((ex, ez, kind) => shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3))
+      const blobReach = activeMap === 'lattice' ? 15 * 15 : 1e12
+      horde.visit((ex, ez, kind) => {
+        if (activeMap === 'lattice') {
+          const dx = ex - x
+          const dz = ez - z
+          if (dx * dx + dz * dz > blobReach) return
+        }
+        shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3)
+      })
       pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
       shadows.end()
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
