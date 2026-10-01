@@ -342,10 +342,25 @@ float glintSoft(vec2 p) {
   if (band <= 0.0 || !directHard(p)) return 0.0;
   return band;
 }
+float groutAt(vec2 p) {
+  float fx = min(fract(p.x * 0.5), 1.0 - fract(p.x * 0.5));
+  float fz = min(fract(p.y * 0.5), 1.0 - fract(p.y * 0.5));
+  return 1.0 - smoothstep(0.015, 0.045, min(fx, fz));
+}
 float tileJitter(vec2 p) {
   vec2 cell = floor(p * 0.5);
   float n = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
   return mix(0.94, 1.06, n);
+}
+vec3 stoneTone(vec2 p) {
+  vec2 cell = floor(p * 0.5);
+  float n = fract(sin(dot(cell, vec2(19.1, 73.7))) * 43758.5453);
+  vec3 pale = uSand;
+  vec3 warm = uSand * vec3(0.88, 0.76, 0.58);
+  vec3 deep = uSand * vec3(0.72, 0.58, 0.42);
+  vec3 tone = n < 0.52 ? pale : (n < 0.82 ? warm : deep);
+  tone *= tileJitter(p);
+  return mix(tone, tone * 0.42, groutAt(p));
 }
 void main() {
   vec2 p = vWorld.xz;
@@ -358,9 +373,12 @@ void main() {
     return;
   }
   float cheb = max(abs(p.x), abs(p.y));
-  vec3 stone = uSand;
-  if (cheb >= 18.0) stone = uSand * tileJitter(p) * vec3(0.86, 0.78, 0.62);
-  else if (o < 10.0) stone = uSand * 0.78;
+  vec3 stone = stoneTone(p);
+  if (o > 6.0 && o < 10.0 && uRing > 0.5) {
+    stone *= vec3(0.46, 0.50, 0.48);
+    float sheen = pow(0.5 + 0.5 * sin(p.x * 0.55 + uTime * 0.35), 6.0);
+    stone += vec3(0.5, 0.58, 0.54) * sheen * 0.28;
+  }
   float roof = smoothstep(17.7, 18.3, cheb);
   vec3 garthShade = stone * vec3(0.58, 0.54, 0.62);
   vec3 arcadeShade = mix(uShade, uShadeDeep, uDeep);
@@ -369,6 +387,10 @@ void main() {
   float rip = 0.86 + 0.14 * sin(p.x * 1.7 + uTime * 2.1) * sin(p.y * 1.4 - uTime * 1.6);
   vec3 bright = mix(stone, uGold, 0.42) * vec3(1.22, 1.08, 0.82) * mix(1.0, rip, reflectSoft(p));
   vec3 col = mix(shaded, bright, lit);
+  float cope = smoothstep(9.55, 9.82, o) * (1.0 - smoothstep(10.28, 10.6, o));
+  float trim = smoothstep(10.08, 10.2, o) * (1.0 - smoothstep(10.24, 10.42, o));
+  col = mix(col, uSand * vec3(1.05, 1.01, 0.92), cope * (1.0 - roof));
+  col = mix(col, uGold, trim * 0.9);
   if (cheb < 17.8 && o >= 10.0 && o < 17.6) {
     float ring = abs(fract(o * 0.42) - 0.5);
     col = mix(col, uGold, (1.0 - smoothstep(0.012, 0.045, ring)) * 0.55);
@@ -512,10 +534,13 @@ uniform float uFog;
 uniform float uFogNear;
 uniform float uFogFar;
 uniform vec3 uGold;
+uniform vec3 uPoolDeep;
+uniform vec3 uPoolShoal;
 uniform vec2 uAxis;
 uniform float uGlow;
 uniform float uFront;
 uniform float uLevel;
+uniform float uTime;
 float octDist(vec2 p) {
   vec2 a = abs(p);
   float diag = (a.x + a.y) * ${COS45};
@@ -524,19 +549,31 @@ float octDist(vec2 p) {
 void main() {
   vec2 p = vWorld.xz;
   float o = octDist(p);
-  vec3 col = vColor;
+  float t = smoothstep(0.2, 6.2, o);
+  vec3 water = mix(uPoolDeep, uPoolShoal, t);
+  float rip = sin(o * 3.4 - uTime * 0.65) * 0.5 + 0.5;
+  float line = smoothstep(0.72, 0.96, rip);
+  float ca = sin(p.x * 1.5 + uTime * 0.45) * sin(p.y * 1.2 - uTime * 0.3);
+  water += uPoolShoal * smoothstep(0.45, 0.95, ca) * 0.16;
+  water += vec3(0.75, 0.9, 0.82) * line * 0.18;
+  vec3 col = vKind > 1.5 ? vColor : (vKind > 0.5 ? mix(uPoolDeep, uPoolShoal, 0.25) : water);
   float len = length(p);
-  if (vKind < 1.5 && len > 0.2 && uGlow > 0.01) {
+  if (vKind < 0.5 && len > 0.2 && uGlow > 0.01) {
     float side = abs(p.x * uAxis.y - p.y * uAxis.x) / len;
     float along = dot(p / len, uAxis);
     float streak = smoothstep(0.22, 0.0, side) * smoothstep(0.15, 0.75, along);
     col += uGold * streak * min(uGlow, 1.2) * 0.55;
   }
+  if (vKind < 0.5) {
+    float edgeR = mix(6.0, 10.0, smoothstep(0.02, 0.35, uLevel));
+    float foam = 1.0 - smoothstep(0.0, 0.16, abs(o - edgeR));
+    col = mix(col, vec3(0.93, 0.96, 0.9), foam * 0.8);
+  }
   if (uFront > 0.0) {
     float band = 1.0 - smoothstep(0.0, 0.4, abs(o - uFront));
     col = mix(col, vec3(1.0, 0.93, 0.7), band * 0.75);
   }
-  col *= mix(0.85, 1.0, uLevel * 0.5 + 0.5);
+  col *= mix(0.92, 1.0, uLevel * 0.35 + 0.65);
   float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
@@ -651,7 +688,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   for (let k = 0; k < 8; k++) {
     const phi = (k * Math.PI) / 4
     const rot = Math.atan2(-Math.cos(phi), -Math.sin(phi))
-    putBox(7.2, 0.28, 0.46, Math.cos(phi) * 10, 0.22, Math.sin(phi) * 10, k % 2 === 0 ? COLOR.gold : COLOR.bronze, 0, rot)
+    putBox(7.0, 0.22, 0.5, Math.cos(phi) * 10, 0.16, Math.sin(phi) * 10, COLOR.sandstone, 0, rot)
+    putBox(7.0, 0.06, 0.16, Math.cos(phi) * 10, 0.3, Math.sin(phi) * 10, COLOR.gold, 0, rot)
   }
   for (let i = 0; i < 8; i++) {
     const ang = Math.PI / 8 + (i * Math.PI) / 4
@@ -753,6 +791,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uFogNear: src.uFogNear,
       uFogFar: src.uFogFar,
       uGold: src.uGold,
+      uPoolDeep: { value: COLOR.poolTeal },
+      uPoolShoal: { value: COLOR.poolShoal },
       uAxis,
       uGlow,
       uFront,
