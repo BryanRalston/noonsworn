@@ -28,6 +28,12 @@ export function createFloats(parent: HTMLElement, _cap: number): Floats {
   parent.append(canvas)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('2d canvas is required for damage numbers')
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  for (const font of Object.values(FONT)) {
+    ctx.font = font
+    ctx.measureText('128')
+  }
   const live: Live[] = []
   const v = new Vector3()
   let w = 0

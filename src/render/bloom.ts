@@ -90,6 +90,7 @@ export interface Bloom {
   setSize: (width: number, height: number) => void
   setStrength: (strength: number) => void
   warm: (renderer: WebGLRenderer) => void
+  prewarmScene: (renderer: WebGLRenderer, scene: Scene, camera: Camera) => void
 }
 
 export function createBloom(): Bloom {
@@ -163,6 +164,17 @@ export function createBloom(): Bloom {
       mesh.material = composite
       renderer.compile(quadScene, quadCam)
       mesh.material = prev
+    },
+    // Draw the scene into the bloom buffer only, so pooled materials compile the offscreen program before play.
+    prewarmScene(renderer: WebGLRenderer, scene: Scene, camera: Camera) {
+      resizeBuffers()
+      const prevTarget = renderer.getRenderTarget()
+      const prevAuto = renderer.autoClear
+      renderer.autoClear = true
+      renderer.setRenderTarget(sceneTarget)
+      renderer.render(scene, camera)
+      renderer.setRenderTarget(prevTarget)
+      renderer.autoClear = prevAuto
     },
     render(renderer, scene, camera) {
       resizeBuffers()

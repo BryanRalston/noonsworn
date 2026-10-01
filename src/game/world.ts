@@ -772,6 +772,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     if (activeMap === 'lattice' && lattice) {
       lattice.apply()
       lattice.warm(gpu.renderer, follow.camera)
+      prewarmDraw()
     } else lattice?.clear()
     hud.setCharges(0)
     levelUp.hide()
@@ -1805,8 +1806,46 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
     },
   }
+  await fx.ready
   warmScene()
+  prewarmDraw()
   startLoop(loop)
+
+  function prewarmDraw() {
+    const hidden: { visible: boolean }[] = []
+    const counts: { mesh: InstancedMesh; count: number }[] = []
+    gpu.scene.traverse((obj) => {
+      if (!obj.visible) {
+        obj.visible = true
+        hidden.push(obj)
+      }
+      const mesh = obj as InstancedMesh
+      if (mesh.isInstancedMesh && mesh.count < 1) {
+        counts.push({ mesh, count: mesh.count })
+        mesh.count = 1
+      }
+    })
+    fx.death(0, 0, true)
+    fx.death(0.4, 0, false)
+    fx.hit(0, 0, true)
+    fx.hero(0, 0)
+    fx.anchor(0, 1, 0, 0)
+    fx.crescent(0, 0, 0, false)
+    fx.afterimage(0, 0, 0, -1)
+    fx.ring(0, 0, 1.2, FX.orange, 0.2)
+    fx.ray(0, 1, 0, 0, 1.2, 0.12, 0.2)
+    fx.update(0.016)
+    if (fx.mesh.count < 1) fx.mesh.count = 1
+    if (fx.hot.count < 1) fx.hot.count = 1
+    shards.burst(0, 0, true)
+    shards.burst(0.4, 0, false)
+    shards.update(0.016)
+    bloom.prewarmScene(gpu.renderer, gpu.scene, follow.camera)
+    fx.clear()
+    shards.update(2)
+    for (const row of counts) row.mesh.count = row.count
+    for (const obj of hidden) obj.visible = false
+  }
 
   function warmScene() {
     const hidden: { visible: boolean }[] = []
@@ -1887,6 +1926,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         dist: follow.lookDistance(),
         calls: stats.calls,
         tris: stats.triangles,
+        programs: gpu.renderer.info.programs?.length ?? 0,
+        textures: gpu.renderer.info.memory.textures,
         flow: temple.flowMs(),
         wings: temple.opened(),
         tele: temple.telegraph(),

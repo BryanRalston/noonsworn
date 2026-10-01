@@ -111,6 +111,7 @@ export interface WeaponFx {
   setFocus: (x: number, z: number) => void
   update: (dt: number) => void
   clear: () => void
+  ready: Promise<void>
 }
 
 function hash(n: number): number {
@@ -174,7 +175,16 @@ function makeMaterial(map: ReturnType<TextureLoader['load']>, additive: boolean)
 }
 
 export function createWeaponFx(): WeaponFx {
-  const map = new TextureLoader().load(`${import.meta.env.BASE_URL}assets/vfx/vfx_atlas.png`)
+  let markReady = () => {}
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve
+  })
+  const map = new TextureLoader().load(
+    `${import.meta.env.BASE_URL}assets/vfx/vfx_atlas.png`,
+    () => markReady(),
+    undefined,
+    () => markReady(),
+  )
   map.colorSpace = SRGBColorSpace
   map.anisotropy = 4
   map.minFilter = LinearMipmapLinearFilter
@@ -503,6 +513,7 @@ export function createWeaponFx(): WeaponFx {
       mesh.visible = false
       hot.visible = false
     },
+    ready,
   }
   return fx
 }
