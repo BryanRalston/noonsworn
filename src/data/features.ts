@@ -83,6 +83,7 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Maps', feature: 'Cloister stepped plinth and gold sun disc', status: 'shipped', since: 'M5a.2' },
   { area: 'Maps', feature: 'Cloister terracotta roof and scalloped arcade edge', status: 'shipped', since: 'M5a.2' },
   { area: 'Maps', feature: 'Cloister sundial gnomons', status: 'shipped', since: 'M5a.2' },
+  { area: 'Maps', feature: 'Cloister planters on pedestals with spilling leaves', status: 'shipped', since: 'M5a.2' },
   { area: 'Graphics/Performance', feature: 'Sela v7.3 toon rig, spear, and combat clips', status: 'shipped', since: 'P1' },
   { area: 'Combat & Weapons', feature: 'Hit flash, squash, pop damage numbers, and atlas weapon VFX', status: 'shipped', since: 'P1' },
   { area: 'Graphics/Performance', feature: 'Mite and Hound v2 morph swarms', status: 'shipped', since: 'P1' },

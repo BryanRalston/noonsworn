@@ -63,6 +63,51 @@ const flowX = new Int8Array(CELL_N)
 const flowZ = new Int8Array(CELL_N)
 const queue = new Int16Array(CELL_N)
 
+function roundedLeaf(rx: number, rz: number, base: Color, mid: Color, tip: Color): BufferGeometry {
+  const pos = new Float32Array(21)
+  const col = new Float32Array(21)
+  const paint = (i: number, c: Color) => {
+    col[i * 3] = c.r
+    col[i * 3 + 1] = c.g
+    col[i * 3 + 2] = c.b
+  }
+  pos[1] = 0.08 + rz * 0.2
+  pos[2] = rz
+  paint(0, mid)
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 2 + (i / 6) * Math.PI * 2
+    const cx = Math.cos(a)
+    const sz = Math.sin(a)
+    const o = i + 1
+    pos[o * 3] = cx * rx
+    pos[o * 3 + 1] = 0.04 + Math.max(0, sz) * rz * 0.45
+    pos[o * 3 + 2] = rz + sz * rz
+    paint(o, sz > 0.65 ? tip : sz < -0.15 ? base : mid)
+  }
+  const idx: number[] = []
+  for (let i = 0; i < 6; i++) idx.push(0, ((i + 1) % 6) + 1, i + 1)
+  const geo = new BufferGeometry()
+  geo.setAttribute('position', new BufferAttribute(pos, 3))
+  geo.setAttribute('color', new BufferAttribute(col, 3))
+  geo.setAttribute('uv', new BufferAttribute(new Float32Array(14), 2))
+  geo.setAttribute('aMark', new BufferAttribute(new Float32Array(7), 1))
+  geo.setIndex(idx)
+  geo.computeVertexNormals()
+  const nrm = geo.getAttribute('normal')
+  let up = 0
+  for (let i = 0; i < nrm.count; i++) up += nrm.getY(i)
+  if (up < 0) {
+    for (let i = 0; i < idx.length; i += 3) {
+      const swap = idx[i + 1] ?? 0
+      idx[i + 1] = idx[i + 2] ?? 0
+      idx[i + 2] = swap
+    }
+    geo.setIndex(idx)
+    geo.computeVertexNormals()
+  }
+  return geo
+}
+
 function stamp(geo: BufferGeometry, color: Color, mark: number) {
   const pos = geo.getAttribute('position')
   const colors = new Float32Array(pos.count * 3)
@@ -851,20 +896,41 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     putBox(0.28, 0.28, 0.28, -22.55, 2.35, z, COLOR.goldHot)
   }
   const potAt: [number, number, number][] = [
-    [-21.2, 0.54, -21.2],
-    [21.2, 0.54, -21.2],
-    [-21.2, 0.54, 21.2],
-    [21.2, 0.54, 21.2],
-    [-16.2, 0.24, 16.2],
-    [16.2, 0.24, 16.2],
+    [-21.2, 0.3, -21.2],
+    [21.2, 0.3, -21.2],
+    [-21.2, 0.3, 21.2],
+    [21.2, 0.3, 21.2],
+    [-16.2, 0, 16.2],
+    [16.2, 0, 16.2],
   ]
   for (let i = 0; i < potAt.length; i++) {
     const at = potAt[i]
     if (!at) continue
-    const pot = new CylinderGeometry(0.42, 0.3, 0.48, 6)
+    const x = at[0]
+    const floor = at[1]
+    const z = at[2]
+    putBox(0.78, 0.18, 0.78, x, floor + 0.09, z, COLOR.sandstone)
+    const pot = new CylinderGeometry(0.4, 0.28, 0.42, 6)
     stamp(pot, i % 2 === 0 ? COLOR.sandstoneDeep : COLOR.bronze, 0)
-    pot.translate(at[0], at[1], at[2])
+    pot.translate(x, floor + 0.39, z)
     parts.push(pot)
+    const rimY = floor + 0.6
+    for (let leaf = 0; leaf < 9; leaf++) {
+      const yaw = i * 0.7 + (leaf / 9) * Math.PI * 2
+      const frond = roundedLeaf(0.36, 0.48, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
+      frond.rotateX(-0.4)
+      frond.rotateY(yaw)
+      frond.translate(x + Math.cos(yaw) * 0.1, rimY, z + Math.sin(yaw) * 0.1)
+      parts.push(frond)
+    }
+    for (let leaf = 0; leaf < 4; leaf++) {
+      const yaw = i + (leaf / 4) * Math.PI * 2 + 0.4
+      const frond = roundedLeaf(0.26, 0.34, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
+      frond.rotateX(-1.05)
+      frond.rotateY(yaw)
+      frond.translate(x, rimY + 0.05, z)
+      parts.push(frond)
+    }
   }
   const archGeo = mergeGeometries(parts, false)
   if (!archGeo) throw new Error('cloister architecture')
