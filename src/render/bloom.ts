@@ -89,6 +89,7 @@ export interface Bloom {
   render: (renderer: WebGLRenderer, scene: Scene, camera: Camera) => void
   setSize: (width: number, height: number) => void
   setStrength: (strength: number) => void
+  warm: (renderer: WebGLRenderer) => void
 }
 
 export function createBloom(): Bloom {
@@ -152,6 +153,16 @@ export function createBloom(): Bloom {
     },
     setStrength(strength) {
       composite.uniforms.uStrength!.value = strength
+    },
+    warm(renderer) {
+      const prev = mesh.material
+      mesh.material = extract
+      renderer.compile(quadScene, quadCam)
+      mesh.material = blur
+      renderer.compile(quadScene, quadCam)
+      mesh.material = composite
+      renderer.compile(quadScene, quadCam)
+      mesh.material = prev
     },
     render(renderer, scene, camera) {
       resizeBuffers()

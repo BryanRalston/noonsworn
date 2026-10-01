@@ -238,6 +238,12 @@ float groutAt(vec2 p) {
   return 1.0 - smoothstep(0.015, 0.045, min(fx, fz));
 }
 
+float tileJitter(vec2 p) {
+  vec2 cell = floor(p * 0.5);
+  float n = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+  return mix(0.94, 1.06, n);
+}
+
 bool bloomHard(vec2 p) {
   for (int i = 0; i < ${BLOOM_N}; i++) {
     if (uBloom[i].z > 0.5 && distance(p, uBloom[i].xy) <= ${BLOOM_R.toFixed(1)}) return true;
@@ -268,6 +274,7 @@ void main() {
   } else {
     float tier = smoothstep(uShadeZ - 0.05, uShadeZ + 0.45, p.y);
     vec3 stone = vColor * mix(0.84, 1.08, clamp(vUp, 0.0, 1.0));
+    stone *= tileJitter(p);
     stone = mix(stone, stone * 0.42, groutAt(p));
     if (tier < 0.02 && uBloomN < 0.5) {
       col = stone * vec3(0.74, 0.66, 0.70);
@@ -329,6 +336,7 @@ export interface LatticeHandle {
   load: () => Promise<void>
   apply: () => void
   clear: () => void
+  warm: (renderer: WebGLRenderer, camera: Camera) => void
   veil: () => void
   tick: (dt: number, sun: { z: number; dirX: number; dirZ: number; time: number }) => void
   floorY: (z: number) => number
@@ -345,7 +353,7 @@ export interface LatticeHandle {
     hide: Object3D[],
     base: (x: number, z: number) => boolean,
   ) => { tested: number; agree: number }
-  tris: () => { terrain: number; pergola: number; dressing: number }
+  tris: () => { terrain: number; pergola: number; dressing: number; foliage: number }
 }
 
 export function createLattice(opts: {
@@ -362,7 +370,6 @@ export function createLattice(opts: {
   const upperTint = COLOR.sandstone.clone().lerp(COLOR.gold, 0.62)
   const midTint = COLOR.bronze.clone().lerp(COLOR.gold, 0.22)
   const lowerTint = COLOR.sandstoneDeep.clone().lerp(COLOR.shade, 0.22)
-  const soil = COLOR.bronze.clone().lerp(COLOR.ink, 0.35)
   addBox(parts, 48, 0.6, 15.96, 0, 0.3, -16.02, upperTint)
   addBox(parts, 48, 0.3, 16, 0, 0.15, 0, midTint)
   addBox(parts, 48, 0.16, 16, 0, -0.08, 16, lowerTint)
@@ -377,8 +384,10 @@ export function createLattice(opts: {
     if (!span) continue
     const w = span[1] - span[0]
     const mid = (span[0] + span[1]) / 2
-    addBox(parts, w, 0.6, 1, mid, 0.6, -8, soil, 0, COLOR.foliage)
-    addBox(parts, w, 0.6, 1, mid, 0.3, 8, soil, 0, COLOR.foliage)
+    addBox(parts, w * 0.96, 0.42, 0.82, mid, 0.81, -8, COLOR.sandstoneDeep)
+    addBox(parts, w * 0.96 + 0.14, 0.1, 0.98, mid, 1.07, -8, COLOR.bronze)
+    addBox(parts, w * 0.96, 0.42, 0.82, mid, 0.51, 8, COLOR.sandstoneDeep)
+    addBox(parts, w * 0.96 + 0.14, 0.1, 0.98, mid, 0.77, 8, COLOR.bronze)
     addBox(parts, w, 0.14, 0.16, mid, 0.68, -8.46, COLOR.gold)
     addBox(parts, w, 0.12, 0.14, mid, 0.38, -7.52, midTint)
     addBox(parts, w, 0.1, 0.14, mid, 0.12, 8.46, COLOR.shade)
@@ -455,6 +464,51 @@ export function createLattice(opts: {
   }
   clump.dispose()
   potGeo.dispose()
+  const leafGeo = merged([new IcosahedronGeometry(0.22, 0), (() => {
+    const bud = new IcosahedronGeometry(0.14, 0)
+    bud.translate(0.16, 0.1, 0.04)
+    return bud
+  })(), (() => {
+    const bud = new IcosahedronGeometry(0.12, 0)
+    bud.translate(-0.12, 0.12, -0.08)
+    return bud
+  })()])
+  paintFoliage(leafGeo)
+  const leafSpots: { x: number; y: number; z: number }[] = []
+  for (let e = 0; e < EDGES.length; e++) {
+    const zc = EDGES[e] ?? 0
+    const y = (zc < 0 ? 1.28 : 0.98)
+    for (let s = 0; s < SPANS.length; s++) {
+      const span = SPANS[s]
+      if (!span) continue
+      const width = span[1] - span[0]
+      for (let t = 0.14; t <= 0.86; t += 0.18) {
+        leafSpots.push({ x: span[0] + width * t, y, z: zc })
+      }
+    }
+  }
+  const foliage = new InstancedMesh(
+    leafGeo,
+    new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true }),
+    Math.max(1, leafSpots.length),
+  )
+  foliage.frustumCulled = false
+  foliage.castShadow = false
+  foliage.receiveShadow = false
+  for (let i = 0; i < leafSpots.length; i++) {
+    const spot = leafSpots[i]
+    if (!spot) continue
+    dummy.position.set(spot.x, spot.y, spot.z)
+    dummy.rotation.set(0, i * 0.73, 0)
+    const s = 0.86 + (i % 4) * 0.08
+    dummy.scale.set(s, s * 0.75, s)
+    dummy.updateMatrix()
+    foliage.setMatrixAt(i, dummy.matrix)
+  }
+  foliage.count = leafSpots.length
+  foliage.instanceMatrix.needsUpdate = true
+  foliage.visible = false
+  const foliageTris = trisOf(leafGeo) * leafSpots.length
   const basin = new CylinderGeometry(0.9, 0.72, 0.28, 8)
   paint(basin, COLOR.sandstone)
   basin.translate(0, 0.44, 0)
@@ -528,6 +582,8 @@ export function createLattice(opts: {
       uFog: src.uFog,
       uFogNear: src.uFogNear,
       uFogFar: src.uFogFar,
+      uBloomN,
+      uBloom: { value: bloomSlots },
     },
     vertexShader: glsl.vertex,
     fragmentShader: /* glsl */ `
@@ -539,15 +595,31 @@ uniform vec3 uFogColor;
 uniform float uFog;
 uniform float uFogNear;
 uniform float uFogFar;
+uniform float uBloomN;
+uniform vec3 uBloom[${BLOOM_N}];
 float groutAt(vec2 p) {
   float fx = min(fract(p.x * 0.5), 1.0 - fract(p.x * 0.5));
   float fz = min(fract(p.y * 0.5), 1.0 - fract(p.y * 0.5));
   return 1.0 - smoothstep(0.015, 0.045, min(fx, fz));
 }
+float tileJitter(vec2 p) {
+  vec2 cell = floor(p * 0.5);
+  float n = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+  return mix(0.94, 1.06, n);
+}
 void main() {
   vec3 stone = vColor * mix(0.84, 1.08, clamp(vUp, 0.0, 1.0));
+  stone *= tileJitter(vWorld.xz);
   stone = mix(stone, stone * 0.42, groutAt(vWorld.xz));
   vec3 col = stone * vec3(0.74, 0.66, 0.70);
+  float bloom = 0.0;
+  if (uBloomN > 0.5) {
+    for (int i = 0; i < ${BLOOM_N}; i++) {
+      if (float(i) >= uBloomN) break;
+      bloom = max(bloom, 1.0 - smoothstep(${(BLOOM_R * 0.45).toFixed(2)}, ${BLOOM_R.toFixed(1)}, distance(vWorld.xz, uBloom[i].xy)));
+    }
+  }
+  col += vec3(1.0, 0.78, 0.28) * bloom * 0.55;
   float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
@@ -582,7 +654,7 @@ void main() {
     mesh.receiveShadow = false
     mesh.visible = false
   }
-  opts.scene.add(terrain, dressing, bloomMesh, probe)
+  opts.scene.add(terrain, dressing, foliage, bloomMesh, probe)
   const lifted = opts.enemyMat.clone()
   const sharedTime = opts.enemyMat.uniforms.uTime
   if (sharedTime) lifted.uniforms.uTime = sharedTime
@@ -677,7 +749,7 @@ void main() {
     uShadeZ.value = shade
     uTime.value = sun.time
     uploadBlooms()
-    const next = shade >= 23.9 && uBloomN.value < 0.5 ? shadeMat : material
+    const next = shade >= 23.9 ? shadeMat : material
     if (terrain.material !== next) terrain.material = next
   }
 
@@ -689,7 +761,7 @@ void main() {
     return cookieAt(x, z) > 0.5
   }
 
-  const own = [terrain, dressing, bloomMesh, probe]
+  const own = [terrain, dressing, foliage, bloomMesh, probe]
   const pixel = new Uint8Array(4)
   const ndc = new Vector3()
   const drawSize = new Vector2()
@@ -739,6 +811,7 @@ void main() {
       }
       terrain.visible = true
       dressing.visible = true
+      foliage.visible = true
       probe.visible = false
       opts.mite.material = lifted
       opts.hound.material = lifted
@@ -890,10 +963,27 @@ void main() {
       }
       return { tested, agree: agreed }
     },
+    warm(renderer, camera) {
+      const prevMat = terrain.material
+      const prevVis = terrain.visible
+      terrain.visible = true
+      terrain.material = material
+      renderer.compile(terrain, camera)
+      terrain.material = shadeMat
+      renderer.compile(terrain, camera)
+      terrain.material = prevMat
+      terrain.visible = prevVis
+      const show = foliage.visible
+      foliage.visible = true
+      renderer.compile(foliage, camera)
+      renderer.compile(dressing, camera)
+      foliage.visible = show
+    },
     tris: () => ({
       terrain: trisOf(terrain.geometry) + backdropTris,
       pergola: pergolaTris,
       dressing: dressingTris,
+      foliage: foliageTris,
     }),
   }
 }

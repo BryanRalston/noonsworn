@@ -63,6 +63,7 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Maps', feature: 'Map select and Sundial unlocks Lattice', status: 'shipped', since: 'M4a' },
   { area: 'Maps', feature: 'Lattice Terraces, pergolas, and planter stairs', status: 'shipped', since: 'M4a' },
   { area: 'Maps', feature: 'Planter flow clearance and warm terrace floors', status: 'shipped', since: 'M4a.1' },
+  { area: 'Maps', feature: 'Planter boxes, leaf clusters, and terrace tile jitter', status: 'shipped', since: 'M4a.2' },
   { area: 'Shadow-Clock', feature: 'Sun-coins projected through the lattice', status: 'shipped', since: 'M4a' },
   { area: 'Shadow-Clock', feature: 'Tier shade from the north cliff', status: 'shipped', since: 'M4a' },
   { area: 'Platform/Ads', feature: 'Feature Map opens only in dev or with ?dev=1', status: 'shipped', since: 'M4a' },

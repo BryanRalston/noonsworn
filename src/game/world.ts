@@ -739,8 +739,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     temple.setRouting(activeMap === 'lattice')
     temple.reset(rng)
     traps.reset(temple)
-    if (activeMap === 'lattice' && lattice) lattice.apply()
-    else lattice?.clear()
+    if (activeMap === 'lattice' && lattice) {
+      lattice.apply()
+      lattice.warm(gpu.renderer, follow.camera)
+    } else lattice?.clear()
     hud.setCharges(0)
     levelUp.hide()
     featureMap.close()
@@ -1734,7 +1736,24 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
     },
   }
+  warmScene()
   startLoop(loop)
+
+  function warmScene() {
+    const hidden: { visible: boolean }[] = []
+    gpu.scene.traverse((obj) => {
+      if (!obj.visible) {
+        obj.visible = true
+        hidden.push(obj)
+      }
+    })
+    gpu.renderer.compile(gpu.scene, follow.camera)
+    bloom.warm(gpu.renderer)
+    for (let i = 0; i < hidden.length; i++) {
+      const obj = hidden[i]
+      if (obj) obj.visible = false
+    }
+  }
 
   function sfxLine(): string {
     const c = audio.counts()
