@@ -8,6 +8,7 @@ import {
   MeshBasicMaterial,
   MeshToonMaterial,
   PlaneGeometry,
+  ShaderMaterial,
   SphereGeometry,
   Vector3,
 } from 'three'
@@ -39,7 +40,9 @@ import { createAudio } from '../audio/audio'
 import { loadArt } from '../render/art'
 import { createBloom } from '../render/bloom'
 import { toonMap } from '../render/toon'
+import { loadMaps, noteRun, rememberMap } from '../data/maps'
 import { storageGet } from '../platform/storage'
+import { createMapSelect } from '../ui/mapSelect'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
 import { loadCast } from './charpack'
@@ -53,7 +56,8 @@ import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
 import { createSunClock, damageAmount } from './sunClock'
-import { cellBlocked } from './collision'
+import { cellBlocked, resetHomePillars, setBeds } from './collision'
+import type { LatticeHandle } from './lattice'
 import { createTemple, writeFloorPillars } from './temple'
 import { createTraps } from './traps'
 import { createHalo } from './weapons/halo'
@@ -308,6 +312,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'splash'
+  let activeMap: 'sundial' | 'lattice' = 'sundial'
+  let wantMap: 'sundial' | 'lattice' = 'sundial'
+  let lattice: LatticeHandle | null = null
+  let latticeGate: Promise<void> | null = null
+  let latticePending = false
   let endAt = 0
   let xpWindow = 0
   let xpWindowT = 0
@@ -370,6 +379,19 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 
+  function devTools(): boolean {
+    return import.meta.env.DEV || params.get('dev') === '1'
+  }
+
+  function sunLit(x: number, z: number): boolean {
+    return sun.isLit(x, z)
+  }
+
+  function litAt(x: number, z: number): boolean {
+    if (activeMap === 'lattice' && lattice?.ready) return lattice.isLit(sunLit, x, z)
+    return sunLit(x, z)
+  }
+
   const ctx: HordeCtx = {
     dt: 0,
     time: 0,
@@ -383,7 +405,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     separate: true,
     might: 0,
     searing: 0,
-    isLit: (x, z) => sun.isLit(x, z),
+    isLit: (x, z) => litAt(x, z),
+    shadeZ: -1000,
+    bloomLive: false,
     guide: null,
     lureX: 0,
     lureZ: 0,
@@ -450,6 +474,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
     onDeath(x, z, lit) {
       shards.burst(x, z, lit)
+      if (activeMap === 'lattice') lattice?.bloom(x, z, lit)
     },
   }
 
@@ -491,13 +516,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     hud.setVisible(playUi)
     sundial.root.hidden = !playUi
     if (!playUi) touchView.hide()
-    if (next === 'dead') {
+    if (next === 'dead' || next === 'clear') {
       endAt = performance.now()
-      audio.death()
-    } else if (next === 'clear') {
-      endAt = performance.now()
-      audio.win()
-    } else if (next === 'menu' || next === 'splash') audio.stopMusic()
+      if (next === 'dead') audio.death()
+      else audio.win()
+      if (noteRun(activeMap, time, kills, next === 'clear')) screens.setToast('New temple opened')
+    } else {
+      screens.setToast(null)
+      if (next === 'menu' || next === 'splash') audio.stopMusic()
+    }
     if (next !== 'level') levelUp.hide()
   }
 
@@ -508,7 +535,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       const dx = ex - player.x
       const dz = ez - player.z
       if (dx * dx + dz * dz > 36) return
-      if (sun.isLit(ex, ez)) found = true
+      if (litAt(ex, ez)) found = true
     })
     return found
   }
@@ -532,15 +559,17 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     ctx.separate = tick % (quality.tier === 'low' ? 2 : 1) === 0
     ctx.might = build.might
     ctx.searing = build.searing
-    ctx.guide = temple.opened() > 0 ? temple.guide : null
+    ctx.guide = temple.routing() ? temple.guide : null
     ctx.pass = traps.phasing()
     ctx.lureX = traps.decoyX()
     ctx.lureZ = traps.decoyZ()
     ctx.lureR2 = traps.decoyR2()
+    ctx.shadeZ = activeMap === 'lattice' && lattice ? lattice.shadeZ() : -1000
+    ctx.bloomLive = activeMap === 'lattice' && lattice ? lattice.blooming() : false
   }
 
   function openLevel() {
-    const sunlit = sun.isLit(player.x, player.z)
+    const sunlit = litAt(player.x, player.z)
     offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
     noteOffer(offerCount)
     levelUp.show(shown.slice(0, offerCount), sunlit)
@@ -605,7 +634,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     tutorial.onCharge()
     if (!autopickEnabled()) return
     while (build.pending > 0) {
-      const sunlit = sun.isLit(player.x, player.z)
+      const sunlit = litAt(player.x, player.z)
       offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
       noteOffer(offerCount)
       const index = recommendIndex(build, shown, offerCount)
@@ -638,7 +667,49 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     toastTimer = seconds
   }
 
+  function ensureLattice(): Promise<void> {
+    if (lattice?.ready) return Promise.resolve()
+    if (!latticeGate) {
+      latticeGate = import('./lattice')
+        .then(async (mod) => {
+          const mat = horde.miteMesh.material
+          if (Array.isArray(mat) || !(mat instanceof ShaderMaterial)) throw new Error('enemy material')
+          const handle = mod.createLattice({
+            scene: gpu.scene,
+            uniforms: floor.uniforms,
+            enemyMat: mat,
+            mite: horde.miteMesh,
+            hound: horde.houndMesh,
+            hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay],
+            restore: [floorMesh, shell, pillars, inlay],
+          })
+          lattice = handle
+          await handle.load()
+        })
+        .finally(() => {
+          latticeGate = null
+        })
+    }
+    return latticeGate ?? Promise.resolve()
+  }
+
   function startRun() {
+    if (wantMap === 'lattice' && !lattice?.ready) {
+      if (latticePending) return
+      latticePending = true
+      void ensureLattice()
+        .then(() => {
+          latticePending = false
+          if (wantMap === 'lattice') startRun()
+        })
+        .catch((err) => {
+          latticePending = false
+          wantMap = 'sundial'
+          if (import.meta.env.DEV) console.error(err)
+          startRun()
+        })
+      return
+    }
     rng = mulberry32(queuedSeed ?? forcedSeed ?? (Date.now() >>> 0))
     queuedSeed = null
     resetPlayer(player)
@@ -662,8 +733,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     flareCd = 6
     bellCd = 10
     audio.startMusic()
+    activeMap = wantMap
+    resetHomePillars()
+    setBeds([])
+    temple.setRouting(activeMap === 'lattice')
     temple.reset(rng)
     traps.reset(temple)
+    if (activeMap === 'lattice' && lattice) lattice.apply()
+    else lattice?.clear()
     hud.setCharges(0)
     levelUp.hide()
     featureMap.close()
@@ -782,12 +859,31 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     animThrust = true
     audio.spear()
   }
+  const mapSelect = createMapSelect(ui, (id) => {
+    audio.ui()
+    wantMap = id
+    rememberMap(id)
+    mapSelect.close()
+    startRun()
+  })
   screens.onPlay = () => {
     audio.ui()
+    if (import.meta.env.DEV && params.get('map') === 'lattice') {
+      wantMap = 'lattice'
+      startRun()
+      return
+    }
+    const saved = loadMaps()
+    if (saved.unlocked.includes('lattice')) {
+      mapSelect.open(saved)
+      return
+    }
+    wantMap = 'sundial'
     startRun()
   }
   screens.onRestart = () => {
     audio.ui()
+    mapSelect.close()
     startRun()
   }
   screens.onResume = () => {
@@ -796,7 +892,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       ads.gameplayStart()
     }
   }
-  screens.onFeature = () => featureMap.toggle()
+  screens.onFeature = () => {
+    if (!devTools()) return
+    featureMap.toggle()
+  }
   screens.onQuit = () => {
     featureMap.close()
     showMode('menu')
@@ -890,7 +989,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   if (params.get('debug') === '1') debug.open()
   if (import.meta.env.DEV) {
     const pace = window as unknown as { __pace?: () => { t: number; level: number; xp: number; next: number; pending: number } }
-    pace.__pace = () => ({ t: time, level: build.level, xp: build.xp, next: xpToNext(build.level), pending: build.pending, lit: sun.isLit(player.x, player.z) })
+    pace.__pace = () => ({ t: time, level: build.level, xp: build.xp, next: xpToNext(build.level), pending: build.pending, lit: litAt(player.x, player.z) })
   }
   if (previewWeapon) {
     const hook = window as unknown as {
@@ -949,6 +1048,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       t: Math.round(time * 1000) / 1000,
       selaMat: sela.matNote,
     })
+    if (import.meta.env.DEV && params.get('map') === 'lattice') wantMap = 'lattice'
     requestAnimationFrame(() => startRun())
   } else if (turnWho) {
     requestAnimationFrame(() => startRun())
@@ -1028,7 +1128,16 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       held.cutDirZ = null
       held.pick = -1
       if (frame.debugToggle) debug.toggle()
-      if (frame.featureToggle) featureMap.toggle()
+      if (frame.featureToggle && devTools()) featureMap.toggle()
+      if (mapSelect.isOpen()) {
+        const pick = mapSelect.read(frame.navX, frame.navY, frame.confirmPressed, frame.cancelPressed || frame.pausePressed)
+        if (pick === 'back') {
+          mapSelect.close()
+          frame.pausePressed = false
+          frame.cancelPressed = false
+        }
+        return false
+      }
       if (frame.usingTouch) touchView.show()
       else touchView.hide()
       hud.setTouchMode(touchView.visible)
@@ -1090,11 +1199,13 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
+      if (activeMap === 'lattice') lattice?.tick(dt, sun)
       temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
       temple.mask(floor.uniforms.uWing.value)
       temple.kinds(floor.uniforms.uKind.value)
       const wing = floor.uniforms.uWing.value
       wingFloor.visible = wing.x + wing.y + wing.z + wing.w > 0
+      if (activeMap === 'lattice') lattice?.veil()
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
       if (build.flare > 0 && !(previewShow && previewWeapon === 'flare')) {
         flareCd -= dt
@@ -1249,7 +1360,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       if (!slipped) integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
       const wantMirage = build.mirage > 0 && (state.shiftPressed || state.altPressed || state.miragePressed)
-      traps.after(dt, player, wishX, wishZ, horde, ctx, (x, z) => sun.isLit(x, z), build.mirage > 0, build.haste, wantMirage && (first ?? false))
+      traps.after(dt, player, wishX, wishZ, horde, ctx, (x, z) => litAt(x, z), build.mirage > 0, build.haste, wantMirage && (first ?? false))
       if (traps.events.relic) {
         build.mirage = 1
         audio.relic()
@@ -1362,8 +1473,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         hitPreview -= dt
         if (hitPreview <= 0) {
           hitPreview = 0.4
-          const litSpot: [number, number] = sun.isLit(litAx, litAz) ? [litAx, litAz] : [player.x - 4.5, player.z]
-          const shadeSpot: [number, number] = sun.isLit(shadeAx, shadeAz) ? [player.x + 4.5, player.z] : [shadeAx, shadeAz]
+          const litSpot: [number, number] = litAt(litAx, litAz) ? [litAx, litAz] : [player.x - 4.5, player.z]
+          const shadeSpot: [number, number] = litAt(shadeAx, shadeAz) ? [player.x + 4.5, player.z] : [shadeAx, shadeAz]
           fx.hit(litSpot[0], litSpot[1], true, 2.5)
           fx.hit(shadeSpot[0], shadeSpot[1], false, 2.6)
         }
@@ -1465,7 +1576,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (import.meta.env.DEV && (turnWho === 'mite' || turnWho === 'hound')) {
         horde.face(Number(params.get('yaw') ?? '0'))
       }
-      playerView.position.set(x, traps.lift(), z)
+      playerView.position.set(x, traps.lift() + (activeMap === 'lattice' && lattice ? lattice.floorY(z) : 0), z)
       playerView.rotation.y = turnWho === 'sela' ? player.yaw : yaw
       const slashNow = halo.pulses !== animSlashSeen
       animSlashSeen = halo.pulses
@@ -1507,7 +1618,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       spears.sync()
       halo.sync(x, z, build.halo)
-      pickups.sync((gx, gz) => sun.isLit(gx, gz))
+      pickups.sync((gx, gz) => litAt(gx, gz))
       shards.update(frameSec)
       const fxT = performance.now()
       fx.update(frameSec)
@@ -1546,7 +1657,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         tutorial.update(frameSec, player.x, player.z, follow.camera, canvas.clientWidth, canvas.clientHeight, {
           moving: Math.hypot(frame.moveX, frame.moveY) > 0.2,
           litNear: tutorial.active() ? enemyLitNear() : false,
-          inLight: sun.isLit(player.x, player.z),
+          inLight: litAt(player.x, player.z),
           device: input.device(),
           charges: build.pending,
         })
@@ -1562,7 +1673,12 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       touchView.setCooldown(ready)
       hud.setMirage(build.mirage > 0, traps.ready())
       touchView.setOwned(build.mirage > 0)
-      sundial.set(sun.angle, mode === 'playing' || mode === 'level' ? time : sun.time, temple.telegraph())
+      sundial.set(
+        sun.angle,
+        mode === 'playing' || mode === 'level' ? time : sun.time,
+        temple.telegraph(),
+        activeMap === 'lattice' && lattice ? lattice.terraceMask() : undefined,
+      )
       const aim = temple.arrow()
       if (!aim || (mode !== 'playing' && mode !== 'level')) gateArrow.hidden = true
       else {
@@ -1604,7 +1720,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
             pools: `spear ${spears.used()}/${TUNING.tiers[quality.tier].projectiles}  xp ${pickups.used()}/${TUNING.tiers[quality.tier].xp}`,
             renderer: quality.renderer || 'masked',
             bloom: quality.tier !== 'low',
-            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${sun.isLit(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  vsync ${quality.targetMs.toFixed(2)}  peak ${heard.peak.toFixed(1)}dB  voices ${heard.voices}  clip ${heard.clipped}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}\nsfx ${sfxLine()}\ntris mite ${horde.tris.mite.toFixed(0)} hound ${horde.tris.hound.toFixed(0)} sela ${sela.tris.toFixed(0)}`,
+            extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${litAt(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  vsync ${quality.targetMs.toFixed(2)}  peak ${heard.peak.toFixed(1)}dB  voices ${heard.voices}  clip ${heard.clipped}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}\nsfx ${sfxLine()}\ntris mite ${horde.tris.mite.toFixed(0)} hound ${horde.tris.hound.toFixed(0)} sela ${sela.tris.toFixed(0)}`,
           })
         }
       }
@@ -1624,6 +1740,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     seedRun: (n: number) => {
       queuedSeed = n >>> 0
       startRun()
+    },
+    setMap: (id: 'sundial' | 'lattice') => {
+      if (id === 'sundial' || id === 'lattice') wantMap = id
     },
     spawnStress,
     sun,
@@ -1684,7 +1803,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         ring: traps.ring(),
         phases: traps.phases(),
         mirageReady: traps.ready(),
-        plates: temple.plates.map((p) => ({ kind: p.kind, x: p.x, z: p.z, boxX: p.boxX, boxZ: p.boxZ, side: p.side, lit: sun.isLit(p.x, p.z) })),
+        plates: temple.plates.map((p) => ({ kind: p.kind, x: p.x, z: p.z, boxX: p.boxX, boxZ: p.boxZ, side: p.side, lit: litAt(p.x, p.z) })),
       }
     },
     audioCounts: () => audio.counts(),
@@ -1692,6 +1811,19 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     time: () => time,
     mode: () => mode,
     blocked: (x: number, z: number) => cellBlocked(x, z),
+    map: () => activeMap,
+    shadeZ: () => (activeMap === 'lattice' && lattice ? lattice.shadeZ() : null),
+    floorLit: (x: number, z: number) => litAt(x, z),
+    floorSample: (step: number) => (activeMap === 'lattice' && lattice ? lattice.sample(sunLit, step) : 0),
+    latticeTris: () => (lattice ? lattice.tris() : null),
+    whenReady: () => latticeGate ?? Promise.resolve(),
+    coinTest: (points: { x: number; z: number }[]) => {
+      if (activeMap !== 'lattice' || !lattice) return { tested: 0, agree: 0 }
+      lattice.tick(0, sun)
+      sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
+      writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
+      return lattice.agree(gpu.renderer, follow.camera, points, [playerView, horde.miteMesh, horde.houndMesh, scatter], sunLit)
+    },
     offers: () => {
       const buf: Card[] = []
       const n = rollCards(build, rng, buf, 4)

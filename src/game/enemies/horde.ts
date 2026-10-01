@@ -7,7 +7,7 @@ import {
 import { TUNING, type DamageSource } from '../../data/tuning'
 import { FreeList } from '../../core/pool'
 import { yawFromDirection } from '../../core/math'
-import { resolveCircle } from '../collision'
+import { slideCircle } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
 import { createEnemyMaterial, makeCrowd } from '../../render/instancing'
@@ -83,6 +83,9 @@ export interface HordeCtx {
   might: number
   searing: number
   isLit: (x: number, z: number) => boolean
+  /** Enemies north of this line are unlit unless a coin bloom is alive. Sundial passes a value south of the arena. */
+  shadeZ: number
+  bloomLive: boolean
   guide: ((x: number, z: number, px: number, pz: number) => { x: number; z: number } | null) | null
   lureX: number
   lureZ: number
@@ -353,10 +356,12 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         const d2 = dx * dx + dz * dz
         if (d2 > r2 || d2 < 1e-6) continue
         const d = Math.sqrt(d2)
-        x[i] = (x[i] ?? 0) + (dx / d) * dist
-        z[i] = (z[i] ?? 0) + (dz / d) * dist
+        const ox = x[i] ?? 0
+        const oz = z[i] ?? 0
+        x[i] = ox + (dx / d) * dist
+        z[i] = oz + (dz / d) * dist
         const spec = type[i] === 0 ? TUNING.mite : TUNING.hound
-        const slid = resolveCircle(x[i] ?? 0, z[i] ?? 0, spec.radius)
+        const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
         x[i] = slid.x
         z[i] = slid.z
       }
@@ -393,6 +398,24 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
     update(ctx) {
       hashBuild(x, z, alive, MAX)
       if (horde.frozen) return
+      const shadeZ = ctx.shadeZ
+      const blooms = ctx.bloomLive
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || bench[i] || state[i] === DYING) continue
+        if ((i + ctx.tick) % TUNING.litHzDiv !== 0) continue
+        const ez = z[i] ?? 0
+        const now = !blooms && ez < shadeZ ? false : ctx.isLit(x[i] ?? 0, ez)
+        if (litKnown[i] && now && !lit[i]) {
+          ctx.onExpose?.(x[i] ?? 0, z[i] ?? 0)
+          if (ctx.time - (staggerAt[i] ?? -10) >= TUNING.staggerGap) {
+            state[i] = STAGGER
+            stateT[i] = TUNING.staggerTime
+            staggerAt[i] = ctx.time
+          }
+        }
+        litKnown[i] = 1
+        lit[i] = now ? 1 : 0
+      }
       let activeHounds = 0
       for (let i = 0; i < MAX; i++) {
         if (alive[i] && type[i] === 1 && (state[i] === TELE || state[i] === LUNGE)) activeHounds++
@@ -411,19 +434,6 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
             free.release(i)
           }
           continue
-        }
-        if ((i + ctx.tick) % TUNING.litHzDiv === 0) {
-          const now = ctx.isLit(x[i] ?? 0, z[i] ?? 0)
-          if (litKnown[i] && now && !lit[i]) {
-            ctx.onExpose?.(x[i] ?? 0, z[i] ?? 0)
-            if (ctx.time - (staggerAt[i] ?? -10) >= TUNING.staggerGap) {
-              state[i] = STAGGER
-              stateT[i] = TUNING.staggerTime
-              staggerAt[i] = ctx.time
-            }
-          }
-          litKnown[i] = 1
-          lit[i] = now ? 1 : 0
         }
         const dx = ctx.px - (x[i] ?? 0)
         const dz = ctx.pz - (z[i] ?? 0)
@@ -446,10 +456,12 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         }
         if (type[i] === 1 && state[i] === LUNGE) {
           const step = TUNING.hound.lungeSpeed * ctx.dt
-          x[i] = (x[i] ?? 0) + (aimX[i] ?? 0) * step
-          z[i] = (z[i] ?? 0) + (aimZ[i] ?? 0) * step
+          const ox = x[i] ?? 0
+          const oz = z[i] ?? 0
+          x[i] = ox + (aimX[i] ?? 0) * step
+          z[i] = oz + (aimZ[i] ?? 0) * step
           travelled[i] = (travelled[i] ?? 0) + step
-          const moved = resolveCircle(x[i] ?? 0, z[i] ?? 0, TUNING.hound.radius)
+          const moved = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, TUNING.hound.radius)
           x[i] = moved.x
           z[i] = moved.z
           yaw[i] = yawFromDirection(aimX[i] ?? 0, aimZ[i] ?? 1)
@@ -529,9 +541,11 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         }
         if ((slowT[i] ?? 0) > 0) slowT[i] = (slowT[i] ?? 0) - ctx.dt
         const spd = spec.speed * (lit[i] ? TUNING.exposedSpeed : 1) * ((slowT[i] ?? 0) > 0 ? 0.6 : 1)
-        x[i] = (x[i] ?? 0) + (sx / sl) * spd * ctx.dt
-        z[i] = (z[i] ?? 0) + (sz / sl) * spd * ctx.dt
-        const slid = resolveCircle(x[i] ?? 0, z[i] ?? 0, spec.radius)
+        const ox = x[i] ?? 0
+        const oz = z[i] ?? 0
+        x[i] = ox + (sx / sl) * spd * ctx.dt
+        z[i] = oz + (sz / sl) * spd * ctx.dt
+        const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
         x[i] = slid.x
         z[i] = slid.z
         yaw[i] = yawFromDirection(sx, sz)
@@ -549,9 +563,11 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         const spec = type[i] === 0 ? TUNING.mite : TUNING.hound
         const spd = spec.speed * (lit[i] ? TUNING.exposedSpeed : 1) * ((slowT[i] ?? 0) > 0 ? 0.6 : 1)
         const push = Math.min(pushR - d, spd * ctx.dt * 1.5)
-        x[i] = (x[i] ?? 0) + (dx / d) * push
-        z[i] = (z[i] ?? 0) + (dz / d) * push
-        const slid = resolveCircle(x[i] ?? 0, z[i] ?? 0, spec.radius)
+        const ox = x[i] ?? 0
+        const oz = z[i] ?? 0
+        x[i] = ox + (dx / d) * push
+        z[i] = oz + (dz / d) * push
+        const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
         x[i] = slid.x
         z[i] = slid.z
       }

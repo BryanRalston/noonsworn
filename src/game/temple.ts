@@ -14,6 +14,7 @@ import { TUNING } from '../data/tuning'
 import { COLOR } from '../data/palette'
 import { composeShell, sealGeometry } from './arena'
 import {
+  BEDS,
   PILLARS,
   cellBlocked,
   closeGates,
@@ -182,6 +183,8 @@ export interface Temple {
   sides: () => number[]
   opened: () => number
   openTimes: () => number[]
+  setRouting: (on: boolean) => void
+  routing: () => boolean
   attach: (shell: Mesh, floor: Mesh, pillars: InstancedMesh, scene: Scene, material: Material) => void
   onRumble: (() => void) | null
 }
@@ -194,6 +197,7 @@ export function createTemple(): Temple {
   const sides = [0, 1, 2, 3]
   const openTimes = [-1, -1, -1, -1]
   let opened = 0
+  let routingOn = false
   let told = false
   let arrowX = 0
   let arrowZ = 0
@@ -210,6 +214,7 @@ export function createTemple(): Temple {
   let flowTail = 0
   let flowBuild = 0
   let flowLast = 0
+  let flowAnchor = -1
   let shell: Mesh | null = null
   let wingFloor: Mesh | null = null
   let pillarMesh: InstancedMesh | null = null
@@ -499,6 +504,7 @@ export function createTemple(): Temple {
       flowPhase = 0
       flowAcc = 0
       flowLast = 0
+      flowAnchor = -1
       openTimes[0] = -1
       openTimes[1] = -1
       openTimes[2] = -1
@@ -532,6 +538,7 @@ export function createTemple(): Temple {
           slideSide = -1
         }
       }
+      if (!routingOn) {
       const next = opened
       if (next < 4) {
         const sunDue = (next + 1) * TUNING.daySeconds
@@ -562,14 +569,20 @@ export function createTemple(): Temple {
           if (wingFloor) wingFloor.visible = true
         }
       }
+      }
       if (arrowT > 0) arrowT -= dt
       pour(dt)
-      if (opened === 0) return
+      if (opened === 0 && !routingOn) return
+      const flowDirty = blocksDirty
       if (blocksDirty) rebuildBlocked()
       flowAcc += dt
       if (flowPhase === 0 && flowAcc >= 1 / TUNING.temple.flowHz) {
         flowAcc = 0
-        kickFlow(px, pz)
+        const cell = cellIndex(px, pz)
+        if (flowDirty || cell !== flowAnchor) {
+          kickFlow(px, pz)
+          flowAnchor = cell
+        }
       }
       if (flowPhase === 1) stepFlow()
     },
@@ -580,7 +593,8 @@ export function createTemple(): Temple {
       return out
     },
     guide(x, z, px, pz) {
-      if (opened === 0) return null
+      if (opened === 0 && !routingOn) return null
+      if (BEDS.length > 0 && Math.abs(z) < 6.5 && Math.abs(pz) < 6.5 && Math.abs(x) < 22 && Math.abs(px) < 22) return null
       const dx = px - x
       const dz = pz - z
       const dist = Math.hypot(dx, dz)
@@ -639,6 +653,11 @@ export function createTemple(): Temple {
     sides: () => sides.slice(),
     opened: () => opened,
     openTimes: () => openTimes.slice(),
+    setRouting(on: boolean) {
+      routingOn = on
+      blocksDirty = true
+    },
+    routing: () => routingOn || opened > 0,
     mask(out) {
       out.set(0, 0, 0, 0)
       for (let i = 0; i < opened; i++) {

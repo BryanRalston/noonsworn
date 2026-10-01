@@ -47,6 +47,7 @@ export interface Screens {
   onAutopick: ((on: boolean) => void) | null
   onResetTutorial: (() => void) | null
   onHover: (() => void) | null
+  setToast: (text: string | null) => void
 }
 
 export function tipsEnabled(): boolean {
@@ -74,7 +75,6 @@ export function createScreens(parent: HTMLElement): Screens {
         <button type="button" class="menu-item primary" id="btn-play">Play</button>
         <button type="button" class="menu-item" id="btn-howto">How to Play</button>
         <button type="button" class="menu-item" id="btn-settings">Settings</button>
-        <button type="button" class="menu-item" id="btn-feature">Feature Map</button>
         <button type="button" class="menu-item" id="btn-credits">Credits</button>
       </div>
     </section>
@@ -125,13 +125,13 @@ export function createScreens(parent: HTMLElement): Screens {
         <button type="button" class="menu-item primary" id="btn-resume">Resume</button>
         <button type="button" class="menu-item" id="btn-pause-howto">How to Play</button>
         <button type="button" class="menu-item" id="btn-pause-settings">Settings</button>
-        <button type="button" class="menu-item" id="btn-pause-feature">Feature Map</button>
         <button type="button" class="menu-item" id="btn-pause-quit">Quit to menu</button>
       </div>
     </section>
     <section id="end-screen" hidden>
       <h2 id="end-title">THE LIGHT FAILS</h2>
       <p id="end-detail"></p>
+      <p id="map-toast" hidden>New temple opened</p>
       <button type="button" class="menu-item primary" id="btn-end">Restart</button>
     </section>`
   parent.append(root)
@@ -150,6 +150,7 @@ export function createScreens(parent: HTMLElement): Screens {
   const endTitle = root.querySelector('#end-title') as HTMLElement
   const endDetail = root.querySelector('#end-detail') as HTMLElement
   const endBtn = root.querySelector('#btn-end') as HTMLButtonElement
+  const mapToast = root.querySelector('#map-toast') as HTMLElement
   const boxes = root.querySelectorAll<HTMLInputElement>('input[data-setting]')
   const sliders = root.querySelectorAll<HTMLInputElement>('input[data-audio]')
   const quality = root.querySelector('#quality-pref') as HTMLSelectElement
@@ -227,6 +228,10 @@ export function createScreens(parent: HTMLElement): Screens {
     onAutopick: null,
     onResetTutorial: null,
     onHover: null,
+    setToast(text) {
+      mapToast.hidden = !text
+      if (text) mapToast.textContent = text
+    },
     setBeamPaused(paused) {
       root.classList.toggle('beam-paused', paused)
     },
@@ -293,15 +298,10 @@ export function createScreens(parent: HTMLElement): Screens {
   root.querySelector('#btn-play')?.addEventListener('click', () => screens.onPlay?.())
   root.querySelector('#btn-howto')?.addEventListener('click', () => sub('howto'))
   root.querySelector('#btn-settings')?.addEventListener('click', () => sub('settings'))
-  root.querySelector('#btn-feature')?.addEventListener('click', (e) => {
-    e.stopPropagation()
-    screens.onFeature?.()
-  })
   root.querySelector('#btn-credits')?.addEventListener('click', () => sub('credits'))
   root.querySelector('#btn-resume')?.addEventListener('click', () => screens.onResume?.())
   root.querySelector('#btn-pause-howto')?.addEventListener('click', () => sub('howto'))
   root.querySelector('#btn-pause-settings')?.addEventListener('click', () => sub('settings'))
-  root.querySelector('#btn-pause-feature')?.addEventListener('click', () => screens.onFeature?.())
   root.querySelector('#btn-pause-quit')?.addEventListener('click', () => screens.onQuit?.())
   root.querySelector('#howto-back')?.addEventListener('click', () => screens.back())
   root.querySelector('#settings-back')?.addEventListener('click', () => screens.back())

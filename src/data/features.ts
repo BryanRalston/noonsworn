@@ -58,6 +58,11 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Platform/Ads', feature: 'Real ad SDK and portal build', status: 'planned', since: 'M3' },
   { area: 'Shadow-Clock', feature: 'Temple wings open on the sun clock', status: 'shipped', since: 'M3b' },
   { area: 'Shadow-Clock', feature: 'Mirror plates, pressure slabs, and Sunspring', status: 'shipped', since: 'M3b' },
-  { area: 'Combat & Weapons', feature: 'Mirage Sandals altar and level-8 card', status: 'shipped', since: 'M3b' },
+  { area: 'Combat & Weapons', feature: 'Mirage Sandals altar and level-3 card', status: 'shipped', since: 'M3b' },
   { area: 'Controls', feature: 'Flow field through open wings', status: 'shipped', since: 'M3b' },
+  { area: 'Maps', feature: 'Map select and Sundial unlocks Lattice', status: 'shipped', since: 'M4a' },
+  { area: 'Maps', feature: 'Lattice Terraces, pergolas, and planter stairs', status: 'shipped', since: 'M4a' },
+  { area: 'Shadow-Clock', feature: 'Sun-coins projected through the lattice', status: 'shipped', since: 'M4a' },
+  { area: 'Shadow-Clock', feature: 'Tier shade from the north cliff', status: 'shipped', since: 'M4a' },
+  { area: 'Platform/Ads', feature: 'Feature Map opens only in dev or with ?dev=1', status: 'shipped', since: 'M4a' },
 ]

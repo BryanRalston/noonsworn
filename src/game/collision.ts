@@ -35,8 +35,24 @@ export const PILLARS: Pillar[] = [
   { x: AT, z: AT, r: PR, wing: -1 },
 ]
 
+const HOME: Pillar[] = PILLARS.map((p) => ({ x: p.x, z: p.z, r: p.r, wing: -1 }))
+
+/** Planter beds. Empty on Sundial Court, so every early-out below stays the sanctum path. */
+export const BEDS: AABB[] = []
+const strips: number[] = []
+let stripHalf = 0
+
 const resolved = { x: 0, z: 0 }
 const focusOut = { x: 0, z: 0 }
+const boxOut = { x: 0, z: 0 }
+const pillOut = { x: 0, z: 0 }
+const keptOut = { x: 0, z: 0 }
+
+/** Planter walls sit on z = ±8. A step cannot cross this pad, so a circle outside it never touches a bed. */
+function clearOfBeds(z: number, radius: number): boolean {
+  const pad = 0.5 + radius + 0.45
+  return Math.abs(z - 8) >= pad && Math.abs(z + 8) >= pad
+}
 
 function box(minX: number, maxX: number, minZ: number, maxZ: number) {
   WALLS.push({ minX, maxX, minZ, maxZ })
@@ -103,6 +119,87 @@ export function trimPillars() {
   PILLARS.length = 4
 }
 
+export function resetHomePillars() {
+  PILLARS.length = 4
+  for (let i = 0; i < HOME.length; i++) {
+    const h = HOME[i]
+    const p = PILLARS[i]
+    if (!h) continue
+    if (p) {
+      p.x = h.x
+      p.z = h.z
+      p.r = h.r
+      p.wing = -1
+    } else PILLARS[i] = { x: h.x, z: h.z, r: h.r, wing: -1 }
+  }
+}
+
+export function setBeds(list: readonly AABB[]) {
+  BEDS.length = 0
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i]
+    if (s) BEDS.push({ minX: s.minX, maxX: s.maxX, minZ: s.minZ, maxZ: s.maxZ })
+  }
+}
+
+/** Open walks. A flow cell whose center is in a walk is blocked only by the bed itself. */
+export function setOpenStrips(at: readonly number[], half: number) {
+  strips.length = 0
+  for (let i = 0; i < at.length; i++) {
+    const v = at[i]
+    if (v !== undefined) strips.push(v)
+  }
+  stripHalf = half
+}
+
+function centerInStrip(x: number): boolean {
+  for (let i = 0; i < strips.length; i++) {
+    if (Math.abs(x - (strips[i] ?? 0)) <= stripHalf) return true
+  }
+  return false
+}
+
+function hitBeds(x: number, z: number, radius: number): boolean {
+  for (let i = 0; i < BEDS.length; i++) {
+    const b = BEDS[i]
+    if (!b) continue
+    if (x > b.minX - radius && x < b.maxX + radius && z > b.minZ - radius && z < b.maxZ + radius) return true
+  }
+  return false
+}
+
+/** Flow cells are 2 m. A 1 m planter still blocks every cell whose square crosses it. */
+function cellTouchesBed(x: number, z: number): boolean {
+  if (centerInStrip(x)) return hitBeds(x, z, 0.05)
+  const minX = x - 1
+  const maxX = x + 1
+  const minZ = z - 1
+  const maxZ = z + 1
+  for (let i = 0; i < BEDS.length; i++) {
+    const b = BEDS[i]
+    if (!b) continue
+    if (maxX > b.minX && minX < b.maxX && maxZ > b.minZ && minZ < b.maxZ) return true
+  }
+  return false
+}
+
+function containCourt(x: number, z: number, radius: number): { x: number; z: number } {
+  const limit = HALF - radius - 0.05
+  if (Math.abs(x) <= limit && Math.abs(z) <= limit) {
+    keptOut.x = x
+    keptOut.z = z
+    return keptOut
+  }
+  if ((gateOpen[0] && x > HALF) || (gateOpen[2] && x < -HALF) || (gateOpen[1] && z > HALF) || (gateOpen[3] && z < -HALF)) {
+    keptOut.x = x
+    keptOut.z = z
+    return keptOut
+  }
+  keptOut.x = Math.max(-limit, Math.min(limit, x))
+  keptOut.z = Math.max(-limit, Math.min(limit, z))
+  return keptOut
+}
+
 function pushPillars(cx: number, cz: number, radius: number, limit: number): { x: number; z: number } {
   let x = cx
   let z = cz
@@ -120,7 +217,9 @@ function pushPillars(cx: number, cz: number, radius: number, limit: number): { x
     x += dx * push
     z += dz * push
   }
-  return { x, z }
+  pillOut.x = x
+  pillOut.z = z
+  return pillOut
 }
 
 function pushBoxes(cx: number, cz: number, radius: number, list: readonly AABB[]): { x: number; z: number } {
@@ -144,16 +243,45 @@ function pushBoxes(cx: number, cz: number, radius: number, list: readonly AABB[]
     else if (minPen === penB) z = minZ
     else z = maxZ
   }
-  return { x, z }
+  boxOut.x = x
+  boxOut.z = z
+  return boxOut
 }
 
 export function resolveCircle(x0: number, z0: number, radius: number): { x: number; z: number } {
   let cx = x0
   let cz = z0
   if (Math.abs(cx) < DEEP && Math.abs(cz) < DEEP) {
-    const p = pushPillars(cx, cz, radius, 4)
-    resolved.x = p.x
-    resolved.z = p.z
+    if (BEDS.length === 0) {
+      const p = pushPillars(cx, cz, radius, 4)
+      resolved.x = p.x
+      resolved.z = p.z
+      return resolved
+    }
+    if (clearOfBeds(cz, radius)) {
+      if (Math.abs(cz) < 14) {
+        const kept = containCourt(cx, cz, radius)
+        resolved.x = kept.x
+        resolved.z = kept.z
+        return resolved
+      }
+      const p = pushPillars(cx, cz, radius, PILLARS.length)
+      const kept = containCourt(p.x, p.z, radius)
+      resolved.x = kept.x
+      resolved.z = kept.z
+      return resolved
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      const b = pushBoxes(cx, cz, radius, BEDS)
+      cx = b.x
+      cz = b.z
+      const p = pushPillars(cx, cz, radius, PILLARS.length)
+      cx = p.x
+      cz = p.z
+    }
+    const kept = containCourt(cx, cz, radius)
+    resolved.x = kept.x
+    resolved.z = kept.z
     return resolved
   }
   for (let pass = 0; pass < 2; pass++) {
@@ -169,8 +297,75 @@ export function resolveCircle(x0: number, z0: number, radius: number): { x: numb
     cx = p.x
     cz = p.z
   }
-  resolved.x = cx
-  resolved.z = cz
+  const kept = BEDS.length > 0 ? containCourt(cx, cz, radius) : { x: cx, z: cz }
+  resolved.x = kept.x
+  resolved.z = kept.z
+  return resolved
+}
+
+/** Keeps a move that a planter would cancel by sliding along the wall toward a stair. Sundial has no beds, so it only resolves the destination. */
+export function slideCircle(x0: number, z0: number, x1: number, z1: number, radius: number): { x: number; z: number } {
+  if (BEDS.length === 0) return resolveCircle(x1, z1, radius)
+  // Open middle of the terraces has no posts and no beds, so the move is already free.
+  if (Math.abs(x1) < 22 && Math.abs(z1) < 13 && clearOfBeds(z1, radius)) {
+    resolved.x = x1
+    resolved.z = z1
+    return resolved
+  }
+  const full = resolveCircle(x1, z1, radius)
+  const fx = full.x
+  const fz = full.z
+  const moved = Math.hypot(fx - x0, fz - z0)
+  const want = Math.hypot(x1 - x0, z1 - z0)
+  if (want < 1e-5 || moved > want * 0.45) {
+    resolved.x = fx
+    resolved.z = fz
+    return resolved
+  }
+  const alongX = resolveCircle(x1, z0, radius)
+  const xx = alongX.x
+  const xz = alongX.z
+  const alongZ = resolveCircle(x0, z1, radius)
+  const zx = alongZ.x
+  const zz = alongZ.z
+  const mx = Math.hypot(xx - x0, xz - z0)
+  const mz = Math.hypot(zx - x0, zz - z0)
+  let bx = fx
+  let bz = fz
+  let best = moved
+  if (mx > best) {
+    best = mx
+    bx = xx
+    bz = xz
+  }
+  if (mz > best) {
+    best = mz
+    bx = zx
+    bz = zz
+  }
+  if (best <= want * 0.45 && strips.length > 0) {
+    let gap = strips[0] ?? x0
+    let gapD = Math.abs(gap - x0)
+    for (let i = 1; i < strips.length; i++) {
+      const g = strips[i] ?? gap
+      const d = Math.abs(g - x0)
+      if (d < gapD) {
+        gapD = d
+        gap = g
+      }
+    }
+    const dir = gap === x0 ? 1 : Math.sign(gap - x0)
+    const step = Math.max(want, 0.05)
+    const nudged = resolveCircle(x0 + dir * step, z0, radius)
+    const nx = nudged.x
+    const nz = nudged.z
+    if (Math.hypot(nx - x0, nz - z0) > best) {
+      bx = nx
+      bz = nz
+    }
+  }
+  resolved.x = bx
+  resolved.z = bz
   return resolved
 }
 
@@ -199,7 +394,10 @@ function inWing(side: number, x: number, z: number, radius: number): boolean {
 
 export function insideArena(x: number, z: number, radius: number): boolean {
   const limit = HALF - radius - 0.3
-  if (Math.abs(x) <= limit && Math.abs(z) <= limit) return clearPillars(x, z, radius)
+  if (Math.abs(x) <= limit && Math.abs(z) <= limit) {
+    if (BEDS.length > 0 && hitBeds(x, z, radius)) return false
+    return clearPillars(x, z, radius)
+  }
   for (let side = 0; side < 4; side++) {
     if (inWing(side, x, z, radius)) return clearPillars(x, z, radius) && !inSlab(x, z, radius)
   }
@@ -242,6 +440,12 @@ function segHitsBox(x0: number, z0: number, x1: number, z1: number, b: AABB): bo
 }
 
 export function segmentBlocked(x0: number, z0: number, x1: number, z1: number): boolean {
+  if (BEDS.length > 0) {
+    for (let i = 0; i < BEDS.length; i++) {
+      const b = BEDS[i]
+      if (b && segHitsBox(x0, z0, x1, z1, b)) return true
+    }
+  }
   const sanctum = Math.abs(x0) < DEEP && Math.abs(z0) < DEEP && Math.abs(x1) < DEEP && Math.abs(z1) < DEEP
   if (!sanctum) {
     for (let i = 0; i < WALLS.length; i++) {
@@ -253,7 +457,7 @@ export function segmentBlocked(x0: number, z0: number, x1: number, z1: number): 
       if (b && segHitsBox(x0, z0, x1, z1, b)) return true
     }
   }
-  const n = sanctum ? Math.min(4, PILLARS.length) : PILLARS.length
+  const n = sanctum && BEDS.length === 0 ? Math.min(4, PILLARS.length) : PILLARS.length
   for (let i = 0; i < n; i++) {
     const p = PILLARS[i]
     if (p && segmentHitsCircle(x0, z0, x1, z1, p.x, p.z, p.r)) return true
@@ -263,6 +467,7 @@ export function segmentBlocked(x0: number, z0: number, x1: number, z1: number): 
 
 export function cellBlocked(x: number, z: number): boolean {
   if (!insideArena(x, z, 0.2)) return true
+  if (BEDS.length > 0 && cellTouchesBed(x, z)) return true
   return inSlab(x, z, 0.05)
 }
 
