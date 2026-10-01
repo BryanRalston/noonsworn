@@ -374,7 +374,7 @@ float archPatch(vec2 p) {
 float caustic(vec2 p) {
   float a = sin(p.x * 1.85 + uTime * 0.8) + sin(p.y * 1.45 - uTime * 0.62);
   float b = sin(p.x * 0.7 + p.y * 1.15 + uTime * 0.4);
-  return smoothstep(1.15, 1.75, a) * smoothstep(0.2, 0.85, b);
+  return smoothstep(0.55, 1.25, a) * smoothstep(0.05, 0.7, b);
 }
 void main() {
   vec2 p = vWorld.xz;
@@ -396,7 +396,7 @@ void main() {
   float roof = smoothstep(17.7, 18.3, cheb);
   float bay = archPatch(p);
   vec3 garthShade = stone * vec3(0.62, 0.56, 0.66);
-  vec3 arcadeShade = stone * mix(vec3(0.40, 0.34, 0.50), vec3(0.74, 0.62, 0.76), bay);
+  vec3 arcadeShade = stone * mix(vec3(0.30, 0.24, 0.40), vec3(0.98, 0.84, 0.66), bay);
   arcadeShade = mix(arcadeShade, arcadeShade * vec3(0.55, 0.48, 0.64), uDeep);
   vec3 shaded = mix(garthShade, arcadeShade, roof);
   float reflected = reflectSoft(p);
@@ -405,7 +405,7 @@ void main() {
   vec3 bright = mix(stone, uGold, 0.42) * vec3(1.22, 1.08, 0.82) * mix(1.0, rip, reflected);
   bright *= mix(1.0, mix(0.28, 1.0, bay), roof);
   vec3 col = mix(shaded, bright, lit);
-  col += uGold * caustic(p) * reflected * (0.22 + roof * 0.5);
+  col += uGold * caustic(p) * reflected * (0.45 + roof * 0.75);
   float cope = smoothstep(9.55, 9.82, o) * (1.0 - smoothstep(10.28, 10.6, o));
   float trim = smoothstep(10.08, 10.2, o) * (1.0 - smoothstep(10.24, 10.42, o));
   col = mix(col, uSand * vec3(1.05, 1.01, 0.92), cope * (1.0 - roof));
@@ -504,7 +504,7 @@ void main() {
   float shim = max(under, max(north, max(west, roofTop))) * wedge * min(uGlow, 1.25);
   float spot = sin(vWorld.x * 2.4 + uTime * 0.9) * sin(vWorld.z * 2.1 - uTime * 0.7);
   float dapple = smoothstep(0.35, 0.85, spot);
-  col += uGold * shim * dapple * 0.7;
+  col += uGold * shim * dapple * 1.15;
   if (vMark > 0.5 && uC >= 58.0) {
     float idx = vMark - 1.0;
     float phase = clamp((uC - 58.0) / 0.25, 0.0, 8.0);
@@ -687,29 +687,36 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     putCyl(0.5, 0.4, 0.22, 6, x, 2.46, z, COLOR.gold)
   }
   const putArch = (x0: number, z0: number, x1: number, z1: number) => {
-    const mx = (x0 + x1) / 2
-    const mz = (z0 + z1) / 2
     const dx = x1 - x0
     const dz = z1 - z0
-    const yaw = Math.atan2(dx, dz)
-    const span = Math.hypot(dx, dz)
-    const spring = 2.55
-    const rise = 1.02
-    const n = 5
+    const span = Math.hypot(dx, dz) || 1
+    const ux = dx / span
+    const uz = dz / span
+    const n = 7
+    const rise = 1.05
+    const spring = 2.58
     for (let s = 0; s < n; s++) {
       const t = (s + 0.5) / n
       const ang = Math.PI * t
-      const along = (t - 0.5) * span * 0.9
+      const along = (t - 0.5) * span * 0.96
       const y = spring + Math.sin(ang) * rise
-      const tilt = Math.PI / 2 - ang
-      const piece = (span / n) * 1.2
-      const px = mx + Math.sin(yaw) * along
-      const pz = mz + Math.cos(yaw) * along
-      const geo = new BoxGeometry(piece, 0.26, 0.42)
+      const tilt = Math.atan2(Math.PI * rise * Math.cos(ang), span)
+      const px = (x0 + x1) / 2 + ux * along
+      const pz = (z0 + z1) / 2 + uz * along
+      const geo = new BoxGeometry((span / n) * 1.28, 0.3, 1.15)
       stamp(geo, COLOR.sandstone, 0)
-      geo.rotateZ(tilt)
-      geo.rotateY(yaw)
-      geo.translate(px, y, pz)
+      const inward = 0.7
+      let ox = 0
+      let oz = 0
+      if (Math.abs(ux) > 0.5) {
+        geo.rotateZ(tilt)
+        oz = -Math.sign(z0 || 1) * inward
+      } else {
+        geo.rotateX(-tilt * Math.sign(uz || 1))
+        geo.rotateY(-Math.PI / 2)
+        ox = -Math.sign(x0 || 1) * inward
+      }
+      geo.translate(px + ox, y, pz + oz)
       parts.push(geo)
     }
   }
@@ -742,10 +749,10 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   for (let i = 0; i < columnXZ.length; i += 2) {
     const x = columnXZ[i] ?? 0
     const z = columnXZ[i + 1] ?? 0
-    if (z === 18) putBox(0.14, 0.12, 5.3, x, 3.92, 20.65, COLOR.sandstone)
-    else if (z === -18) putBox(0.14, 0.12, 5.3, x, 3.92, -20.65, COLOR.sandstone)
-    else if (x === 18) putBox(5.3, 0.12, 0.14, 20.65, 3.92, z, COLOR.sandstone)
-    else putBox(5.3, 0.12, 0.14, -20.65, 3.92, z, COLOR.sandstone)
+    if (z === 18) putBox(0.14, 0.12, 5.3, x, 3.92, 20.65, COLOR.sandstoneDeep)
+    else if (z === -18) putBox(0.14, 0.12, 5.3, x, 3.92, -20.65, COLOR.sandstoneDeep)
+    else if (x === 18) putBox(5.3, 0.12, 0.14, 20.65, 3.92, z, COLOR.sandstoneDeep)
+    else putBox(5.3, 0.12, 0.14, -20.65, 3.92, z, COLOR.sandstoneDeep)
   }
   putBox(48, 1, 0.5, 0, 0.5, 23.7, COLOR.sandstone)
   putBox(0.5, 1, 48, 23.7, 0.5, 0, COLOR.sandstone)
@@ -776,11 +783,11 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   putBox(0.7, 0.08, 0.7, 0, -0.22, -9.15, COLOR.bronze)
   putCyl(1.45, 1.6, 0.18, 8, 0, -0.92, 0, COLOR.sandstone)
   putCyl(1.05, 1.15, 0.14, 8, 0, -0.76, 0, COLOR.sandstoneMid)
-  putCyl(0.22, 0.28, 0.92, 6, 0, -0.22, 0, COLOR.sandstone)
-  putCyl(0.58, 0.58, 0.07, 8, 0, 0.28, 0, COLOR.gold)
-  putBox(0.78, 0.04, 0.08, 0, 0.34, 0, COLOR.goldHot)
-  putBox(0.08, 0.04, 0.78, 0, 0.34, 0, COLOR.goldHot)
-  putCyl(0.12, 0.12, 0.05, 6, 0, 0.38, 0, COLOR.goldHot)
+  putCyl(0.22, 0.28, 0.86, 6, 0, -0.2, 0, COLOR.sandstone)
+  putCyl(1.15, 1.15, 0.1, 8, 0, 0.32, 0, COLOR.gold)
+  putBox(1.7, 0.06, 0.16, 0, 0.42, 0, COLOR.bronze)
+  putBox(0.16, 0.06, 1.7, 0, 0.42, 0, COLOR.bronze)
+  putCyl(0.2, 0.2, 0.08, 6, 0, 0.48, 0, COLOR.goldHot)
   const nicheX = [-15, -9, -3, 3, 9, 15]
   for (let i = 0; i < nicheX.length; i++) {
     const x = nicheX[i] ?? 0
@@ -903,8 +910,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     [21.2, 0.54, -21.2],
     [-21.2, 0.54, 21.2],
     [21.2, 0.54, 21.2],
-    [-14.8, 0.24, -14.8],
-    [14.8, 0.24, -14.8],
+    [-16.2, 0.24, 16.2],
+    [16.2, 0.24, 16.2],
   ]
   const pots = new InstancedMesh(potGeo, archMat, potAt.length)
   const potM = new Matrix4()
