@@ -458,6 +458,7 @@ uniform float uCosR;
 uniform float uGlow;
 uniform float uC;
 uniform float uTime;
+uniform vec3 uTile;
 float octDist(vec2 p) {
   vec2 a = abs(p);
   float diag = (a.x + a.y) * ${COS45};
@@ -472,6 +473,10 @@ void main() {
     float red = step(col.g * 1.35, col.r) * step(col.b * 1.15, col.r);
     col = mix(col, uSand, red);
   }
+  float tile = step(3.75, vWorld.y) * step(0.55, n.y) * step(vColor.g, vColor.r * 0.45);
+  float across = abs(vWorld.x) > abs(vWorld.z) ? vWorld.z : vWorld.x;
+  float ridge = smoothstep(0.16, 0.02, abs(fract(across * 2.0) - 0.5));
+  col = mix(col, mix(uTile, vColor, 0.25 + 0.75 * ridge) * mix(0.82, 1.12, ndl), tile);
   vec2 p = vWorld.xz;
   float len = length(p);
   float wedge = 0.0;
@@ -721,10 +726,44 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     putCyl(0.82, 0.9, 3.2, 6, s.x, 1.6, s.z, COLOR.sandstone)
     putCyl(1.02, 1.02, 0.16, 6, s.x, 3.22, s.z, COLOR.gold)
   }
-  putBox(36, 0.14, 0.28, 0, 3.92, 18, COLOR.sandstone)
-  putBox(36, 0.14, 0.28, 0, 3.92, -18, COLOR.sandstone)
-  putBox(0.28, 0.14, 36, 18, 3.92, 0, COLOR.sandstone)
-  putBox(0.28, 0.14, 36, -18, 3.92, 0, COLOR.sandstone)
+  const mauve = new Color()
+  mauve.setRGB(0.3, 0.24, 0.4)
+  const bayAt = [-15, -9, -3, 3, 9, 15]
+  const recess = [0, 0.26, 0.58, 0.26, 0]
+  const putRoof = (axis: 'x' | 'z', sign: number) => {
+    for (let b = 0; b < bayAt.length; b++) {
+      const c = bayAt[b] ?? 0
+      const slab = 3.15
+      const slabMid = sign * 19.85
+      if (axis === 'z') putBox(5.55, 0.16, slab, c, 4.06, slabMid, COLOR.terracotta)
+      else putBox(slab, 0.16, 5.55, slabMid, 4.06, c, COLOR.terracotta)
+      for (let s = 0; s < 5; s++) {
+        const along = c + (s - 2) * 1.1
+        const depth = 1.05
+        const lip = sign * (17.42 + (recess[s] ?? 0))
+        const mid = lip + sign * depth * 0.5
+        if (axis === 'z') putBox(1.06, 0.2, depth, along, 4.0, mid, COLOR.terracotta)
+        else putBox(depth, 0.2, 1.06, mid, 4.0, along, COLOR.terracotta)
+      }
+      const reveal = sign * 17.85
+      if (axis === 'z') putBox(2.05, 0.05, 0.9, c, 3.84, reveal, mauve)
+      else putBox(0.9, 0.05, 2.05, reveal, 3.84, c, mauve)
+      for (const side of [-1, 1]) {
+        const along = c + side * 2.2
+        const lipG = sign * 17.36
+        if (axis === 'z') putBox(1.02, 0.045, 0.07, along, 4.14, lipG, COLOR.gold)
+        else putBox(0.07, 0.045, 1.02, lipG, 4.14, along, COLOR.gold)
+      }
+    }
+  }
+  putRoof('z', 1)
+  putRoof('z', -1)
+  putRoof('x', 1)
+  putRoof('x', -1)
+  putBox(3.3, 0.16, 3.3, 19.7, 4.06, 19.7, COLOR.terracotta)
+  putBox(3.3, 0.16, 3.3, -19.7, 4.06, 19.7, COLOR.terracotta)
+  putBox(3.3, 0.16, 3.3, 19.7, 4.06, -19.7, COLOR.terracotta)
+  putBox(3.3, 0.16, 3.3, -19.7, 4.06, -19.7, COLOR.terracotta)
   for (let i = 0; i < columnXZ.length; i += 2) {
     const x = columnXZ[i] ?? 0
     const z = columnXZ[i + 1] ?? 0
@@ -737,8 +776,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   putBox(0.5, 1, 48, 23.7, 0.5, 0, COLOR.sandstone)
   putBox(48, 5, 0.7, 0, 2.5, -23.6, COLOR.sandstoneDeep)
   putBox(0.7, 5, 48, -23.6, 2.5, 0, COLOR.sandstoneDeep)
-  putBox(46, 0.12, 0.9, 0, 4.9, -22.7, COLOR.sandstone)
-  putBox(0.9, 0.12, 46, -22.7, 4.9, 0, COLOR.sandstone)
+  putBox(46, 0.12, 0.9, 0, 4.9, -22.7, COLOR.terracotta)
+  putBox(0.9, 0.12, 46, -22.7, 4.9, 0, COLOR.terracotta)
   putBox(46, 0.06, 0.14, 0, 5.02, -23.12, COLOR.gold)
   putBox(0.14, 0.06, 46, -23.12, 5.02, 0, COLOR.gold)
   putBox(36, 0.32, 0.28, 0, 0.16, 18, COLOR.sandstoneMid)
@@ -881,6 +920,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uGlow,
       uC,
       uTime,
+      uTile: { value: COLOR.terracottaDark },
     },
     vertexShader: ARCH_VERT,
     fragmentShader: ARCH_FRAG,
