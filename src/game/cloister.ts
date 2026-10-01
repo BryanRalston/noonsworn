@@ -6,8 +6,6 @@ import {
   CylinderGeometry,
   DoubleSide,
   Float32BufferAttribute,
-  InstancedMesh,
-  Matrix4,
   Mesh,
   PlaneGeometry,
   ShaderMaterial,
@@ -804,6 +802,22 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     parts.push(banner)
     putBox(0.28, 0.28, 0.28, -22.55, 2.35, z, COLOR.goldHot)
   }
+  const potAt: [number, number, number][] = [
+    [-21.2, 0.54, -21.2],
+    [21.2, 0.54, -21.2],
+    [-21.2, 0.54, 21.2],
+    [21.2, 0.54, 21.2],
+    [-16.2, 0.24, 16.2],
+    [16.2, 0.24, 16.2],
+  ]
+  for (let i = 0; i < potAt.length; i++) {
+    const at = potAt[i]
+    if (!at) continue
+    const pot = new CylinderGeometry(0.42, 0.3, 0.48, 6)
+    stamp(pot, i % 2 === 0 ? COLOR.sandstoneDeep : COLOR.bronze, 0)
+    pot.translate(at[0], at[1], at[2])
+    parts.push(pot)
+  }
   const archGeo = mergeGeometries(parts, false)
   if (!archGeo) throw new Error('cloister architecture')
   for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
@@ -900,35 +914,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   water.frustumCulled = false
   water.renderOrder = 1
   water.visible = false
-  const potGeo = new CylinderGeometry(0.42, 0.3, 0.48, 6)
-  stamp(potGeo, new Color(1, 1, 1), 0)
-  const potAt: [number, number, number][] = [
-    [-21.2, 0.54, -21.2],
-    [21.2, 0.54, -21.2],
-    [-21.2, 0.54, 21.2],
-    [21.2, 0.54, 21.2],
-    [-16.2, 0.24, 16.2],
-    [16.2, 0.24, 16.2],
-  ]
-  const pots = new InstancedMesh(potGeo, archMat, potAt.length)
-  const potM = new Matrix4()
-  const potTint = new Color()
-  for (let i = 0; i < potAt.length; i++) {
-    const at = potAt[i]
-    if (!at) continue
-    potM.makeTranslation(at[0], at[1], at[2])
-    pots.setMatrixAt(i, potM)
-    potTint.copy(i % 2 === 0 ? COLOR.sandstoneDeep : COLOR.bronze)
-    pots.setColorAt(i, potTint)
-  }
-  pots.count = potAt.length
-  pots.instanceMatrix.needsUpdate = true
-  if (pots.instanceColor) pots.instanceColor.needsUpdate = true
-  pots.frustumCulled = false
-  pots.castShadow = false
-  pots.receiveShadow = false
-  pots.visible = false
-  opts.scene.add(floor, arch, water, pots)
+  opts.scene.add(floor, arch, water)
 
   const circles: { x: number; z: number; r: number }[] = []
   for (let i = 0; i < columnXZ.length; i += 2) circles.push({ x: columnXZ[i] ?? 0, z: columnXZ[i + 1] ?? 0, r: 0.35 })
@@ -1193,14 +1179,12 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       floor.visible = true
       arch.visible = true
       water.visible = true
-      pots.visible = true
       active = true
     },
     clear(restore) {
       floor.visible = false
       arch.visible = false
       water.visible = false
-      pots.visible = false
       setCloisterCourt(false, [])
       active = false
       if (!restore) return
@@ -1210,24 +1194,21 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       }
     },
     warm(renderer, camera) {
-      const show = [floor.visible, arch.visible, water.visible, pots.visible]
+      const show = [floor.visible, arch.visible, water.visible]
       floor.visible = true
       arch.visible = true
       water.visible = true
-      pots.visible = true
       const prev = uProbe.value
       uProbe.value = 0
       renderer.compile(floor, camera)
       renderer.compile(arch, camera)
       renderer.compile(water, camera)
-      renderer.compile(pots, camera)
       uProbe.value = 1
       renderer.compile(floor, camera)
       uProbe.value = prev
       floor.visible = show[0] ?? false
       arch.visible = show[1] ?? false
       water.visible = show[2] ?? false
-      pots.visible = show[3] ?? false
     },
     pin(sun) {
       sun.frozen = false
@@ -1357,11 +1338,10 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       return { exposed: n ? litN / n : 0, arcade: aN ? aLit / aN : 0, n, arcadeN: aN }
     },
     agree(renderer, camera, points, hide) {
-      const prevOwn = [floor.visible, arch.visible, water.visible, pots.visible]
+      const prevOwn = [floor.visible, arch.visible, water.visible]
       const prevHide = hide.map((mesh) => mesh.visible)
       arch.visible = false
       water.visible = false
-      pots.visible = false
       floor.visible = true
       for (let i = 0; i < hide.length; i++) {
         const mesh = hide[i]
@@ -1428,7 +1408,6 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       floor.visible = prevOwn[0] ?? false
       arch.visible = prevOwn[1] ?? false
       water.visible = prevOwn[2] ?? false
-      pots.visible = prevOwn[3] ?? false
       for (let i = 0; i < hide.length; i++) {
         const mesh = hide[i]
         if (mesh) mesh.visible = prevHide[i] ?? false
@@ -1447,7 +1426,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     },
     tris: () => ({
       floor: triCount(floor.geometry),
-      arch: triCount(arch.geometry) + triCount(potGeo) * pots.count,
+      arch: triCount(arch.geometry),
       water: triCount(water.geometry),
     }),
   }
