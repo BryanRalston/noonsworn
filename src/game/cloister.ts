@@ -616,15 +616,15 @@ void main() {
   float grout = smoothstep(0.42, 0.49, max(cell.x, cell.y));
   water = mix(water, water * vec3(0.62, 0.7, 0.72), grout * nearRim);
   float rim = smoothstep(1.7, 0.12, fromWall);
-  float rip = sin(o * 11.0 - uTime * 0.8) * 0.5 + 0.5;
-  float line = smoothstep(0.78, 0.98, rip);
+  float rip = sin(o * 8.0 - uTime * 0.8) * 0.5 + 0.5;
+  float line = smoothstep(0.62, 0.9, rip);
   water *= 1.0 + line * rim * 0.08;
   vec3 col = vKind > 1.5 ? vColor * 0.9 : (vKind > 0.5 ? uPoolDeep * 0.5 : water);
   if (vKind < 0.5 && uGlow > 0.05) {
     float travel = 0.58 + 0.3 * sin(uTime * 0.42);
     vec2 g = uAxis * edgeR * travel;
-    float glint = smoothstep(0.62, 0.0, length(p - g));
-    col += vec3(1.0, 0.94, 0.72) * glint * min(uGlow, 1.2) * 0.7;
+    float glint = smoothstep(0.38, 0.0, length(p - g));
+    col += vec3(1.0, 0.86, 0.45) * glint * min(uGlow, 1.2) * 0.85;
   }
   if (uFront > 0.0 && vKind < 0.5) {
     float band = 1.0 - smoothstep(0.0, 0.55, abs(o - uFront));
@@ -784,15 +784,15 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       const c = bayAt[b] ?? 0
       const slab = 3.15
       const slabMid = sign * 19.85
-      if (axis === 'z') putBox(5.55, 0.16, slab, c, 4.06, slabMid, COLOR.terracotta)
-      else putBox(slab, 0.16, 5.55, slabMid, 4.06, c, COLOR.terracotta)
+      if (axis === 'z') putBox(6.2, 0.16, slab, c, 4.06, slabMid, COLOR.terracotta)
+      else putBox(slab, 0.16, 6.2, slabMid, 4.06, c, COLOR.terracotta)
       for (let s = 0; s < 5; s++) {
-        const along = c + (s - 2) * 1.1
+        const along = c + (s - 2) * 1.15
         const depth = 1.05
         const lip = sign * (17.42 + (recess[s] ?? 0))
         const mid = lip + sign * depth * 0.5
-        if (axis === 'z') putBox(1.06, 0.2, depth, along, 4.0, mid, COLOR.terracotta)
-        else putBox(depth, 0.2, 1.06, mid, 4.0, along, COLOR.terracotta)
+        if (axis === 'z') putBox(1.35, 0.2, depth, along, 4.0, mid, COLOR.terracotta)
+        else putBox(depth, 0.2, 1.35, mid, 4.0, along, COLOR.terracotta)
       }
       const reveal = sign * 17.85
       if (axis === 'z') putBox(2.05, 0.05, 0.9, c, 3.84, reveal, mauve)
@@ -909,26 +909,26 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     const x = at[0]
     const floor = at[1]
     const z = at[2]
-    putBox(0.78, 0.18, 0.78, x, floor + 0.09, z, COLOR.sandstone)
-    const pot = new CylinderGeometry(0.4, 0.28, 0.42, 6)
+    putBox(1.05, 0.22, 1.05, x, floor + 0.11, z, COLOR.sandstone)
+    const pot = new CylinderGeometry(0.55, 0.38, 0.5, 6)
     stamp(pot, i % 2 === 0 ? COLOR.sandstoneDeep : COLOR.bronze, 0)
-    pot.translate(x, floor + 0.39, z)
+    pot.translate(x, floor + 0.47, z)
     parts.push(pot)
-    const rimY = floor + 0.6
-    for (let leaf = 0; leaf < 9; leaf++) {
-      const yaw = i * 0.7 + (leaf / 9) * Math.PI * 2
-      const frond = roundedLeaf(0.36, 0.48, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
-      frond.rotateX(-0.4)
+    const rimY = floor + 0.72
+    for (let leaf = 0; leaf < 10; leaf++) {
+      const yaw = i * 0.7 + (leaf / 10) * Math.PI * 2
+      const frond = roundedLeaf(0.72, 0.95, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
+      frond.rotateX(-0.55)
       frond.rotateY(yaw)
-      frond.translate(x + Math.cos(yaw) * 0.1, rimY, z + Math.sin(yaw) * 0.1)
+      frond.translate(x + Math.cos(yaw) * 0.16, rimY, z + Math.sin(yaw) * 0.16)
       parts.push(frond)
     }
-    for (let leaf = 0; leaf < 4; leaf++) {
-      const yaw = i + (leaf / 4) * Math.PI * 2 + 0.4
-      const frond = roundedLeaf(0.26, 0.34, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
-      frond.rotateX(-1.05)
+    for (let leaf = 0; leaf < 5; leaf++) {
+      const yaw = i + (leaf / 5) * Math.PI * 2 + 0.4
+      const frond = roundedLeaf(0.48, 0.62, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
+      frond.rotateX(-1.1)
       frond.rotateY(yaw)
-      frond.translate(x, rimY + 0.05, z)
+      frond.translate(x, rimY + 0.08, z)
       parts.push(frond)
     }
   }
