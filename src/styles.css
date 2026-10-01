@@ -642,6 +642,28 @@ h1 { color: var(--goldHot); font-size: 40px; }
 }
 .map-card img, .map-swatch { width: 100%; height: 72px; border-radius: 10px; object-fit: cover; }
 .map-swatch { display: block; background: radial-gradient(circle at 50% 40%, var(--gold), var(--sandstone) 46%, var(--sandstoneDeep)); }
+#water-brim[hidden], #water-deep[hidden] { display: none; }
+#water-brim, #water-deep { fill: none; }
+#water-brim { stroke: #2c5a8a; stroke-width: 2.2; }
+#water-deep { stroke: #232c5e; stroke-width: 2.8; }
+#picker-toast { margin: 0; font-size: 16px; color: var(--goldHot); }
+.map-card.locked.cloister::before {
+  background:
+    radial-gradient(circle at 50% 72%, #f2b632 0 2px, #2c5a8a 3px 8px, transparent 9px),
+    radial-gradient(120% 78% at 50% 18%, transparent 0 46%, #9c7a4e 47% 58%, transparent 59%),
+    linear-gradient(#cdae7c, #cdae7c) 18% 38% / 18% 46% no-repeat,
+    linear-gradient(#cdae7c, #cdae7c) 82% 38% / 18% 46% no-repeat,
+    linear-gradient(#9c7a4e, #9c7a4e) 50% 22% / 64% 16% no-repeat,
+    linear-gradient(180deg, #3c4f9a, #141225 70%);
+}
+.map-card.locked.stair::before {
+  background:
+    linear-gradient(#e9d2a6, #e9d2a6) 50% 78% / 70% 8% no-repeat,
+    linear-gradient(#cdae7c, #cdae7c) 50% 64% / 52% 8% no-repeat,
+    linear-gradient(#9c7a4e, #9c7a4e) 50% 50% / 34% 8% no-repeat,
+    linear-gradient(#8a5a2b, #8a5a2b) 50% 36% / 18% 8% no-repeat,
+    linear-gradient(160deg, #3c4f9a, #141225 72%);
+}
 .map-card.locked::before {
   content: "";
   display: block;

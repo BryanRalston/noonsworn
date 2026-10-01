@@ -89,6 +89,12 @@ export const TUNING = {
     slide: 6,
     slideBand: 6,
   },
+  cloister: {
+    betaR: 60,
+    deepWeapon: 0.3,
+    deepBoss: 0.25,
+    pin: 4,
+  },
   look: {
     exposure: 1.32,
     bloomStrength: 0.6,

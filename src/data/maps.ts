@@ -45,15 +45,15 @@ export const MAP_DEFS: MapDef[] = [
   {
     id: 'cloister',
     name: 'The Brimming Cloister',
-    hook: '',
+    hook: 'When the pool brims, the sun reaches under the arches.',
     footprint: 48,
     pillars: 'sanctum',
     cookie: null,
-    keyart: null,
+    keyart: 'assets/maps/cloister-key.webp',
     wave: 'cloister',
     boss: null,
     unlock: 'lattice',
-    playable: false,
+    playable: true,
   },
   {
     id: 'stair',
@@ -93,10 +93,11 @@ export interface MapRecord {
   unlocked: string[]
   best: Record<string, MapBest>
   last: string
+  seen: string[]
 }
 
 function fresh(): MapRecord {
-  return { unlocked: ['sundial'], best: {}, last: 'sundial' }
+  return { unlocked: ['sundial'], best: {}, last: 'sundial', seen: [] }
 }
 
 function cleanBest(value: unknown): Record<string, MapBest> {
@@ -117,11 +118,12 @@ export function loadMaps(): MapRecord {
   const raw = storageGet(KEY)
   if (!raw) return fresh()
   try {
-    const parsed = JSON.parse(raw) as { unlocked?: unknown; best?: unknown; last?: unknown }
+    const parsed = JSON.parse(raw) as { unlocked?: unknown; best?: unknown; last?: unknown; seen?: unknown }
     const unlocked = Array.isArray(parsed.unlocked) ? parsed.unlocked.filter((id): id is string => typeof id === 'string') : ['sundial']
     if (!unlocked.includes('sundial')) unlocked.unshift('sundial')
     const last = typeof parsed.last === 'string' ? parsed.last : 'sundial'
-    return { unlocked, best: cleanBest(parsed.best), last }
+    const seen = Array.isArray(parsed.seen) ? parsed.seen.filter((id): id is string => typeof id === 'string') : []
+    return { unlocked, best: cleanBest(parsed.best), last, seen }
   } catch {
     return fresh()
   }
@@ -137,7 +139,7 @@ export function rememberMap(id: string) {
   saveMaps(rec)
 }
 
-/** Updates the best time. A Sundial clear unlocks Lattice Terraces once. */
+/** Updates the best time. A Sundial clear unlocks Lattice. A Lattice clear already unlocks the Cloister. */
 export function noteRun(mapId: string, time: number, kills: number, cleared: boolean): boolean {
   const rec = loadMaps()
   const prev = rec.best[mapId]
@@ -151,6 +153,19 @@ export function noteRun(mapId: string, time: number, kills: number, cleared: boo
     rec.unlocked.push('cloister')
     opened = true
   }
+  if (cleared && mapId === 'cloister' && !rec.unlocked.includes('stair')) {
+    rec.unlocked.push('stair')
+    opened = true
+  }
   saveMaps(rec)
   return opened
+}
+
+/** First time a temple is announced. Old saves have no seen list and still load. */
+export function markSeen(id: string): boolean {
+  const rec = loadMaps()
+  if (rec.seen.includes(id)) return false
+  rec.seen.push(id)
+  saveMaps(rec)
+  return true
 }

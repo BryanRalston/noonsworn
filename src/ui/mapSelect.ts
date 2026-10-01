@@ -1,12 +1,21 @@
 import { MAP_DEFS, type MapRecord } from '../data/maps'
 
-export type MapChoice = 'sundial' | 'lattice'
+export type MapChoice = 'sundial' | 'lattice' | 'cloister'
 
 export interface MapSelect {
   open: (save: MapRecord) => void
   close: () => void
   isOpen: () => boolean
+  toast: (text: string | null) => void
   read: (navX: number, navY: number, confirm: boolean, cancel: boolean) => MapChoice | 'back' | null
+}
+
+function lockLine(id: string, playable: boolean, open: boolean): string {
+  if (!playable && open) return 'Coming soon'
+  if (id === 'lattice') return 'Survive Sundial Court to open'
+  if (id === 'cloister') return 'Clear Lattice Terraces to open'
+  if (id === 'stair') return 'Clear the Brimming Cloister to open'
+  return 'Sealed'
 }
 
 function clock(time: number): string {
@@ -22,12 +31,13 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
   root.id = 'map-select'
   root.className = 'key-backdrop'
   root.hidden = true
-  root.innerHTML = `<h2>Choose a Temple</h2><div id="map-cards"></div><p class="map-hint">Arrows and Enter. Esc goes back.</p>`
+  root.innerHTML = `<h2>Choose a Temple</h2><div id="map-cards"></div><p id="picker-toast" hidden></p><p class="map-hint">Arrows and Enter. Esc goes back.</p>`
   host.append(root)
   const cards = root.querySelector('#map-cards') as HTMLElement
+  const pickerToast = root.querySelector('#picker-toast') as HTMLElement
   let focus = 0
   let arm = 0
-  let save: MapRecord = { unlocked: ['sundial'], best: {}, last: 'sundial' }
+  let save: MapRecord = { unlocked: ['sundial'], best: {}, last: 'sundial', seen: [] }
   const buttons: HTMLButtonElement[] = []
 
   function unlocked(id: string): boolean {
@@ -54,12 +64,12 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
       const open = def.playable && unlocked(def.id)
       const best = save.best[def.id]
       if (!open) {
-        btn.classList.add('locked')
+        btn.classList.add('locked', def.id)
         btn.disabled = !def.playable
         const title = document.createElement('strong')
         title.textContent = def.name
         const lock = document.createElement('span')
-        lock.textContent = !def.playable && unlocked(def.id) ? 'Coming soon' : def.id === 'lattice' ? 'Survive Sundial Court to open' : 'Sealed'
+        lock.textContent = lockLine(def.id, def.playable, unlocked(def.id))
         btn.append(title, lock)
       } else {
         if (def.keyart) {
@@ -77,7 +87,7 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
         const hook = document.createElement('span')
         hook.textContent = def.hook
         const time = document.createElement('em')
-        time.textContent = best ? `Best ${clock(best.time)}` : 'Best —'
+        time.textContent = best ? `Best ${clock(best.time)} · ${best.kills} kills` : 'Best —'
         btn.append(title, hook, time)
         btn.addEventListener('click', () => choose(def.id as MapChoice))
       }
@@ -100,6 +110,10 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
       root.hidden = true
     },
     isOpen: () => !root.hidden,
+    toast(text) {
+      pickerToast.hidden = !text
+      if (text) pickerToast.textContent = text
+    },
     read(navX, navY, confirm, cancel) {
       if (root.hidden) return null
       if (arm > 0) {
@@ -114,7 +128,7 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
       }
       if (confirm) {
         const def = MAP_DEFS[focus]
-        if (def && (def.id === 'sundial' || def.id === 'lattice')) choose(def.id)
+        if (def && (def.id === 'sundial' || def.id === 'lattice' || def.id === 'cloister')) choose(def.id)
       }
       return null
     },
