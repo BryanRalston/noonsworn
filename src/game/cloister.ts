@@ -484,7 +484,8 @@ void main() {
   float spot = sin(vWorld.x * 2.4 + vWorld.z * 1.7 + uTime * 0.9);
   float dapple = smoothstep(0.35, 0.85, spot);
   col += uGold * shim * dapple * 1.15;
-  if (vMark > 0.5 && uC >= 58.0) {
+  if (vMark > 19.0) col = vColor;
+  if (vMark > 0.5 && vMark < 19.0 && uC >= 58.0) {
     float idx = vMark - 1.0;
     float phase = clamp((uC - 58.0) / 0.25, 0.0, 8.0);
     float on = step(idx + 0.02, phase);
@@ -759,13 +760,34 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   putBox(0.7, 0.08, 0.7, -9.15, -0.22, 0, COLOR.bronze)
   putBox(0.7, 0.08, 0.7, 0, -0.22, 9.15, COLOR.bronze)
   putBox(0.7, 0.08, 0.7, 0, -0.22, -9.15, COLOR.bronze)
-  putCyl(1.45, 1.6, 0.18, 8, 0, -0.92, 0, COLOR.sandstone)
-  putCyl(1.05, 1.15, 0.14, 8, 0, -0.76, 0, COLOR.sandstoneMid)
-  putCyl(0.22, 0.28, 0.86, 6, 0, -0.2, 0, COLOR.sandstone)
-  putCyl(1.15, 1.15, 0.1, 8, 0, 0.32, 0, COLOR.gold)
-  putBox(1.7, 0.06, 0.16, 0, 0.42, 0, COLOR.bronze)
-  putBox(0.16, 0.06, 1.7, 0, 0.42, 0, COLOR.bronze)
-  putCyl(0.2, 0.2, 0.08, 6, 0, 0.48, 0, COLOR.goldHot)
+  const tierY = [0.105, 0.355, 0.605]
+  const tierR = [1.6, 1.2, 0.8]
+  for (let t = 0; t < tierR.length; t++) {
+    const y = tierY[t] ?? 0
+    const r = tierR[t] ?? 1
+    putCyl(r, r, 0.25, 8, 0, y, 0, COLOR.sandstone)
+    putCyl(r + 0.07, r + 0.07, 0.04, 8, 0, y + 0.145, 0, COLOR.gold)
+  }
+  putCyl(0.2, 0.24, 0.32, 8, 0, 0.91, 0, COLOR.sandstoneMid)
+  const sunBits: BufferGeometry[] = []
+  const disc = new CylinderGeometry(0.7, 0.7, 0.07, 16)
+  stamp(disc, COLOR.sunGold, 20)
+  sunBits.push(disc)
+  for (let i = 0; i < 12; i++) {
+    const ray = new CylinderGeometry(0, 0.12, 0.42, 3)
+    stamp(ray, COLOR.sunGold, 20)
+    ray.rotateZ(-Math.PI / 2)
+    ray.translate(0.92, 0, 0)
+    ray.rotateY((i / 12) * Math.PI * 2)
+    sunBits.push(ray)
+  }
+  const sun = mergeGeometries(sunBits, false)
+  if (!sun) throw new Error('cloister sun')
+  for (let i = 0; i < sunBits.length; i++) sunBits[i]?.dispose()
+  sun.rotateX(Math.PI / 4)
+  sun.rotateY(Math.PI / 4)
+  sun.translate(0, 1.32, 0)
+  parts.push(sun)
   const nicheX = [-15, -9, -3, 3, 9, 15]
   for (let i = 0; i < nicheX.length; i++) {
     const x = nicheX[i] ?? 0
