@@ -723,8 +723,12 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   for (let i = 0; i < STELAE.length; i++) {
     const s = STELAE[i]
     if (!s) continue
-    putCyl(0.82, 0.9, 3.2, 6, s.x, 1.6, s.z, COLOR.sandstone)
-    putCyl(1.02, 1.02, 0.16, 6, s.x, 3.22, s.z, COLOR.gold)
+    putBox(0.55, 0.14, 0.55, s.x, 0.07, s.z, COLOR.sandstone)
+    putCyl(0.035, 0.14, 2.45, 5, s.x, 1.365, s.z, COLOR.sandstone)
+    const tip = new CylinderGeometry(0, 0.09, 0.42, 5)
+    stamp(tip, COLOR.gold, 0)
+    tip.translate(s.x, 2.8, s.z)
+    parts.push(tip)
   }
   const mauve = new Color()
   mauve.setRGB(0.3, 0.24, 0.4)
