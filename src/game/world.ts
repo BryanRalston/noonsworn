@@ -40,8 +40,8 @@ import { createAudio } from '../audio/audio'
 import { loadArt } from '../render/art'
 import { createBloom } from '../render/bloom'
 import { toonMap } from '../render/toon'
-import { loadMaps, noteRun, rememberMap } from '../data/maps'
-import { storageGet } from '../platform/storage'
+import { loadMaps, markSeen, noteRun, rememberMap } from '../data/maps'
+import { storageGet, storageSet } from '../platform/storage'
 import { createMapSelect } from '../ui/mapSelect'
 import { createTouchControls } from '../ui/touchControls'
 import { createSela } from './actors'
@@ -57,6 +57,7 @@ import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
 import { createSunClock, damageAmount } from './sunClock'
 import { cellBlocked, resetHomePillars, setBeds } from './collision'
+import type { CloisterHandle } from './cloister'
 import type { LatticeHandle } from './lattice'
 import { createTemple, writeFloorPillars } from './temple'
 import { createTraps } from './traps'
@@ -316,11 +317,16 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'splash'
-  let activeMap: 'sundial' | 'lattice' = 'sundial'
-  let wantMap: 'sundial' | 'lattice' = 'sundial'
+  let activeMap: 'sundial' | 'lattice' | 'cloister' = 'sundial'
+  let wantMap: 'sundial' | 'lattice' | 'cloister' = 'sundial'
   let lattice: LatticeHandle | null = null
   let latticeGate: Promise<void> | null = null
   let latticePending = false
+  let cloister: CloisterHandle | null = null
+  let cloisterGate: Promise<void> | null = null
+  let cloisterPending = false
+  let hintBits = Number(storageGet('noonsworn.cloister.hints') ?? '0') || 0
+  let prevStep = 0
   let endAt = 0
   let xpWindow = 0
   let xpWindowT = 0
@@ -392,6 +398,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   function litAt(x: number, z: number): boolean {
+    if (activeMap === 'cloister' && cloister?.ready) return cloister.isLit(x, z)
     if (activeMap === 'lattice' && lattice?.ready) return lattice.isLit(sunLit, x, z)
     return sunLit(x, z)
   }
@@ -413,6 +420,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     shadeZ: -1000,
     bloomLive: false,
     guide: null,
+    deep: null,
     lureX: 0,
     lureZ: 0,
     lureR2: 0,
@@ -525,7 +533,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (next === 'dead') audio.death()
       else audio.win()
       if (noteRun(activeMap, time, kills, next === 'clear')) {
-        screens.setToast(activeMap === 'lattice' ? 'The Brimming Cloister — coming soon' : 'New temple opened')
+        if (activeMap === 'cloister') {
+          screens.setToast('The Westering Stair — coming soon')
+          markSeen('stair')
+        } else {
+          screens.setToast('New temple opened')
+          if (activeMap === 'lattice') markSeen('cloister')
+          else if (activeMap === 'sundial') markSeen('lattice')
+        }
       }
     } else {
       screens.setToast(null)
@@ -565,7 +580,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     ctx.separate = tick % (quality.tier === 'low' ? 2 : 1) === 0
     ctx.might = build.might
     ctx.searing = build.searing
-    ctx.guide = temple.routing() ? temple.guide : null
+    ctx.guide = activeMap === 'cloister' && cloister ? cloister.guide : temple.routing() ? temple.guide : null
+    ctx.deep = activeMap === 'cloister' && cloister ? cloister.deep : null
     ctx.pass = traps.phasing()
     ctx.lureX = traps.decoyX()
     ctx.lureZ = traps.decoyZ()
@@ -723,6 +739,46 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     return latticeGate ?? Promise.resolve()
   }
 
+  function ensureCloister(): Promise<void> {
+    if (cloister?.ready) return Promise.resolve()
+    if (!cloisterGate) {
+      cloisterGate = import('./cloister')
+        .then((mod) => {
+          cloister = mod.createCloister({
+            scene: gpu.scene,
+            uniforms: floor.uniforms,
+            hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay],
+            restore: [floorMesh, shell, pillars, inlay],
+          })
+        })
+        .finally(() => {
+          cloisterGate = null
+        })
+    }
+    return cloisterGate ?? Promise.resolve()
+  }
+
+  function waterCode(name: string | null): number | null {
+    if (name === 'fill') return 4
+    if (name === 'brim') return 17
+    if (name === 'ebb') return 30
+    if (name === 'low') return 47
+    if (name === 'surge') return 0.3
+    return null
+  }
+
+  function noteHint(t: number, prev: number) {
+    if (activeMap !== 'cloister' || previewWeapon || t - prev > 1) return
+    const say = (bit: number, text: string) => {
+      if (hintBits & bit) return
+      hintBits |= bit
+      storageSet('noonsworn.cloister.hints', String(hintBits))
+      showToast(text, 4.2)
+    }
+    if (t >= 2 && t < 8 && prev < 2) say(1, 'High water throws the sun under the arches.')
+    if (t >= 31 && t < 40 && prev < 31) say(2, 'Low water: the arches go deep. Hold the bright stone.')
+  }
+
   function startRun() {
     if (wantMap === 'lattice' && !lattice?.ready) {
       if (latticePending) return
@@ -734,6 +790,22 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         })
         .catch((err) => {
           latticePending = false
+          wantMap = 'sundial'
+          if (import.meta.env.DEV) console.error(err)
+          startRun()
+        })
+      return
+    }
+    if (wantMap === 'cloister' && !cloister?.ready) {
+      if (cloisterPending) return
+      cloisterPending = true
+      void ensureCloister()
+        .then(() => {
+          cloisterPending = false
+          if (wantMap === 'cloister') startRun()
+        })
+        .catch((err) => {
+          cloisterPending = false
           wantMap = 'sundial'
           if (import.meta.env.DEV) console.error(err)
           startRun()
@@ -754,6 +826,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     pickups.clear()
     fx.clear()
     time = 0
+    prevStep = 0
     kills = 0
     tick = 0
     hitStop = 0
@@ -766,14 +839,39 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     activeMap = wantMap
     resetHomePillars()
     setBeds([])
-    temple.setRouting(activeMap === 'lattice')
+    temple.setRouting(activeMap === 'lattice' || activeMap === 'cloister')
     temple.reset(rng)
     traps.reset(temple)
     if (activeMap === 'lattice' && lattice) {
+      cloister?.clear(false)
+      outer.position.y = -0.05
       lattice.apply()
       lattice.warm(gpu.renderer, follow.camera)
       prewarmDraw()
-    } else lattice?.clear()
+    } else if (activeMap === 'cloister' && cloister) {
+      lattice?.clear()
+      outer.position.y = -2.2
+      cloister.apply()
+      cloister.pin(sun)
+      if (!previewWeapon) {
+        player.x = 0
+        player.z = 13
+        player.px = 0
+        player.pz = 13
+        player.yaw = 0
+        follow.snap(0, 13)
+      }
+      const pinned = import.meta.env.DEV ? waterCode(params.get('water')) : null
+      if (pinned != null) cloister.hold(sun, pinned)
+      cloister.tick(0, sun, build.wide, player.x, player.z)
+      writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
+      cloister.warm(gpu.renderer, follow.camera)
+      prewarmDraw()
+    } else {
+      cloister?.clear(false)
+      outer.position.y = -0.05
+      lattice?.clear()
+    }
     hud.setCharges(0)
     levelUp.hide()
     featureMap.close()
@@ -908,9 +1006,17 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       startRun()
       return
     }
+    if (import.meta.env.DEV && params.get('map') === 'cloister') {
+      wantMap = 'cloister'
+      startRun()
+      return
+    }
     const saved = loadMaps()
-    if (saved.unlocked.includes('lattice')) {
+    if (saved.unlocked.some((id) => id !== 'sundial')) {
       mapSelect.open(saved)
+      if (saved.unlocked.includes('cloister') && !saved.seen.includes('cloister') && markSeen('cloister')) {
+        mapSelect.toast('New temple opened')
+      }
       return
     }
     wantMap = 'sundial'
@@ -1084,6 +1190,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       selaMat: sela.matNote,
     })
     if (import.meta.env.DEV && params.get('map') === 'lattice') wantMap = 'lattice'
+    if (import.meta.env.DEV && params.get('map') === 'cloister') wantMap = 'cloister'
     requestAnimationFrame(() => startRun())
   } else if (turnWho) {
     requestAnimationFrame(() => startRun())
@@ -1235,6 +1342,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
       if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
+      if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z)
       temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
       temple.mask(floor.uniforms.uWing.value)
       temple.kinds(floor.uniforms.uKind.value)
@@ -1311,7 +1419,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           } else showIn = 1
         }
       }
+      const steppedFrom = time
       time += dt
+      noteHint(time, prevStep === 0 && steppedFrom === 0 ? 0 : prevStep)
+      prevStep = time
       if (previewWeapon === 'flare' || previewWeapon === 'all') {
         if (flareCd > 0.9) flareCd = 0.9
       }
@@ -1394,6 +1505,13 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (cut.active && !cutWas) tutorial.onCut()
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       if (!slipped) integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
+      if (activeMap === 'cloister' && cloister) {
+        const carried = cloister.shoveAt(player.x, player.z, player.radius)
+        if (carried) {
+          player.x = carried.x
+          player.z = carried.z
+        }
+      }
       const wantMirage = build.mirage > 0 && (state.shiftPressed || state.altPressed || state.miragePressed)
       traps.after(dt, player, wishX, wishZ, horde, ctx, (x, z) => litAt(x, z), build.mirage > 0, build.haste, wantMirage && (first ?? false))
       if (traps.events.relic) {
@@ -1512,11 +1630,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           cam.z,
           poured,
           temple.pickWing,
-          activeMap === 'lattice' ? latticePlan(time, bossUp) : undefined,
+          activeMap === 'lattice' ? latticePlan(time, bossUp) : activeMap === 'cloister' && cloister ? cloister.plan(time) : undefined,
         )
       }
       const hordeT = performance.now()
       horde.update(ctx)
+      if (activeMap === 'cloister' && cloister) {
+        horde.shove((x, z, radius) => cloister?.shoveAt(x, z, radius) ?? null)
+        pickups.shove((x, z) => cloister?.shoveAt(x, z, 0) ?? null)
+      }
       profHorde += performance.now() - hordeT
       if (!previewShow && previewWeapon === 'hits') {
         hitPreview -= dt
@@ -1625,7 +1747,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (import.meta.env.DEV && (turnWho === 'mite' || turnWho === 'hound')) {
         horde.face(Number(params.get('yaw') ?? '0'))
       }
-      playerView.position.set(x, traps.lift() + (activeMap === 'lattice' && lattice ? lattice.floorY(z) : 0), z)
+      const groundY = activeMap === 'cloister' && cloister ? cloister.floorY(x, z) : activeMap === 'lattice' && lattice ? lattice.floorY(z) : 0
+      playerView.position.set(x, traps.lift() + groundY, z)
       playerView.rotation.y = turnWho === 'sela' ? player.yaw : yaw
       const slashNow = halo.pulses !== animSlashSeen
       animSlashSeen = halo.pulses
@@ -1669,7 +1792,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sela.halo.visible = playerView.visible
       fx.setFocus(x, z)
       const syncT = performance.now()
-      if (activeMap === 'lattice' && lattice) {
+      if (activeMap === 'cloister' && cloister) {
+        const court = cloister
+        horde.ground = (z, x = 0) => court.floorY(x, z)
+      } else if (activeMap === 'lattice' && lattice) {
         const terrace = lattice
         horde.ground = (z) => terrace.floorY(z)
       } else {
@@ -1758,6 +1884,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         mode === 'playing' || mode === 'level' ? time : sun.time,
         temple.telegraph(),
         activeMap === 'lattice' && lattice ? lattice.terraceMask() : undefined,
+        activeMap === 'cloister' ? { dir: sun.dir } : null,
       )
       const aim = temple.arrow()
       if (!aim || (mode !== 'playing' && mode !== 'level')) gateArrow.hidden = true
@@ -1876,8 +2003,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       queuedSeed = n >>> 0
       startRun()
     },
-    setMap: (id: 'sundial' | 'lattice') => {
-      if (id === 'sundial' || id === 'lattice') wantMap = id
+    setMap: (id: 'sundial' | 'lattice' | 'cloister') => {
+      if (id === 'sundial' || id === 'lattice' || id === 'cloister') wantMap = id
     },
     spawnStress,
     sun,
@@ -1958,7 +2085,29 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     espalier: () => (activeMap === 'lattice' && lattice ? lattice.bossInfo() : null),
     shutters: () => (activeMap === 'lattice' && lattice ? lattice.plateInfo() : null),
     latticeTris: () => (lattice ? lattice.tris() : null),
-    whenReady: () => latticeGate ?? Promise.resolve(),
+    whenReady: () => cloisterGate ?? latticeGate ?? Promise.resolve(),
+    water: () => (activeMap === 'cloister' && cloister ? cloister.info() : null),
+    pinWater: (which: number | string) => {
+      if (!cloister) return
+      const c = typeof which === 'number' ? which : (waterCode(which) ?? 17)
+      cloister.hold(sun, c)
+      cloister.tick(0, sun, build.wide, player.x, player.z)
+      writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
+    },
+    cloisterCover: () => (activeMap === 'cloister' && cloister ? cloister.cover() : null),
+    benchLit: () => (cloister ? cloister.benchLit() : null),
+    cloisterTris: () => (cloister ? cloister.tris() : null),
+    muteHints: () => {
+      hintBits = 3
+      storageSet('noonsworn.cloister.hints', '3')
+    },
+    cloisterAgree: (points: { x: number; z: number }[]) => {
+      if (activeMap !== 'cloister' || !cloister) return { tested: 0, agree: 0 }
+      cloister.tick(0, sun, build.wide, player.x, player.z)
+      sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
+      writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
+      return cloister.agree(gpu.renderer, follow.camera, points, [playerView, horde.miteMesh, horde.houndMesh, horde.darterMesh, scatter])
+    },
     coinTest: (points: { x: number; z: number }[]) => {
       if (activeMap !== 'lattice' || !lattice) return { tested: 0, agree: 0 }
       lattice.tick(0, sun, time, player.x, player.z, sunLit)
