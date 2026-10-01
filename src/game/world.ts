@@ -133,7 +133,11 @@ export async function boot(container: HTMLElement) {
   let hitPreview = 0.2
   let animHurt = false
   let animThrust = false
+  let animThrow = false
+  let animFlourish = false
   let animSlashSeen = 0
+  let slashStopAt = -10
+  const spearPoint = new Vector3()
   let litAx = 10.2
   let litAz = 1.4
   let shadeAx = 18
@@ -421,7 +425,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       else audio.armored()
       if ((bigHit || crit) && (lit || time - (armFloatAt[index] ?? 0) >= 0.35)) {
         if (!lit) armFloatAt[index] = time
-        floats.push(x, z, `${Math.round(amount)}`, lit ? 'hot' : 'arm')
+        floats.push(x, z, `${Math.round(amount)}`, crit ? 'crit' : lit ? 'hot' : 'arm')
       }
       if (killed) audio.kill(lit)
       if (killed && lit) {
@@ -461,7 +465,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       tutorial.onKill()
     },
     onEmber(x, z) {
-      shards.burst(x, z, true)
+      fx.death(x, z, true)
       const big = build.searing >= 5
       const size = big ? 1.7 : 1.2
       fx.scorch(x, z, 0, size, size, 0.7, big)
@@ -473,7 +477,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       fx.ember(x, z, lit && build.searing >= 5)
     },
     onDeath(x, z, lit) {
-      shards.burst(x, z, lit)
+      fx.death(x, z, lit)
       if (activeMap === 'lattice' && lattice?.bloom(x, z, lit)) audio.coinBloom()
     },
   }
@@ -617,6 +621,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
     }
     build.pending = Math.max(0, build.pending - 1)
+    animFlourish = true
   }
 
   function takeCard(index: number) {
@@ -679,7 +684,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     if (!latticeGate) {
       latticeGate = import('./lattice')
         .then(async (mod) => {
-          const mat = horde.miteMesh.material
+          const mat = horde.darterMesh.material
           if (Array.isArray(mat) || !(mat instanceof ShaderMaterial)) throw new Error('enemy material')
           const handle = mod.createLattice({
             scene: gpu.scene,
@@ -881,9 +886,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     }
   }
 
+  spears.onWindup = () => {
+    animThrow = true
+  }
   spears.onFire = () => {
     previewFires++
-    animThrust = true
     audio.spear()
   }
   const mapSelect = createMapSelect(ui, (id) => {
@@ -1447,6 +1454,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         const midZ = cut.sz + cut.dirZ * TUNING.cut.distance * 0.5
         fx.scorch(midX, midZ, slashYaw, TUNING.cut.distance, 1.7, 1, false)
         fx.crescent(midX, midZ, slashYaw, false)
+        fx.afterimage(player.x, player.z, cut.dirX, cut.dirZ)
         previewFires++
         audio.cut()
         buzz(16)
@@ -1458,7 +1466,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       cutWas = cut.active
       if (cut.active) {
         sweepCut(cut, player, horde, build.might, ctx, () => {
-          hitStop = Math.max(hitStop, TUNING.cut.hitStop)
           shakeAmp = Math.max(shakeAmp, Math.min(TUNING.hurtShake, TUNING.cut.shake + 0.03))
           shakeT = TUNING.shakeDecay
           const slashYaw = yawFromDirection(cut.dirX, cut.dirZ)
@@ -1628,6 +1635,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         cutting: cut.active || cut.fade > 0,
         thrust: animThrust,
         slash: slashNow && halo.pulses > 0,
+        throwing: animThrow,
+        flourish: animFlourish,
+        victory: mode === 'clear',
         hurt: animHurt,
         dead: player.hp <= 0,
         aspect: follow.camera.aspect,
@@ -1635,15 +1645,35 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         viewW: canvas.clientWidth,
         viewH: canvas.clientHeight,
         hold: import.meta.env.DEV ? params.get('clip') : null,
+        holdAt: import.meta.env.DEV && params.get('clipAt') ? Number(params.get('clipAt')) : undefined,
         sparse: quality.tier !== 'high',
       })
+      if (sela.cue.throwRelease) {
+        sela.spearTip(spearPoint)
+        spears.release(spearPoint.x, spearPoint.z)
+      }
+      sela.spearTip(spearPoint)
+      fx.hero(x, z)
+      if (mode === 'playing' || mode === 'dead' || mode === 'clear') fx.anchor(spearPoint.x, spearPoint.y, spearPoint.z, playerView.rotation.y)
+      if (sela.cue.slashHit && cut.hits > 0 && time - slashStopAt >= 0.3) {
+        slashStopAt = time
+        hitStop = Math.max(hitStop, 0.05)
+      }
       animHurt = false
       animThrust = false
+      animThrow = false
+      animFlourish = false
       const hurtBlink = player.hp > 0 && player.invuln > 0 && ((player.invuln * 14) | 0) % 2 === 0
       playerView.visible = turnWho !== 'mite' && turnWho !== 'hound' && (player.hp <= 0 || !hurtBlink)
       sela.halo.visible = playerView.visible
       fx.setFocus(x, z)
       const syncT = performance.now()
+      if (activeMap === 'lattice' && lattice) {
+        const terrace = lattice
+        horde.ground = (z) => terrace.floorY(z)
+      } else {
+        horde.ground = () => 0
+      }
       horde.sync(follow.camera.position.x, follow.camera.position.z, quality.tier === 'high')
       profSync = performance.now() - syncT
       teleGate -= frameSec

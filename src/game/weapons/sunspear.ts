@@ -63,7 +63,10 @@ export interface Sunspear {
   kick: (px: number, pz: number, ang: number, level: number, cap: number) => void
   used: () => number
   onFire: (() => void) | null
+  onWindup: (() => void) | null
   onImpact: ((x: number, z: number, lit: boolean) => void) | null
+  /** Spawn the armed volley at the spear tip. The throw clip calls this on throw_release. */
+  release: (x: number, z: number) => void
 }
 
 function spearGeometry() {
@@ -100,14 +103,17 @@ export function createSunspear(fx: WeaponFx): Sunspear {
   let nextSerial = 100000
   const free = new FreeList(MAX)
 
+  let wind: { ang: number; damage: number; pierce: number; count: number; spread: number; cap: number } | null = null
+  let windAge = 0
+
   function launch(px: number, pz: number, ang: number, damage: number, pierceLeft: number, cap: number) {
     if (free.used >= cap) return
     const i = free.acquire()
     if (i < 0) return
     const c = Math.cos(ang)
     const s = Math.sin(ang)
-    x[i] = px + c * 0.7
-    z[i] = pz + s * 0.7
+    x[i] = px
+    z[i] = pz
     vx[i] = c * TUNING.spear.speed
     vz[i] = s * TUNING.spear.speed
     life[i] = TUNING.spear.life
@@ -127,31 +133,39 @@ export function createSunspear(fx: WeaponFx): Sunspear {
     mesh,
     cooldown: 0.35,
     used: () => free.used,
-    kick(px, pz, ang, level, cap) {
-      const stats = spearStats(Math.max(1, level))
-      spear.rank = Math.max(1, level)
-      if (stats.count <= 1) launch(px, pz, ang, stats.damage, stats.pierce, cap)
+    kick(_px, _pz, ang, level, cap) {
+      arm(ang, level, 0, cap)
+    },
+    onFire: null,
+    onWindup: null,
+    release(ox, oz) {
+      const armed = wind
+      if (!armed) return
+      wind = null
+      if (armed.count <= 1) launch(ox, oz, armed.ang, armed.damage, armed.pierce, armed.cap)
       else {
-        const spread = (TUNING.spear.fanDeg * Math.PI) / 180
-        launch(px, pz, ang - spread, stats.damage, stats.pierce, cap)
-        launch(px, pz, ang + spread, stats.damage, stats.pierce, cap)
+        launch(ox, oz, armed.ang - armed.spread, armed.damage, armed.pierce, armed.cap)
+        launch(ox, oz, armed.ang + armed.spread, armed.damage, armed.pierce, armed.cap)
       }
       spear.onFire?.()
     },
-    onFire: null,
     onImpact: null,
     rank: 1,
     clear() {
       alive.fill(0)
       life.fill(0)
       free.reset()
+      wind = null
       spear.cooldown = 0.35
     },
     update(dt, px, pz, horde, level, haste, might, cap, ctx) {
       spear.rank = level
       spear.cooldown -= dt
-      if (level > 0 && spear.cooldown <= 0) {
-        const stats = spearStats(level)
+      if (wind) {
+        windAge += dt
+        if (windAge > 0.5) wind = null
+      }
+      if (level > 0 && spear.cooldown <= 0 && !wind) {
         const boss = horde.bossAt
         let aimX = 0
         let aimZ = 0
@@ -179,18 +193,7 @@ export function createSunspear(fx: WeaponFx): Sunspear {
             aimed = true
           }
         }
-        if (aimed) {
-          const ang = Math.atan2(aimZ, aimX)
-          const spread = (TUNING.spear.fanDeg * Math.PI) / 180
-          const hasteMul = Math.max(0.2, 1 - TUNING.passive.haste * haste)
-          spear.cooldown = stats.cooldown * hasteMul
-          if (stats.count === 1) launch(px, pz, ang, stats.damage, stats.pierce, cap)
-          else {
-            launch(px, pz, ang - spread, stats.damage, stats.pierce, cap)
-            launch(px, pz, ang + spread, stats.damage, stats.pierce, cap)
-          }
-          spear.onFire?.()
-        }
+        if (aimed) arm(Math.atan2(aimZ, aimX), level, haste, cap)
       }
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
@@ -280,4 +283,15 @@ export function createSunspear(fx: WeaponFx): Sunspear {
     },
   }
   return spear
+
+  function arm(ang: number, level: number, haste: number, cap: number) {
+    const stats = spearStats(Math.max(1, level))
+    const spread = (TUNING.spear.fanDeg * Math.PI) / 180
+    const hasteMul = Math.max(0.2, 1 - TUNING.passive.haste * haste)
+    wind = { ang, damage: stats.damage, pierce: stats.pierce, count: stats.count, spread, cap }
+    windAge = 0
+    spear.rank = Math.max(1, level)
+    spear.cooldown = stats.cooldown * hasteMul
+    spear.onWindup?.()
+  }
 }

@@ -1,19 +1,30 @@
 import {
-  BufferAttribute,
   BufferGeometry,
-  Color,
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  type Material,
 } from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 
+export interface MorphLut {
+  weights: Float32Array
+  cols: number
+}
+
+export interface EnemyMesh {
+  geometry: BufferGeometry
+  material: Material
+  hop: MorphLut | null
+  gallop: MorphLut | null
+  lunge: MorphLut | null
+}
+
 export interface Cast {
   gltf: GLTF
-  mite: BufferGeometry
-  hound: BufferGeometry
+  mite: EnemyMesh
+  hound: EnemyMesh
 }
 
 function triCount(geo: BufferGeometry): number {
@@ -30,75 +41,41 @@ function meshesOf(root: Object3D): Mesh[] {
   return found
 }
 
-function findMesh(root: Object3D, materialName: string): Mesh {
-  const meshes = meshesOf(root)
-  for (let i = 0; i < meshes.length; i++) {
-    const mesh = meshes[i]
-    if (!mesh) continue
-    const mat = mesh.material
-    const name = Array.isArray(mat) ? mat[0]?.name : mat.name
-    if (name === materialName) return mesh
+function packLut(rows: number[][]): MorphLut {
+  const cols = rows[0]?.length ?? 0
+  const weights = new Float32Array(rows.length * cols)
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r] ?? []
+    for (let c = 0; c < cols; c++) weights[r * cols + c] = row[c] ?? 0
   }
-  const names = meshes.map((mesh) => {
-    const mat = mesh.material
-    return Array.isArray(mat) ? mat.map((m) => m.name).join('+') : mat.name
-  })
-  throw new Error(`missing material ${materialName} in ${names.join(', ')}`)
+  return { weights, cols }
 }
 
-const plumLo = new Color('#3a2a3f')
-const plumHi = new Color('#4a3350')
-
-/** Bake base or emissive colour into the vertex colours and tag glow. Legs are tagged before the facing rotation. */
-function bake(mesh: Mesh, emit: number, legs: boolean, plum = false): BufferGeometry {
-  const geo = mesh.geometry.clone()
-  const mat = mesh.material as MeshStandardMaterial
-  const src = geo.getAttribute('color')
-  const pos = geo.getAttribute('position')
-  const n = pos.count
-  const col = new Float32Array(n * 3)
-  const em = new Float32Array(n)
-  const gal = new Float32Array(n)
-  const glow = mat.emissive.r + mat.emissive.g + mat.emissive.b > 0.02 ? mat.emissive : mat.color
-  const tint = emit > 0 ? glow : mat.color
-  const lift = emit > 0.5 ? 1 : 3.4
-  for (let i = 0; i < n; i++) {
-    const ao = src ? src.getX(i) : 1
-    const t = ao < 0 ? 0 : ao > 1 ? 1 : ao
-    if (plum && emit === 0) {
-      col[i * 3] = plumLo.r + (plumHi.r - plumLo.r) * t
-      col[i * 3 + 1] = plumLo.g + (plumHi.g - plumLo.g) * t
-      col[i * 3 + 2] = plumLo.b + (plumHi.b - plumLo.b) * t
-    } else {
-      const k = (emit > 0.5 ? 1 : t) * lift
-      col[i * 3] = tint.r * k
-      col[i * 3 + 1] = tint.g * k
-      col[i * 3 + 2] = tint.b * k
-    }
-    em[i] = emit
-    const y = pos.getY(i)
-    const z = pos.getZ(i)
-    gal[i] = legs && y < 0.42 ? (z >= 0 ? 1 : -1) : 0
-  }
-  geo.deleteAttribute('uv')
-  geo.deleteAttribute('uv1')
-  geo.deleteAttribute('color')
-  geo.setAttribute('color', new BufferAttribute(col, 3))
-  geo.setAttribute('aEmit', new BufferAttribute(em, 1))
-  geo.setAttribute('aGallop', new BufferAttribute(gal, 1))
-  return geo
-}
-
-function mergeEnemy(root: Object3D, body: string, eyes: string, glow: string, legs: boolean, plum = false): BufferGeometry {
-  const parts = [bake(findMesh(root, body), 0, legs, plum), bake(findMesh(root, eyes), 1, false), bake(findMesh(root, glow), 0.35, false)]
-  const merged = mergeGeometries(parts, false)
-  for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
-  if (!merged) throw new Error(`merge failed for ${body}`)
+function dressEnemy(root: Object3D, nodeName: string): { geometry: BufferGeometry; material: Material } {
+  const node = root.getObjectByName(nodeName) as Mesh | undefined
+  const mesh = node?.isMesh ? node : meshesOf(root)[0]
+  if (!mesh) throw new Error(`${nodeName} mesh missing`)
+  const geo = mesh.geometry
   // Assets face +Z. The horde yaws a local −Z front (yawFromDirection).
-  merged.rotateY(Math.PI)
-  if (legs) merged.scale(1.3, 1.3, 1.3)
-  merged.computeBoundingSphere()
-  return merged
+  geo.rotateY(Math.PI)
+  geo.computeBoundingSphere()
+  if (geo.boundingSphere) geo.boundingSphere.radius += 0.45
+  const source = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as MeshStandardMaterial
+  const material = source.clone()
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float iFlash;\nattribute float iLit;\nvarying float vFlash;\nvarying float vLit;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFlash = iFlash;\nvLit = iLit;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vFlash;\nvarying float vLit;')
+      .replace(
+        '#include <opaque_fragment>',
+        `outgoingLight = mix(outgoingLight, vec3(1.0, 0.93, 0.75), clamp(vFlash, 0.0, 1.0));
+        if (vLit < 0.5) outgoingLight *= 0.72;
+        #include <opaque_fragment>`,
+      )
+  }
+  return { geometry: geo, material }
 }
 
 async function loadGltf(loader: GLTFLoader, url: string): Promise<GLTF> {
@@ -107,18 +84,32 @@ async function loadGltf(loader: GLTFLoader, url: string): Promise<GLTF> {
   })
 }
 
+interface LutFile {
+  lut: Record<string, { weights: number[][] }>
+}
+
 export async function loadCast(): Promise<Cast> {
   await MeshoptDecoder.ready
   const loader = new GLTFLoader()
   loader.setMeshoptDecoder(MeshoptDecoder)
   const base = `${import.meta.env.BASE_URL}assets/chars/`
-  const [gltf, miteGltf, houndGltf] = await Promise.all([
-    loadGltf(loader, `${base}sela_rigged.glb`),
-    loadGltf(loader, `${base}mite.glb`),
-    loadGltf(loader, `${base}hound.glb`),
+  const [gltf, miteGltf, houndGltf, lutRes] = await Promise.all([
+    loadGltf(loader, `${base}sela_v7.glb`),
+    loadGltf(loader, `${base}mite_v2.glb`),
+    loadGltf(loader, `${base}hound_v2.glb`),
+    fetch(`${base}enemies_v2.json`),
   ])
-  const mite = mergeEnemy(miteGltf.scene, 'mite_body', 'mite_eyes', 'mite_cracks', false, true)
-  const hound = mergeEnemy(houndGltf.scene, 'hound_body', 'hound_eyes', 'hound_seams', true)
-  if (triCount(mite) < 1 || triCount(hound) < 1) throw new Error('enemy mesh is empty')
-  return { gltf, mite, hound }
+  if (!lutRes.ok) throw new Error('enemies_v2.json missing')
+  const lut = (await lutRes.json()) as LutFile
+  const mite = dressEnemy(miteGltf.scene, 'mite')
+  const hound = dressEnemy(houndGltf.scene, 'hound')
+  if (triCount(mite.geometry) < 1 || triCount(hound.geometry) < 1) throw new Error('enemy mesh is empty')
+  const hop = packLut(lut.lut['mite.hop']?.weights ?? [])
+  const gallop = packLut(lut.lut['hound.gallop']?.weights ?? [])
+  const lunge = packLut(lut.lut['hound.lunge']?.weights ?? [])
+  return {
+    gltf,
+    mite: { ...mite, hop, gallop: null, lunge: null },
+    hound: { ...hound, hop: null, gallop, lunge },
+  }
 }

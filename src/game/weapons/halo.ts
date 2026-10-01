@@ -3,7 +3,7 @@ import { TUNING } from '../../data/tuning'
 import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
 import type { Horde, HordeCtx } from '../enemies/horde'
-import { FX, type WeaponFx } from './fx'
+import { type WeaponFx } from './fx'
 
 const QUERY = new Int16Array(48)
 
@@ -88,7 +88,7 @@ export function createHalo(fx: WeaponFx): Halo {
           const ray = (r / 10) * Math.PI * 2
           const ox = Math.cos(ray)
           const oz = Math.sin(ray)
-          fx.streak(px + ox * (stats.orbit + 0.4), 1.15, pz + oz * (stats.orbit + 0.4), TUNING.camera.yaw, 1.2, 0.12, 0.4, FX.goldBlade, true)
+          fx.ray(px + ox * (stats.orbit + 0.4), 1.15, pz + oz * (stats.orbit + 0.4), TUNING.camera.yaw, 1.2, 0.12, 0.4)
         }
       } else if (!big && time - rayAt > 1) {
         rayAt = time

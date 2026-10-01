@@ -74,7 +74,7 @@ export function createEnemyMaterial(): ShaderMaterial {
         vec3 col = vColor;
         if (vEmit > 0.5) col *= 1.7;
         else if (vLit < 0.5) col *= 0.72;
-        col = mix(col, vec3(1.0, 0.78, 0.38), vFlash * 0.7);
+        col = mix(col, vec3(1.0, 0.93, 0.75), vFlash);
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }

@@ -949,8 +949,6 @@ void main() {
       dressing.visible = true
       foliage.visible = true
       probe.visible = false
-      opts.mite.material = lifted
-      opts.hound.material = lifted
       opts.darter.material = lifted
       shutters.reset()
       espalier.reset()
@@ -967,8 +965,6 @@ void main() {
         const mesh = opts.restore[i]
         if (mesh) mesh.visible = true
       }
-      opts.mite.material = opts.enemyMat
-      opts.hound.material = opts.enemyMat
       opts.darter.material = opts.enemyMat
       shutters.reset()
       espalier.reset()

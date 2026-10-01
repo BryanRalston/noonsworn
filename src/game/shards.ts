@@ -23,6 +23,7 @@ export interface Shards {
 
 export function createShards(): Shards {
   const mesh = makeCrowd(new BoxGeometry(0.1, 0.14, 0.08), new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), MAX)
+  mesh.visible = false
   mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX * 3), 3)
   const x = new Float32Array(MAX)
   const y = new Float32Array(MAX)
