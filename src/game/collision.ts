@@ -48,6 +48,14 @@ const boxOut = { x: 0, z: 0 }
 const pillOut = { x: 0, z: 0 }
 const keptOut = { x: 0, z: 0 }
 
+/** True when a segment's z span overlaps a planter row. Sundial has no beds. */
+export function bedRowsBetween(z0: number, z1: number): boolean {
+  if (BEDS.length === 0) return false
+  const lo = z0 < z1 ? z0 : z1
+  const hi = z0 < z1 ? z1 : z0
+  return (lo <= -7.5 && hi >= -8.5) || (lo <= 8.5 && hi >= 7.5)
+}
+
 /** Planter walls sit on z = ±8. A step cannot cross this pad, so a circle outside it never touches a bed. */
 function clearOfBeds(z: number, radius: number): boolean {
   const pad = 0.5 + radius + 0.45
@@ -142,7 +150,7 @@ export function setBeds(list: readonly AABB[]) {
   }
 }
 
-/** Open walks. A flow cell whose center is in a walk is blocked only by the bed itself. */
+/** Open walks. Only the inset of a walk stays clear; the corners keep a clearance radius. */
 export function setOpenStrips(at: readonly number[], half: number) {
   strips.length = 0
   for (let i = 0; i < at.length; i++) {
@@ -150,13 +158,6 @@ export function setOpenStrips(at: readonly number[], half: number) {
     if (v !== undefined) strips.push(v)
   }
   stripHalf = half
-}
-
-function centerInStrip(x: number): boolean {
-  for (let i = 0; i < strips.length; i++) {
-    if (Math.abs(x - (strips[i] ?? 0)) <= stripHalf) return true
-  }
-  return false
 }
 
 function hitBeds(x: number, z: number, radius: number): boolean {
@@ -168,19 +169,136 @@ function hitBeds(x: number, z: number, radius: number): boolean {
   return false
 }
 
-/** Flow cells are 2 m. A 1 m planter still blocks every cell whose square crosses it. */
+/** Body clearance so a flow center stays outside a hound's radius of the planter. */
+const FLOW_CLEAR = 0.6
+const bedSteer = { x: 0, z: 0 }
+
+/** The open walk, inset so the corners beside a bed are not treated as corridor. */
+function deepGap(x: number): boolean {
+  const inset = stripHalf - 1.05
+  if (inset <= 0.2) return false
+  for (let i = 0; i < strips.length; i++) {
+    if (Math.abs(x - (strips[i] ?? 0)) <= inset) return true
+  }
+  return false
+}
+
+/** Flow cells within FLOW_CLEAR of a planter are blocked. Gap centers stay open. */
 function cellTouchesBed(x: number, z: number): boolean {
-  if (centerInStrip(x)) return hitBeds(x, z, 0.05)
-  const minX = x - 1
-  const maxX = x + 1
-  const minZ = z - 1
-  const maxZ = z + 1
+  if (deepGap(x)) return hitBeds(x, z, 0.05)
+  return hitBeds(x, z, FLOW_CLEAR)
+}
+
+/**
+ * Planter contact steer. Drops the component aimed into the bed. A steer that already
+ * leaves the face is kept. A steer aimed through the bed slides toward the nearest open
+ * walk. Returns null on Sundial (no beds) and when the circle is clear of every bed.
+ * The returned object is shared; copy x/z before the next call.
+ */
+export function steerBeds(
+  x: number,
+  z: number,
+  radius: number,
+  sx: number,
+  sz: number,
+  tx: number,
+  tz: number,
+): { x: number; z: number } | null {
+  if (BEDS.length === 0) return null
+  const az = Math.abs(z)
+  // Beds sit on z = ±8. Outside this band the circle cannot touch one.
+  if (az < 6.35 || az > 9.65) return null
+  const band = 0.55
+  let best = band
+  let nx = 0
+  let nz = 0
+  let found = false
   for (let i = 0; i < BEDS.length; i++) {
     const b = BEDS[i]
     if (!b) continue
-    if (maxX > b.minX && minX < b.maxX && maxZ > b.minZ && minZ < b.maxZ) return true
+    const minX = b.minX - radius
+    const maxX = b.maxX + radius
+    const minZ = b.minZ - radius
+    const maxZ = b.maxZ + radius
+    const inside = x > minX && x < maxX && z > minZ && z < maxZ
+    if (inside) {
+      const penL = x - minX
+      const penR = maxX - x
+      const penB = z - minZ
+      const penT = maxZ - z
+      const minPen = Math.min(penL, penR, penB, penT)
+      const score = -minPen
+      if (score < best) {
+        best = score
+        found = true
+        if (minPen === penL) {
+          nx = -1
+          nz = 0
+        } else if (minPen === penR) {
+          nx = 1
+          nz = 0
+        } else if (minPen === penB) {
+          nx = 0
+          nz = -1
+        } else {
+          nx = 0
+          nz = 1
+        }
+      }
+      continue
+    }
+    const cx = x < minX ? minX : x > maxX ? maxX : x
+    const cz = z < minZ ? minZ : z > maxZ ? maxZ : z
+    const dx = x - cx
+    const dz = z - cz
+    const d = Math.hypot(dx, dz)
+    if (d < best && d > 1e-6) {
+      best = d
+      found = true
+      nx = dx / d
+      nz = dz / d
+    }
   }
-  return false
+  if (!found) return null
+  let ox = sx
+  let oz = sz
+  const into = ox * nx + oz * nz
+  if (into < 0) {
+    ox -= nx * into
+    oz -= nz * into
+  }
+  // A steer that already leaves the bed is kept, so a player on the same side is reachable.
+  // A steer aimed through the planter slides to the nearest open walk instead of the player's X,
+  // which sits on the bed and only makes the circle oscillate.
+  const away = ox * nx + oz * nz
+  if (!(away > 0.2 && Math.hypot(ox, oz) > 0.15)) {
+    if (Math.abs(nz) >= Math.abs(nx)) {
+      let best = tx
+      let bestD = 1e9
+      if (strips.length === 0) bestD = Math.abs(tx - x)
+      for (let s = 0; s < strips.length; s++) {
+        const at = strips[s] ?? 0
+        const d = Math.abs(at - x)
+        if (d < bestD) {
+          bestD = d
+          best = at
+        }
+      }
+      let dir = Math.sign(best - x)
+      if (dir === 0) dir = tx >= x ? 1 : -1
+      const withTravel = ox * dir > 0 ? ox * dir : 0
+      ox = dir * (1.25 + withTravel)
+      oz = 0
+    } else {
+      const dir = tz === z ? 1 : Math.sign(tz - z)
+      const withTravel = oz * dir > 0 ? oz * dir : 0
+      oz = dir * (1.25 + withTravel)
+      ox = 0
+    }
+  }
+  bedSteer.x = ox
+  bedSteer.z = oz
+  return bedSteer
 }
 
 function containCourt(x: number, z: number, radius: number): { x: number; z: number } {

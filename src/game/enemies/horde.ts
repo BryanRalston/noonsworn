@@ -7,7 +7,7 @@ import {
 import { TUNING, type DamageSource } from '../../data/tuning'
 import { FreeList } from '../../core/pool'
 import { yawFromDirection } from '../../core/math'
-import { slideCircle } from '../collision'
+import { BEDS, slideCircle, steerBeds } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
 import { createEnemyMaterial, makeCrowd } from '../../render/instancing'
@@ -524,7 +524,10 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
             sz += (oz / d) * push
           }
         }
-        const sl = Math.hypot(sx, sz) || 1
+        if (BEDS.length > 0 && sx * nx + sz * nz < 0.2) {
+          sx += nx
+          sz += nz
+        }
         const spec = type[i] === 0 ? TUNING.mite : TUNING.hound
         if ((burnT[i] ?? 0) > 0) {
           burnT[i] = (burnT[i] ?? 0) - ctx.dt
@@ -543,8 +546,14 @@ export function createHorde(miteGeo: BufferGeometry, houndGeo: BufferGeometry): 
         const spd = spec.speed * (lit[i] ? TUNING.exposedSpeed : 1) * ((slowT[i] ?? 0) > 0 ? 0.6 : 1)
         const ox = x[i] ?? 0
         const oz = z[i] ?? 0
-        x[i] = ox + (sx / sl) * spd * ctx.dt
-        z[i] = oz + (sz / sl) * spd * ctx.dt
+        const along = steerBeds(ox, oz, spec.radius, sx, sz, ctx.px, ctx.pz)
+        if (along) {
+          sx = along.x
+          sz = along.z
+        }
+        const steer = Math.hypot(sx, sz) || 1
+        x[i] = ox + (sx / steer) * spd * ctx.dt
+        z[i] = oz + (sz / steer) * spd * ctx.dt
         const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
         x[i] = slid.x
         z[i] = slid.z

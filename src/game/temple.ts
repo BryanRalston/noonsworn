@@ -19,6 +19,7 @@ import {
   cellBlocked,
   closeGates,
   gateOpen,
+  bedRowsBetween,
   segmentBlocked,
   setGateOpen,
   trimPillars,
@@ -594,12 +595,18 @@ export function createTemple(): Temple {
     },
     guide(x, z, px, pz) {
       if (opened === 0 && !routingOn) return null
-      if (BEDS.length > 0 && Math.abs(z) < 6.5 && Math.abs(pz) < 6.5 && Math.abs(x) < 22 && Math.abs(px) < 22) return null
       const dx = px - x
       const dz = pz - z
       const dist = Math.hypot(dx, dz)
-      if (dist <= TUNING.temple.flowNear) return null
-      if (!segmentBlocked(x, z, px, pz)) return null
+      if (BEDS.length === 0) {
+        if (dist <= TUNING.temple.flowNear) return null
+        if (!segmentBlocked(x, z, px, pz)) return null
+      } else {
+        if (dist <= 1.25) return null
+        const court = Math.abs(x) < 22 && Math.abs(px) < 22 && Math.abs(z) < 14 && Math.abs(pz) < 14
+        if (court && !bedRowsBetween(z, pz)) return null
+        if (!segmentBlocked(x, z, px, pz)) return null
+      }
       const c = cellIndex(x, z)
       if (c < 0) return null
       const sx = readX[c] ?? 0
