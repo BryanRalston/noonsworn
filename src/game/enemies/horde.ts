@@ -94,6 +94,31 @@ function darterGeometry(): BufferGeometry {
   return geo
 }
 
+interface UploadRange {
+  start: number
+  count: number
+}
+
+function stage(attr: InstancedBufferAttribute, elements: number, range: UploadRange) {
+  if (elements <= 0) return
+  range.start = 0
+  range.count = elements
+  const list = attr.updateRanges
+  list[0] = range
+  list.length = 1
+  attr.needsUpdate = true
+}
+
+function crowdRanges(): { pose: UploadRange; flash: UploadRange; lit: UploadRange; matrix: UploadRange; color: UploadRange } {
+  return {
+    pose: { start: 0, count: 0 },
+    flash: { start: 0, count: 0 },
+    lit: { start: 0, count: 0 },
+    matrix: { start: 0, count: 0 },
+    color: { start: 0, count: 0 },
+  }
+}
+
 function attrs(mesh: InstancedMesh) {
   const pose = new InstancedBufferAttribute(new Float32Array(MAX * 4), 4)
   const flash = new InstancedBufferAttribute(new Float32Array(MAX), 1)
@@ -246,8 +271,13 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const miteA = attrs(miteMesh)
   const houndA = attrs(houndMesh)
   const darterA = attrs(darterMesh)
+  const miteRange = crowdRanges()
+  const houndRange = crowdRanges()
+  const darterRange = crowdRanges()
   miteMesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX * 3), 3)
   houndMesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX * 3), 3)
+  miteMesh.instanceColor.setUsage(DynamicDrawUsage)
+  houndMesh.instanceColor.setUsage(DynamicDrawUsage)
   const miteMorph = new Mesh(miteSrc.geometry)
   const houndMorph = new Mesh(houndSrc.geometry)
   const miteMorphN = miteSrc.geometry.morphAttributes.position?.length ?? 0
@@ -334,7 +364,9 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     ctx.onDeath(x[i] ?? 0, z[i] ?? 0, lit[i] === 1)
   }
 
+  const telePool = Array.from({ length: 8 }, () => ({ x: 0, z: 0, yaw: 0 }))
   const telegraphs: { x: number; z: number; yaw: number }[] = []
+  let teleN = 0
   const horde: Horde = {
     x,
     z,
@@ -933,11 +965,13 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       let mites = 0
       let hounds = 0
       let darters = 0
-      telegraphs.length = 0
+      teleN = 0
       let miteFlash = false
       let miteLit = false
+      let miteColor = false
       let houndFlash = false
       let houndLit = false
+      let houndColor = false
       let darterFlash = false
       let darterLit = false
       for (let i = 0; i < MAX; i++) {
@@ -970,12 +1004,20 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           if (miteSrc.hop && miteMorphN > 0) sampleMorph(miteSrc.hop, phase[i] ?? 0, miteW)
           if (miteMorphN > 0) miteMesh.setMorphAt(mites, miteMorph)
           const jitter = 0.92 + ((i * 13) % 10) * 0.016
-          miteShade.setRGB(jitter, jitter, jitter)
-          miteMesh.setColorAt(mites, miteShade)
-          miteA.flash.setX(mites, hot)
-          miteA.lit.setX(mites, litNow)
-          miteFlash = true
-          miteLit = true
+          const miteCol = miteMesh.instanceColor
+          if (!miteCol || miteCol.getX(mites) !== jitter) {
+            miteShade.setRGB(jitter, jitter, jitter)
+            miteMesh.setColorAt(mites, miteShade)
+            miteColor = true
+          }
+          if (miteA.flash.getX(mites) !== hot) {
+            miteA.flash.setX(mites, hot)
+            miteFlash = true
+          }
+          if (miteA.lit.getX(mites) !== litNow) {
+            miteA.lit.setX(mites, litNow)
+            miteLit = true
+          }
           mites++
         } else {
           writeInstance(houndMesh, hounds, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
@@ -999,28 +1041,46 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           else for (let w = 0; w < houndW.length; w++) houndW[w] = 0
           if (houndMorphN > 0) houndMesh.setMorphAt(hounds, houndMorph)
           const jitter = 0.92 + ((i * 13) % 10) * 0.016
-          houndShade.setRGB(jitter, jitter, jitter)
-          houndMesh.setColorAt(hounds, houndShade)
-          houndA.flash.setX(hounds, hot)
-          houndA.lit.setX(hounds, litNow)
-          houndFlash = true
-          houndLit = true
-          if (state[i] === TELE) telegraphs.push({ x: x[i] ?? 0, z: z[i] ?? 0, yaw: yawNow })
+          const houndCol = houndMesh.instanceColor
+          if (!houndCol || houndCol.getX(hounds) !== jitter) {
+            houndShade.setRGB(jitter, jitter, jitter)
+            houndMesh.setColorAt(hounds, houndShade)
+            houndColor = true
+          }
+          if (houndA.flash.getX(hounds) !== hot) {
+            houndA.flash.setX(hounds, hot)
+            houndFlash = true
+          }
+          if (houndA.lit.getX(hounds) !== litNow) {
+            houndA.lit.setX(hounds, litNow)
+            houndLit = true
+          }
+          if (state[i] === TELE && teleN < telePool.length) {
+            const mark = telePool[teleN]
+            if (mark) {
+              mark.x = x[i] ?? 0
+              mark.z = z[i] ?? 0
+              mark.yaw = yawNow
+              telegraphs[teleN] = mark
+              teleN++
+            }
+          }
           hounds++
         }
       }
-      finish(miteMesh, mites, miteA, miteFlash, miteLit)
-      finish(houndMesh, hounds, houndA, houndFlash, houndLit)
-      finish(darterMesh, darters, darterA, darterFlash, darterLit)
+      telegraphs.length = teleN
+      finish(miteMesh, mites, miteA, miteFlash, miteLit, miteRange)
+      finish(houndMesh, hounds, houndA, houndFlash, houndLit, houndRange)
+      finish(darterMesh, darters, darterA, darterFlash, darterLit, darterRange)
       if (mites > 0) {
-        miteMesh.instanceMatrix.needsUpdate = true
+        stage(miteMesh.instanceMatrix, mites * 16, miteRange.matrix)
+        if (miteColor && miteMesh.instanceColor) stage(miteMesh.instanceColor, mites * 3, miteRange.color)
         if (miteMesh.morphTexture) miteMesh.morphTexture.needsUpdate = true
-        if (miteMesh.instanceColor) miteMesh.instanceColor.needsUpdate = true
       }
       if (hounds > 0) {
-        houndMesh.instanceMatrix.needsUpdate = true
+        stage(houndMesh.instanceMatrix, hounds * 16, houndRange.matrix)
+        if (houndColor && houndMesh.instanceColor) stage(houndMesh.instanceColor, hounds * 3, houndRange.color)
         if (houndMesh.morphTexture) houndMesh.morphTexture.needsUpdate = true
-        if (houndMesh.instanceColor) houndMesh.instanceColor.needsUpdate = true
       }
     },
   }
@@ -1033,14 +1093,12 @@ function finish(
   a: { pose: InstancedBufferAttribute; flash: InstancedBufferAttribute; lit: InstancedBufferAttribute },
   flashDirty: boolean,
   litDirty: boolean,
+  range: { pose: UploadRange; flash: UploadRange; lit: UploadRange },
 ) {
   mesh.count = count
   mesh.visible = count > 0
-  if (count > 0) {
-    a.pose.clearUpdateRanges()
-    a.pose.addUpdateRange(0, count * 4)
-    a.pose.needsUpdate = true
-  }
-  if (count > 0 && flashDirty) a.flash.needsUpdate = true
-  if (count > 0 && litDirty) a.lit.needsUpdate = true
+  if (count <= 0) return
+  stage(a.pose, count * 4, range.pose)
+  if (flashDirty) stage(a.flash, count, range.flash)
+  if (litDirty) stage(a.lit, count, range.lit)
 }
