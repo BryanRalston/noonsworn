@@ -11,6 +11,7 @@ import {
   DynamicDrawUsage,
   Float32BufferAttribute,
   InstancedBufferAttribute,
+  Group,
   InstancedMesh,
   Mesh,
   Object3D,
@@ -247,6 +248,7 @@ const EYE_GOLD = new Color('#E8C36A')
 
 interface BossView {
   mesh: Mesh
+  root: Group
   uTime: { value: number }
   uPour: { value: number }
   uPhase: { value: number }
@@ -427,15 +429,22 @@ function buildBoss(): BossView {
     `,
   })
   const mesh = new Mesh(geo, mat)
-  mesh.name = 'compline'
-  mesh.scale.setScalar(BOSS_SCALE)
+  mesh.name = 'complineFallback'
   mesh.frustumCulled = false
   mesh.castShadow = false
-  return { mesh, uTime, uPour, uPhase, uShudder, uDrink }
+  const root = new Group()
+  root.name = 'compline'
+  root.frustumCulled = false
+  root.add(mesh)
+  return { mesh, root, uTime, uPour, uPhase, uShudder, uDrink }
 }
 
 const loopPt = { x: 0, z: 0 }
 const outPt = { x: 0, z: 0 }
+const steerScan = new Uint8Array(V_MAX)
+const steerBest = new Float32Array(V_MAX)
+steerBest.fill(1e9)
+const steerAng = new Float32Array(3)
 
 function outward(x: number, z: number, ap: number): { x: number; z: number } {
   const o = octDist(x, z)
@@ -490,8 +499,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   vMesh.count = 0
   bMesh.count = 0
   const bossParts = buildBoss()
-  bossParts.mesh.visible = false
-  parent.add(vMesh, bMesh, bossParts.mesh)
+  // One replaceable node at floor centre. The procedural mesh is the fallback child; a later skinned mesh swaps in beside this origin.
+  bossParts.root.visible = false
+  parent.add(vMesh, bMesh, bossParts.root)
   const trackPt = { x: 0, z: 0, r: 0 }
   const occPool = [
     { x: 0, z: 0, r: 0 },
@@ -632,6 +642,11 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     foe.wash = 0
     foe.flash = 0
     foe.heading = Math.atan2(-z, -x || 1)
+    const slot = votaries.indexOf(foe)
+    if (slot >= 0) {
+      steerScan[slot] = 0
+      steerBest[slot] = 1e9
+    }
     foe.mode = 0
     foe.vx = 0
     foe.vz = -1
@@ -675,8 +690,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     bossDead = false
     bossHp = specBoss.hp
     phase = 1
-    bossX = 0
-    bossZ = -8.4
+    bossX = 2.2
+    bossZ = 1.6
     bossY = -1.6
     rise = 3
     riseHit = false
@@ -687,7 +702,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     selfCd = 8
     hold = false
     dry = 0
-    bossParts.mesh.visible = true
+    bossParts.root.visible = true
     hooks.cull(40)
     trackBoss()
     hooks.sfx('compline_wake')
@@ -840,7 +855,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       visual.fan = 0
       vMesh.count = 0
       bMesh.count = 0
-      bossParts.mesh.visible = false
+      bossParts.root.visible = false
       shudder = 0
       qHead = 0
       qTail = 0
@@ -923,21 +938,21 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       return occOut
     },
     warm(renderer, camera) {
-      const shown = [vMesh.visible, bMesh.visible, bossParts.mesh.visible]
+      const shown = [vMesh.visible, bMesh.visible, bossParts.root.visible]
       const counts = [vMesh.count, bMesh.count]
       vMesh.visible = true
       bMesh.visible = true
-      bossParts.mesh.visible = true
+      bossParts.root.visible = true
       vMesh.count = Math.max(1, counts[0] ?? 0)
       bMesh.count = Math.max(1, counts[1] ?? 0)
       renderer.compile(vMesh, camera)
       renderer.compile(bMesh, camera)
-      renderer.compile(bossParts.mesh, camera)
+      renderer.compile(bossParts.root, camera)
       vMesh.count = counts[0] ?? 0
       bMesh.count = counts[1] ?? 0
       vMesh.visible = shown[0] ?? false
       bMesh.visible = shown[1] ?? false
-      bossParts.mesh.visible = shown[2] ?? false
+      bossParts.root.visible = shown[2] ?? false
     },
     cleared: () => bossDead,
     bossing: () => bossOn,
@@ -1192,16 +1207,19 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           foe.t = 0
           const aim = Math.atan2(dz, dx)
           if (lite) {
-            const h = foe.scan % 3
-            const ang = aim + (h - 1) * 0.7
+            const h = (steerScan[i] ?? 0) % 3
+            steerAng[0] = aim - 0.7
+            steerAng[1] = aim
+            steerAng[2] = aim + 0.7
+            const ang = steerAng[h] ?? aim
             const sx = foe.x + Math.cos(ang) * 1.5
             const sz = foe.z + Math.sin(ang) * 1.5
             const score = (ask.under(sx, sz) ? 2 : 0) - (Math.cos(ang) * dx + Math.sin(ang) * dz) / dist
-            if (h === 0 || score < foe.best) {
-              foe.best = score
+            if (h === 0 || score < (steerBest[i] ?? 1e9)) {
+              steerBest[i] = score
               foe.heading = ang
             }
-            foe.scan = h + 1
+            steerScan[i] = h + 1
           } else {
             let best = foe.heading
             let bestS = 1e9
@@ -1307,14 +1325,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           }
         } else if (phase === 1 || phase === 2) {
           const loop = nearestLoop(px, pz)
-          let tx = loop.x
-          let tz = loop.z
-          const reach = Math.max(Math.abs(bossX), Math.abs(bossZ))
-          if (reach < LOOP_R - 0.8) {
-            const s = LOOP_R / Math.max(reach, 0.25)
-            tx = bossX * s
-            tz = bossZ * s
-          }
+          const tx = loop.x
+          const tz = loop.z
           const dx = tx - bossX
           const dz = tz - bossZ
           const dist = Math.hypot(dx, dz) || 1
@@ -1431,18 +1443,18 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         bossParts.uPhase.value = phase
         bossParts.uShudder.value = shudder
         bossParts.uDrink.value = phase === 3 && drink > 0 && drink < 4 ? 1 : 0
-        bossParts.mesh.rotation.y = face
-        bossParts.mesh.rotation.x = 0
+        bossParts.root.rotation.y = face
+        bossParts.root.rotation.x = 0
         const bob = phase === 3 && slamT > 0.4 ? (0.9 - slamT) * 0.35 : Math.sin(time * 1.3) * 0.04
-        bossParts.mesh.position.set(bossX, bossY + bob + (bossDead ? -2 : 0), bossZ)
-        bossParts.mesh.scale.setScalar(bossHp > 0 ? BOSS_SCALE : Math.max(0.2, BOSS_SCALE))
+        bossParts.root.position.set(bossX, bossY + bob + (bossDead ? -2 : 0), bossZ)
+        bossParts.root.scale.setScalar(bossHp > 0 ? BOSS_SCALE : Math.max(0.2, BOSS_SCALE))
         trackBoss()
       } else if (bossDead) {
         bossY -= dt * 0.8
-        bossParts.mesh.position.set(bossX, bossY, bossZ)
+        bossParts.root.position.set(bossX, bossY, bossZ)
         const s = Math.max(0, 1 + bossY * 0.3)
-        bossParts.mesh.scale.setScalar(s)
-        if (s <= 0.05) bossParts.mesh.visible = false
+        bossParts.root.scale.setScalar(s)
+        if (s <= 0.05) bossParts.root.visible = false
       }
       prevCycle = cycle
       sync(vMesh, votaries, vHot, () => 0, () => 1)
@@ -1463,5 +1475,20 @@ function nearestLoop(px: number, pz: number): { x: number; z: number } {
     loopPt.x = Math.max(-LOOP_R, Math.min(LOOP_R, px))
     loopPt.z = Math.sign(pz || -1) * LOOP_R
   }
+  // Blend toward a southeast court point so she stays off the far colonnade and low in the southeast view.
+  let bx = loopPt.x * 0.38 + 2.48
+  let bz = loopPt.z * 0.38 + 2.48
+  const o = octDist(bx, bz)
+  if (o < 10.4) {
+    const s = 11 / Math.max(o, 0.25)
+    bx *= s
+    bz *= s
+  }
+  if (bx > 14) bx = 14
+  else if (bx < -8) bx = -8
+  if (bz > 14) bz = 14
+  else if (bz < -6) bz = -6
+  loopPt.x = bx
+  loopPt.z = bz
   return loopPt
 }
