@@ -293,6 +293,7 @@ uniform float uLite;
 uniform float uWarn;
 uniform float uFront;
 uniform float uDry;
+uniform float uLevel;
 uniform vec4 uLane0;
 uniform vec4 uLane1;
 uniform float uLaneT;
@@ -461,7 +462,17 @@ void main() {
     float ring = abs(fract(o * 0.42) - 0.5);
     col = mix(col, uGold, (1.0 - smoothstep(0.012, 0.045, ring)) * 0.55);
   }
-  if (uLite < 0.5 && o > 6.0 && o < 10.0 && directHard(p)) {
+  bool damp = o < 10.0 && (uDry > 0.4 || uLevel < 0.4);
+  if (damp && o > 0.35) {
+    vec3 dampStone = vec3(0.42, 0.37, 0.31);
+    col = mix(col, dampStone, 0.8);
+    float gx = smoothstep(0.47, 0.5, abs(fract(p.x * 0.55) - 0.5));
+    float gy = smoothstep(0.47, 0.5, abs(fract(p.y * 0.55) - 0.5));
+    col = mix(col, dampStone * vec3(0.7, 0.68, 0.62), clamp(gx + gy, 0.0, 1.0) * 0.7);
+    float h = fract(sin(dot(floor(p * 4.0), vec2(127.1, 311.7))) * 43758.5453);
+    float tw = 0.35 + 0.65 * sin(uTime * 1.6 + h * 6.2831);
+    col += vec3(0.76, 0.72, 0.6) * step(0.955, h) * tw * 0.55;
+  } else if (uLite < 0.5 && o > 6.0 && o < 10.0 && directHard(p)) {
     float spark = fract(sin(dot(floor(p * 3.0), vec2(127.1, 311.7))) * 43758.5453);
     col += uGold * step(0.84, spark) * 0.45;
   }
@@ -1107,6 +1118,7 @@ export function createCloister(opts: {
       uWarn,
       uFront,
       uDry: uDryU,
+      uLevel,
       uLane0,
       uLane1,
       uLaneT,
