@@ -190,6 +190,8 @@ export interface HordeCtx {
   invuln: number
   vulnerable: () => boolean
   separate: boolean
+  /** Med and Low. Skips half the separation queries and morph uploads. */
+  lite: boolean
   might: number
   searing: number
   isLit: (x: number, z: number) => boolean
@@ -253,6 +255,10 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const staggerAt = new Float32Array(MAX)
   const aimX = new Float32Array(MAX)
   const aimZ = new Float32Array(MAX)
+  const sepX = new Float32Array(MAX)
+  const sepZ = new Float32Array(MAX)
+  let syncLite = false
+  let syncTick = 0
   const travelled = new Float32Array(MAX)
   let bonusMites = 0
   const type = new Uint8Array(MAX)
@@ -640,6 +646,8 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       kill(index, ctx)
     },
     update(ctx) {
+      syncLite = ctx.lite
+      syncTick = ctx.tick
       deepFn = ctx.deep
       stepDt = horde.frozen ? 0 : ctx.dt
       hashBuild(x, z, alive, MAX)
@@ -850,22 +858,31 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         }
         if (ctx.separate) {
           const rad = type[i] === 0 ? Math.max(TUNING.separationRadius, 0.55 + (body[i] ?? 1) * 0.55) : TUNING.separationRadius
-          const n = hashQuery(x[i] ?? 0, z[i] ?? 0, rad, QUERY)
-          for (let k = 0; k < n; k++) {
-            const j = QUERY[k] ?? -1
-            if (j === i || j < 0 || !alive[j]) continue
-            let ox = (x[i] ?? 0) - (x[j] ?? 0)
-            let oz = (z[i] ?? 0) - (z[j] ?? 0)
-            const d2 = ox * ox + oz * oz
-            if (d2 > rad * rad || d2 < 1e-6) {
-              if (d2 < 1e-6) sx += i % 2 === 0 ? 0.4 : -0.4
-              continue
+          const refresh = !ctx.lite || ((ctx.tick + i) & 1) === 0
+          if (refresh) {
+            let ax = 0
+            let az = 0
+            const n = hashQuery(x[i] ?? 0, z[i] ?? 0, rad, QUERY)
+            for (let k = 0; k < n; k++) {
+              const j = QUERY[k] ?? -1
+              if (j === i || j < 0 || !alive[j]) continue
+              const ox = (x[i] ?? 0) - (x[j] ?? 0)
+              const oz = (z[i] ?? 0) - (z[j] ?? 0)
+              const d2 = ox * ox + oz * oz
+              if (d2 > rad * rad || d2 < 1e-6) {
+                if (d2 < 1e-6) sx += i % 2 === 0 ? 0.4 : -0.4
+                continue
+              }
+              const d = Math.sqrt(d2)
+              const push = ((rad - d) / rad) * (type[i] === 0 ? 1.45 : 1)
+              ax += (ox / d) * push
+              az += (oz / d) * push
             }
-            const d = Math.sqrt(d2)
-            const push = ((rad - d) / rad) * (type[i] === 0 ? 1.45 : 1)
-            sx += (ox / d) * push
-            sz += (oz / d) * push
+            sepX[i] = ax
+            sepZ[i] = az
           }
+          sx += sepX[i] ?? 0
+          sz += sepZ[i] ?? 0
         }
         if (BEDS.length > 0 && sx * nx + sz * nz < 0.2) {
           sx += nx
@@ -962,6 +979,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       for (let i = 0; i < MAX; i++) if (alive[i]) yaw[i] = angle
     },
     sync(_camX, _camZ, _high) {
+      const writeMorph = !syncLite || (syncTick & 1) === 0
       let mites = 0
       let hounds = 0
       let darters = 0
@@ -1001,8 +1019,8 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           writeInstance(miteMesh, mites, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
           if (moving && state[i] !== DYING) phase[i] = ((phase[i] ?? 0) + stepDt / 0.4) % 1
           else phase[i] = 0
-          if (miteSrc.hop && miteMorphN > 0) sampleMorph(miteSrc.hop, phase[i] ?? 0, miteW)
-          if (miteMorphN > 0) miteMesh.setMorphAt(mites, miteMorph)
+          if (miteSrc.hop && miteMorphN > 0 && writeMorph) sampleMorph(miteSrc.hop, phase[i] ?? 0, miteW)
+          if (miteMorphN > 0 && writeMorph) miteMesh.setMorphAt(mites, miteMorph)
           const jitter = 0.92 + ((i * 13) % 10) * 0.016
           const miteCol = miteMesh.instanceColor
           if (!miteCol || miteCol.getX(mites) !== jitter) {
@@ -1037,9 +1055,11 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
             morphPhase = phase[i] ?? 0
           }
           const lut = useLunge ? houndSrc.lunge : houndSrc.gallop
-          if (lut && houndMorphN > 0 && (useLunge || moving)) sampleMorph(lut, morphPhase, houndW)
-          else for (let w = 0; w < houndW.length; w++) houndW[w] = 0
-          if (houndMorphN > 0) houndMesh.setMorphAt(hounds, houndMorph)
+          if (writeMorph) {
+            if (lut && houndMorphN > 0 && (useLunge || moving)) sampleMorph(lut, morphPhase, houndW)
+            else for (let w = 0; w < houndW.length; w++) houndW[w] = 0
+            if (houndMorphN > 0) houndMesh.setMorphAt(hounds, houndMorph)
+          }
           const jitter = 0.92 + ((i * 13) % 10) * 0.016
           const houndCol = houndMesh.instanceColor
           if (!houndCol || houndCol.getX(hounds) !== jitter) {
@@ -1075,12 +1095,12 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       if (mites > 0) {
         stage(miteMesh.instanceMatrix, mites * 16, miteRange.matrix)
         if (miteColor && miteMesh.instanceColor) stage(miteMesh.instanceColor, mites * 3, miteRange.color)
-        if (miteMesh.morphTexture) miteMesh.morphTexture.needsUpdate = true
+        if (writeMorph && miteMesh.morphTexture) miteMesh.morphTexture.needsUpdate = true
       }
       if (hounds > 0) {
         stage(houndMesh.instanceMatrix, hounds * 16, houndRange.matrix)
         if (houndColor && houndMesh.instanceColor) stage(houndMesh.instanceColor, hounds * 3, houndRange.color)
-        if (houndMesh.morphTexture) houndMesh.morphTexture.needsUpdate = true
+        if (writeMorph && houndMesh.morphTexture) houndMesh.morphTexture.needsUpdate = true
       }
     },
   }

@@ -415,6 +415,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     invuln: 0,
     vulnerable: () => player.iframe <= 0 && player.invuln <= 0,
     separate: true,
+    lite: false,
     might: 0,
     searing: 0,
     isLit: (x, z) => litAt(x, z),
@@ -580,6 +581,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     ctx.iframe = player.iframe
     ctx.invuln = player.invuln
     ctx.separate = tick % (quality.tier === 'low' ? 2 : 1) === 0
+    ctx.lite = quality.tier !== 'high'
     ctx.might = build.might
     ctx.searing = build.searing
     ctx.guide = activeMap === 'cloister' && cloister ? cloister.guide : temple.routing() ? temple.guide : null
