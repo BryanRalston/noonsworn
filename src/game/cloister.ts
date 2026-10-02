@@ -464,7 +464,7 @@ void main() {
   }
   bool damp = o < 10.0 && (uDry > 0.4 || uLevel < 0.4);
   if (damp && o > 0.35) {
-    vec3 dampStone = vec3(0.42, 0.37, 0.31);
+    vec3 dampStone = vec3(0.34, 0.30, 0.25);
     col = mix(col, dampStone, 0.8);
     float gx = smoothstep(0.47, 0.5, abs(fract(p.x * 0.55) - 0.5));
     float gy = smoothstep(0.47, 0.5, abs(fract(p.y * 0.55) - 0.5));
