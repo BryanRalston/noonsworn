@@ -756,8 +756,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           cloister = mod.createCloister({
             scene: gpu.scene,
             uniforms: floor.uniforms,
-            hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay],
-            restore: [floorMesh, shell, pillars, inlay],
+            hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay, scatter],
+            restore: [floorMesh, shell, pillars, inlay, scatter],
             preload: (names) => audio.preload(names),
             lowpass: (hz) => audio.lowpass(hz),
             hooks: {
