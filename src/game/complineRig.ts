@@ -76,6 +76,8 @@ export interface ComplineRig {
   spread: (u: number) => void
   noteWarm: (renderer: WebGLRenderer, camera: Camera) => void
   haloTop: (out: Vector3) => boolean
+  /** Halo crown in the bone matrix from the last render. Does not update matrices. */
+  haloSample: (out: Vector3) => boolean
   /** Visual mesh scale only. Desktop stays at COMPLINE_SCALE. Portrait may use 1.3. Hitbox is unchanged. */
   fit: (portrait: boolean) => void
   dispose: () => void
@@ -362,6 +364,13 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     handR.position.copy(vHand0).addScaledVector(vAlong, extra * w)
   }
 
+  function sampleHalo(out: Vector3): boolean {
+    if (!haloBone) return false
+    // Ring radius is 0.62 m and the ring tilts back. This local point is the high side of that ring.
+    out.set(0, 0.58, -0.28).applyMatrix4(haloBone.matrixWorld)
+    return true
+  }
+
   return {
     ready: () => mixer !== null,
     step(dt) {
@@ -397,9 +406,12 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     spread(u) {
       if (u <= 0.001) {
         puddle.visible = false
+        if (skin) skin.visible = true
         return
       }
+      // The puddle covers the sink. Hiding the body keeps the death frame at one draw.
       puddle.visible = true
+      if (skin) skin.visible = false
       puddle.scale.setScalar(PUDDLE_R * visualScale * u)
     },
     fit(portrait) {
@@ -415,9 +427,11 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     haloTop(out) {
       if (!haloBone) return false
       haloBone.updateWorldMatrix(true, false)
-      // Ring radius is 0.62 m and the ring tilts back. This local point is the high side of that ring.
-      out.set(0, 0.58, -0.28).applyMatrix4(haloBone.matrixWorld)
-      return true
+      return sampleHalo(out)
+    },
+    haloSample(out) {
+      if (!haloBone) return false
+      return sampleHalo(out)
     },
     dispose() {
       mixer?.stopAllAction()

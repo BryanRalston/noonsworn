@@ -632,6 +632,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   const rig = attachCompline(bossParts.root, bossParts.mesh)
   let viewCam: Camera | null = null
   let haloOver = 0
+  let haloHold = false
   let wantX = 0
   let wantZ = 0
   bossParts.root.visible = false
@@ -1339,7 +1340,10 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       bMat.uniforms.uTime!.value = time
       enrage = time >= specBoss.enrage ? 1.5 : 1
       if (!born && time >= specBoss.wake) wake(time)
-      if (viewCam instanceof PerspectiveCamera) rig.fit(viewCam.aspect < 1)
+      if (!bossOn) {
+        haloOver = 0
+        haloHold = false
+      } else if (viewCam instanceof PerspectiveCamera) rig.fit(viewCam.aspect < 1)
       if (!proc && time >= 210) {
         proc = true
         for (let i = 0; i < 6; i++) enqueue(1, -3 + i * 1.2, -21.2)
@@ -1525,6 +1529,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       visual.slamR = 0
       visual.laneT = 0
       if (bossOn) {
+        sampleHalo(lite)
         bossT += dt
         if (rig.ready() && wantShudder) {
           wantShudder = false
@@ -1618,7 +1623,6 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           let tx = wantX
           let tz = wantZ
           if (viewCam && haloNdc.y > 0.74) {
-            viewCam.updateMatrixWorld()
             const e = viewCam.matrixWorld.elements
             const dx = (e[12] ?? 0) - bossX
             const dz = (e[14] ?? 0) - bossZ
@@ -1763,29 +1767,35 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     },
   }
 
+  function sampleHalo(lite: boolean) {
+    if (!bossOn || !viewCam) {
+      haloOver = 0
+      return
+    }
+    if (lite && (steerTick & 1) === 1 && haloHold) return
+    haloHold = true
+    if (!rig.haloSample(haloNdc)) {
+      haloOver = 0
+      return
+    }
+    haloNdc.project(viewCam)
+    const overTop = haloNdc.y - 0.74
+    const overBot = -0.88 - haloNdc.y
+    const overX = Math.abs(haloNdc.x) - 0.86
+    haloOver = Math.max(0, overTop, overBot, overX)
+  }
+
   function easeCentre(tx: number, tz: number, px: number, pz: number): { x: number; z: number } {
     easePt.x = tx
     easePt.z = tz
     wantX = tx
     wantZ = tz
-    if (!viewCam || !rig.haloTop(haloNdc)) {
-      haloOver = 0
-      return easePt
-    }
-    haloNdc.project(viewCam)
-    // NDC y = +1 is the top. The timer band is the top 12% (y > 0.76). Aim a little under it so the pull settles inside the safe area.
+    if (haloOver <= 0 || !viewCam) return easePt
     const overTop = haloNdc.y - 0.74
     const overBot = -0.88 - haloNdc.y
     const overX = Math.abs(haloNdc.x) - 0.86
-    haloOver = Math.max(0, overTop, overBot, overX)
-    if (haloOver <= 0) {
-      wantX = tx
-      wantZ = tz
-      return easePt
-    }
     // Crown in the timer band: she is too far from the camera, so step the target toward the camera. Bottom and sides step toward court centre.
     if (overTop >= overBot && overTop >= overX && overTop > 0) {
-      viewCam.updateMatrixWorld()
       const e = viewCam.matrixWorld.elements
       const dx = (e[12] ?? 0) - tx
       const dz = (e[14] ?? 0) - tz

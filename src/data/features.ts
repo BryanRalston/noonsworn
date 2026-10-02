@@ -102,5 +102,6 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Controls', feature: 'First-run hints play on the Sundial only, clear of the player ring', status: 'shipped', since: 'M5c' },
   { area: 'Combat & Weapons', feature: 'Compline halo stays under the timer band', status: 'shipped', since: 'M5c' },
   { area: 'Combat & Weapons', feature: 'Compline reads at 1.3x on portrait; desktop stays 1.2', status: 'shipped', since: 'M5c' },
+  { area: 'Graphics/Performance', feature: 'Compline halo pull samples the last render and idles while the boss is down; the death puddle replaces the body draw', status: 'shipped', since: 'M5c.1' },
   { area: 'Maps', feature: 'Westering Stair coming soon', status: 'shipped', since: 'M5b' },
 ]

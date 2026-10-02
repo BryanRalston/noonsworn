@@ -69,6 +69,13 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
   let litHold = 0
   let drawn = -1
   let drawnDevice = ''
+  let labelH = 36
+  let labelW = 120
+  let cutKey = ''
+  let cutL = 0
+  let cutR = 0
+  let cutT = 0
+  let cutW = 0
 
   function save() {
     storageSet(KEY, step >= 6 ? 'done' : String(step))
@@ -142,8 +149,6 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
     topY = screenTop(x - d, 0, z - d, camera, height, topY)
     v.set(x, 0, z).project(camera)
     let left = (v.x * 0.5 + 0.5) * width
-    const labelH = Math.max(36, label.offsetHeight)
-    const labelW = Math.max(120, label.offsetWidth)
     let top = topY - 36 - labelH
     if (!Number.isFinite(top) || top < height * 0.12) {
       top = height * 0.64
@@ -151,13 +156,11 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
     }
     const half = labelW * 0.5
     const portrait = height > width
-    const cut = document.getElementById('btn-cut')
     const touchOn = document.getElementById('touch-root')?.classList.contains('touch-off') === false
-    if (cut && (portrait || touchOn)) {
-      const r = cut.getBoundingClientRect()
-      const reserveL = r.width > 0 ? r.left - 16 : width - 130
-      const reserveT = r.height > 0 ? r.top - 16 : height - 150
-      const overlaps = left + half > reserveL && left - half < (r.width > 0 ? r.right + 16 : width) && top + labelH > reserveT
+    if (portrait || touchOn) {
+      const reserveL = cutW > 0 ? cutL - 16 : width - 130
+      const reserveT = cutW > 0 ? cutT - 16 : height - 150
+      const overlaps = left + half > reserveL && left - half < (cutW > 0 ? cutR + 16 : width) && top + labelH > reserveT
       if (overlaps) {
         const above = reserveT - labelH
         if (above >= height * 0.45) top = above
@@ -310,7 +313,25 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       // The floor glyph is 4.8 m across and sat on the 0.8 m player ring. The label is the hint.
       mesh.visible = false
       label.hidden = false
-      label.textContent = line(now.device)
+      const nextLine = line(now.device)
+      if (label.textContent !== nextLine) {
+        label.textContent = nextLine
+        labelH = Math.max(36, label.offsetHeight)
+        labelW = Math.max(120, label.offsetWidth)
+      }
+      const touchOn = document.getElementById('touch-root')?.classList.contains('touch-off') === false
+      const key = width + 'x' + height + (touchOn ? 't' : 'd')
+      if (key !== cutKey) {
+        cutKey = key
+        const cut = document.getElementById('btn-cut')
+        if (cut) {
+          const r = cut.getBoundingClientRect()
+          cutL = r.left
+          cutR = r.right
+          cutT = r.top
+          cutW = r.width
+        } else cutW = 0
+      }
       const placed = placeLabel(x, z, camera, width, height)
       label.style.transform = `translate(${placed.x}px, ${placed.y}px) translate(-50%, 0)`
       if (step === 5 && now.charges > 0) aimArrow()
