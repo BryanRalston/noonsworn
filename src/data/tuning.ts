@@ -93,7 +93,12 @@ export const TUNING = {
     betaR: 60,
     deepWeapon: 0.3,
     deepBoss: 0.25,
+    shadeBoss: 0.35,
     pin: 4,
+    votary: { hp: 54, speed: 2.5, contact: 10, xp: 5, radius: 0.42 },
+    blot: { hp: 36, crawl: 1.2, contact: 6, xp: 4, dock: 9.2, spit: 8, spitSpeed: 9, radius: 1.4 },
+    boss: { hp: 10500, contact: 30, radius: 1.6, wake: 270, enrage: 390, speed1: 2.4, speed2: 2.6, speed3: 1.9 },
+    wash: { telegraph: 2, enemy: 12, sela: 10, push: 11.2, stagger: 0.6, washed: 2.5, slow: 0.8, selaSlow: 0.3 },
   },
   look: {
     exposure: 1.32,

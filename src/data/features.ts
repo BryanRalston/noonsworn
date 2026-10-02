@@ -92,4 +92,9 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Graphics/Performance', feature: 'Prewarm pooled materials before the first fight frame', status: 'shipped', since: 'P1.1' },
   { area: 'Combat & Weapons', feature: 'Espalier trellis scaled into the fight frame', status: 'shipped', since: 'P1.1' },
   { area: 'Maps', feature: 'Rounder planter and Espalier leaves', status: 'shipped', since: 'P1.1' },
+  { area: 'Combat & Weapons', feature: 'Cowled Votary', status: 'shipped', since: 'M5b' },
+  { area: 'Combat & Weapons', feature: 'Mere Blot', status: 'shipped', since: 'M5b' },
+  { area: 'Shadow-Clock', feature: 'Brimwash', status: 'shipped', since: 'M5b' },
+  { area: 'Combat & Weapons', feature: 'The Compline', status: 'shipped', since: 'M5b' },
+  { area: 'Maps', feature: 'Westering Stair coming soon', status: 'shipped', since: 'M5b' },
 ]

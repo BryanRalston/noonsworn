@@ -66,6 +66,10 @@ export interface AudioBus {
   sample: () => void
   counts: () => Record<string, number>
   meter: () => { peak: number; clipped: number; voices: number; duck: number }
+  preload: (names: readonly string[]) => void
+  cue: (name: string) => void
+  lowpass: (hz: number) => void
+  lowpassHz: () => number
 }
 
 function preferOgg(): boolean {
@@ -78,7 +82,9 @@ export function createAudio(fxRng: () => number): AudioBus {
   let master: GainNode | null = null
   let sfxBus: GainNode | null = null
   let musicBus: GainNode | null = null
+  let musicLow: BiquadFilterNode | null = null
   let duckGain: GainNode | null = null
+  let lowHz = 18000
   let ambBus: GainNode | null = null
   let post: GainNode | null = null
   let analyser: AnalyserNode | null = null
@@ -101,7 +107,7 @@ export function createAudio(fxRng: () => number): AudioBus {
   }
   const live: Record<string, number> = { hit: 0, armored: 0, kill: 0, xp: 0, spear: 0, shimmer: 0, exposed: 0, hurt: 0, level: 0, total: 0 }
   let voicePeak = 0
-  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1, slam: 3, land: 1, hum: 2, bloom: 4, shutter: 2, dart: 4, boss: 2 }
+  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1, slam: 3, land: 1, hum: 2, bloom: 4, shutter: 2, dart: 4, boss: 2, water: 1, blot_spit: 3, compline: 1 }
   let clipped = 0
   let held = 0
   let xpWindow = 0
@@ -119,6 +125,10 @@ export function createAudio(fxRng: () => number): AudioBus {
       master = ctx.createGain()
       sfxBus = ctx.createGain()
       musicBus = ctx.createGain()
+      musicLow = ctx.createBiquadFilter()
+      musicLow.type = 'lowpass'
+      musicLow.frequency.value = lowHz
+      musicLow.Q.value = 0.707
       duckGain = ctx.createGain()
       ambBus = ctx.createGain()
       post = ctx.createGain()
@@ -138,7 +148,8 @@ export function createAudio(fxRng: () => number): AudioBus {
       analyser.fftSize = 2048
       analyser.smoothingTimeConstant = 0
       sfxBus.connect(master)
-      musicBus.connect(duckGain)
+      musicBus.connect(musicLow)
+      musicLow.connect(duckGain)
       duckGain.connect(master)
       ambBus.connect(master)
       master.connect(comp)
@@ -355,6 +366,25 @@ export function createAudio(fxRng: () => number): AudioBus {
         if (a >= 1) clipped++
       }
     },
+    preload(names) {
+      void loadSet(names)
+    },
+    cue(name) {
+      const kind = name === 'water_fill' || name === 'water_ebb' ? 'water' : name === 'blot_spit' ? 'blot_spit' : name.startsWith('compline') ? 'compline' : null
+      play(name, sfxBus, 0.7, 1, kind)
+      if (name === 'brimwash_crash' || name === 'compline_slam') duckTap()
+    },
+    lowpass(hz) {
+      if (!musicLow || !ctx) return
+      if (Math.abs(lowHz - hz) < 1) return
+      lowHz = hz
+      const now = ctx.currentTime
+      const freq = musicLow.frequency
+      freq.cancelScheduledValues(now)
+      freq.setValueAtTime(freq.value, now)
+      freq.linearRampToValueAtTime(hz, now + 1)
+    },
+    lowpassHz: () => lowHz,
     meter() {
       const db = 20 * Math.log10(Math.max(held, 1e-5))
       const param = duckGain?.gain as (AudioParam & { getValueAtTime?: (time: number) => number }) | undefined

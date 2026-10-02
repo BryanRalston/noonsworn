@@ -28,7 +28,14 @@ export interface Director {
     camZ: number,
     pour?: readonly WingPour[],
     wingPick?: (px: number, pz: number, rng: Rng, camX: number, camZ: number) => { x: number; z: number } | null,
-    lattice?: { darter: number; boss: boolean; rateMul?: number; relocate?: (x: number, z: number, rng: Rng) => { x: number; z: number } },
+    lattice?: {
+      darter: number
+      boss: boolean
+      rateMul?: number
+      votary?: number
+      onVotary?: (x: number, z: number) => void
+      relocate?: (x: number, z: number, rng: Rng) => { x: number; z: number }
+    },
   ) => void
 }
 
@@ -109,7 +116,7 @@ export function createDirector(): Director {
         const houndChance = wave.hound
         const darterP = lattice?.darter ?? 0
         let kind: 0 | 1 | 2 = 0
-        if (boss) kind = rng() < darterP ? 2 : 0
+        if (boss) kind = lattice?.onVotary ? 0 : rng() < darterP ? 2 : 0
         else if (darterP > 0) {
           const roll = rng()
           if (roll < darterP) kind = 2
@@ -136,6 +143,15 @@ export function createDirector(): Director {
           const spot = pickSpawn(px, pz, kind === 1 ? TUNING.hound.radius : kind === 2 ? TUNING.darter.radius : TUNING.mite.radius, rng, camX, camZ)
           spotX = spot.x
           spotZ = spot.z
+        }
+        if (lattice?.onVotary) {
+          const share = boss ? 0.35 : (lattice.votary ?? 0)
+          if (share > 0 && rng() < share) {
+            lattice.onVotary(spotX, spotZ)
+            spawned++
+            if (horde.count() >= minCount && director.acc < 1) break
+            continue
+          }
         }
         horde.spawn(kind, spotX, spotZ, false, cap, px, pz)
         spawned++

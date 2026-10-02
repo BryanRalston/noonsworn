@@ -363,6 +363,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let toastTimer = 0
   let xpStep = 0
   let cutWas = false
+  let washSlow = 0
   let litBurst = 0
   let stepAcc = 0
   let litBurstAt = 0
@@ -535,6 +536,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (noteRun(activeMap, time, kills, next === 'clear')) {
         if (activeMap === 'cloister') {
           screens.setToast('The Westering Stair — coming soon')
+          showToast('The Westering Stair — coming soon', 4.2)
           markSeen('stair')
         } else {
           screens.setToast('New temple opened')
@@ -685,8 +687,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
   horde.onDart = () => audio.darterDart()
   horde.bossHit = (x, z, radius, base, source, might, stamp) => {
-    if (activeMap !== 'lattice' || !lattice) return false
-    return lattice.hitBoss(x, z, radius, base, source, might, stamp)
+    if (activeMap === 'lattice' && lattice) return lattice.hitBoss(x, z, radius, base, source, might, stamp)
+    if (activeMap === 'cloister' && cloister) return cloister.soak(x, z, radius, base, source, might, stamp)
+    return false
+  }
+
+  function clearedNow(): boolean {
+    if (activeMap === 'lattice') return !!lattice?.cleared()
+    if (activeMap === 'cloister') return !!cloister?.cleared()
+    return time >= TUNING.runLength
   }
 
   function showToast(text: string, seconds = 3.2) {
@@ -749,6 +758,41 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
             uniforms: floor.uniforms,
             hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay],
             restore: [floorMesh, shell, pillars, inlay],
+            preload: (names) => audio.preload(names),
+            lowpass: (hz) => audio.lowpass(hz),
+            hooks: {
+              hurt: (amount, floorHp) => {
+                if (floorHp && player.hp - amount < 1) {
+                  player.hp = 1
+                  player.invuln = Math.max(player.invuln, TUNING.player.invuln)
+                  return
+                }
+                ctx.onHurt(amount)
+              },
+              slow: (seconds) => {
+                washSlow = Math.max(washSlow, seconds)
+              },
+              pushPlayer: (x, z) => {
+                player.x = x
+                player.z = z
+                player.px = x
+                player.pz = z
+              },
+              vulnerable: () => player.iframe <= 0 && player.invuln <= 0 && !cut.active,
+              each: (fn) => horde.each(fn),
+              damage: (index, base, source, might) => horde.damage(index, base, source, might),
+              place: (index, x, z) => horde.place(index, x, z),
+              stagger: (index, seconds) => horde.staggerFor(index, seconds),
+              wash: (index, seconds) => horde.washFor(index, seconds),
+              xp: (x, z, value) => pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z),
+              ping: (x, z, lit) => fx.hit(x, z, lit),
+              spawn: (kind, x, z) => horde.spawn(kind, x, z, false, 56, player.x, player.z),
+              cull: (n) => horde.cullTo(n, player.x, player.z),
+              track: (at) => {
+                horde.bossAt = at
+              },
+              sfx: (name) => audio.cue(name),
+            },
           })
         })
         .finally(() => {
@@ -1334,7 +1378,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     step(dt, first) {
       sparkVis = 0
       const state = first ? frame : held
-      if (activeMap === 'lattice' ? lattice?.cleared() : time >= TUNING.runLength) {
+      if (clearedNow()) {
         showMode('clear')
         bus.emit('runEnd', { victory: true, time, kills, level: build.level })
         return false
@@ -1342,7 +1386,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
       if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
-      if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high')
+      if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high', time)
       temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
       temple.mask(floor.uniforms.uWing.value)
       temple.kinds(floor.uniforms.uKind.value)
@@ -1484,7 +1528,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         state.cutDirX = previewSweepX
         state.cutDirZ = previewSweepZ
       }
-      const speed = TUNING.player.speed * (1 + TUNING.passive.swift * build.swift)
+      if (washSlow > 0) washSlow = Math.max(0, washSlow - dt)
+      const speed = TUNING.player.speed * (1 + TUNING.passive.swift * build.swift) * (washSlow > 0 ? 1 - TUNING.cloister.wash.selaSlow : 1)
       const slipped = traps.begin(dt, player)
       if (traps.blocksCut()) {
         cut.active = false
@@ -1593,6 +1638,19 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         }, (hx, hz, lit) => {
           fx.hit(hx, hz, lit)
         })
+        if (activeMap === 'cloister' && cloister) {
+          cloister.cut(
+            cut.sx,
+            cut.sz,
+            cut.sx + cut.dirX * TUNING.cut.distance,
+            cut.sz + cut.dirZ * TUNING.cut.distance,
+            true,
+            cut.id,
+            TUNING.player.radius,
+            TUNING.cut.damage,
+            build.might,
+          )
+        }
         if (cut.time - cutMark >= 0.04) {
           cutMark = cut.time
           const yaw = yawFromDirection(cut.dirX, cut.dirZ)
@@ -1618,13 +1676,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (!horde.frozen && !turnWho) {
         const poured = temple.takeSpawns()
         const bossUp = activeMap === 'lattice' && (lattice?.bossing() ?? false)
+        const cloisterBoss = activeMap === 'cloister' && (cloister?.bossing() ?? false)
         director.update(
           dt,
           time,
           horde,
           player.x,
           player.z,
-          bossUp ? Math.min(quality.cap, 56) : quality.cap,
+          bossUp ? Math.min(quality.cap, 56) : cloisterBoss ? Math.min(quality.cap, 40) : quality.cap,
           rng,
           cam.x,
           cam.z,
@@ -1638,6 +1697,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (activeMap === 'cloister' && cloister) {
         horde.shove((x, z, radius) => cloister?.shoveAt(x, z, radius) ?? null)
         pickups.shove((x, z) => cloister?.shoveAt(x, z, 0) ?? null)
+        const touch = cloister.touch(player.x, player.z)
+        if (touch > 0) ctx.onHurt(touch)
       }
       profHorde += performance.now() - hordeT
       if (!previewShow && previewWeapon === 'hits') {
@@ -1671,7 +1732,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         bus.emit('runEnd', { victory: false, time, kills, level: build.level })
         return false
       }
-      if (activeMap === 'lattice' ? lattice?.cleared() : time >= TUNING.runLength) {
+      if (clearedNow()) {
         showMode('clear')
         bus.emit('runEnd', { victory: true, time, kills, level: build.level })
         return false
@@ -2087,6 +2148,25 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     latticeTris: () => (lattice ? lattice.tris() : null),
     whenReady: () => cloisterGate ?? latticeGate ?? Promise.resolve(),
     water: () => (activeMap === 'cloister' && cloister ? cloister.info() : null),
+    compline: () => (activeMap === 'cloister' && cloister ? { phase: cloister.phase(), boss: cloister.bossing(), clear: cloister.cleared(), times: cloister.times() } : null),
+    debugPhase: (n: number) => {
+      cloister?.debugPhase(n)
+    },
+    arm: () => {
+      build.level = 13
+      build.spear = 4
+      build.halo = 3
+      build.might = 4
+      build.haste = 2
+      build.swift = 2
+      build.vitality = 3
+      build.flare = 2
+      build.bell = 1
+      build.wide = 2
+      player.hp = player.maxHp
+      player.invuln = 0
+    },
+    lowpassHz: () => audio.lowpassHz(),
     pinWater: (which: number | string) => {
       if (!cloister) return
       const c = typeof which === 'number' ? which : (waterCode(which) ?? 17)

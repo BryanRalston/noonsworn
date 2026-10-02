@@ -133,6 +133,10 @@ export interface Horde {
   onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
   onExpose: ((x: number, z: number) => void) | null
   visit: (fn: (x: number, z: number, kind: number) => void) => void
+  each: (fn: (index: number, x: number, z: number) => void) => void
+  place: (index: number, x: number, z: number) => void
+  staggerFor: (index: number, seconds: number) => void
+  washFor: (index: number, seconds: number) => void
   radial: (x: number, z: number, radius: number, amount: number, ctx: HordeCtx) => void
   soak: (index: number, amount: number, expose: boolean, ctx: HordeCtx) => 0 | 1 | 2
   punishBox: (cx: number, cz: number, hx: number, hz: number, amount: number, ctx: HordeCtx) => void
@@ -220,6 +224,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const scale = new Float32Array(MAX)
   const stateT = new Float32Array(MAX)
   const contact = new Float32Array(MAX)
+  const washT = new Float32Array(MAX)
   const staggerAt = new Float32Array(MAX)
   const aimX = new Float32Array(MAX)
   const aimZ = new Float32Array(MAX)
@@ -286,6 +291,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     scale[i] = 1
     stateT[i] = 0
     contact[i] = 0
+    washT[i] = 0
     staggerAt[i] = -10
     aimX[i] = 0
     aimZ[i] = 1
@@ -554,6 +560,28 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         fn(x[i] ?? 0, z[i] ?? 0, type[i] ?? 0)
       }
     },
+    each(fn) {
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || bench[i] || state[i] === DYING) continue
+        fn(i, x[i] ?? 0, z[i] ?? 0)
+      }
+    },
+    place(index, nx, nz) {
+      if (!alive[index] || state[index] === DYING) return
+      x[index] = nx
+      z[index] = nz
+    },
+    staggerFor(index, seconds) {
+      if (!alive[index] || state[index] === DYING || bench[index]) return
+      state[index] = STAGGER
+      stateT[index] = seconds
+    },
+    washFor(index, seconds) {
+      if (!alive[index] || state[index] === DYING) return
+      washT[index] = Math.max(washT[index] ?? 0, seconds)
+      lit[index] = 1
+      litKnown[index] = 1
+    },
     shove(apply) {
       for (let i = 0; i < MAX; i++) {
         if (!alive[i] || bench[i] || state[i] === DYING) continue
@@ -588,6 +616,11 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       const blooms = ctx.bloomLive
       for (let i = 0; i < MAX; i++) {
         if (!alive[i] || bench[i] || state[i] === DYING) continue
+        if ((washT[i] ?? 0) > 0) {
+          lit[i] = 1
+          litKnown[i] = 1
+          continue
+        }
         if ((i + ctx.tick) % TUNING.litHzDiv !== 0) continue
         const ez = z[i] ?? 0
         const now = !blooms && ez < shadeZ ? false : ctx.isLit(x[i] ?? 0, ez)
@@ -612,6 +645,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         flash[i] = Math.max(0, (flash[i] ?? 0) - ctx.dt)
         squash[i] = Math.max(0, (squash[i] ?? 0) - ctx.dt)
         contact[i] = Math.max(0, (contact[i] ?? 0) - ctx.dt)
+        if ((washT[i] ?? 0) > 0) washT[i] = Math.max(0, (washT[i] ?? 0) - ctx.dt)
         if (bench[i]) continue
         if (state[i] === DYING) {
           stateT[i] = (stateT[i] ?? 0) - ctx.dt

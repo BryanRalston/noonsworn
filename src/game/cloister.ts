@@ -11,6 +11,7 @@ import {
   ShaderMaterial,
   Vector2,
   Vector3,
+  Vector4,
   type Camera,
   type Object3D,
   type WebGLRenderer,
@@ -21,6 +22,7 @@ import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 import type { FloorUniforms } from '../render/floorShader'
 import { PILLARS, cloisterWalk, octDist, segmentBlocked, setCloisterBound, setCloisterCourt } from './collision'
+import { createCast, type CastHooks } from './cloisterCast'
 
 const SOUTH = Math.PI / 2
 const TAU = Math.PI * 2
@@ -58,6 +60,12 @@ for (const z of [-15, -5, 5, 15]) GARTH.push(-16, z)
 
 const maskClosed = new Uint8Array(CELL_N)
 const maskOpen = new Uint8Array(CELL_N)
+const maskDry = new Uint8Array(CELL_N)
+const CUES = [
+  'water_fill', 'water_ebb', 'brim_chime', 'brimwash_warn', 'brimwash_crash',
+  'blot_rise', 'blot_spit', 'votary_cowl', 'compline_wake', 'compline_pour',
+  'compline_drink', 'compline_slam',
+]
 const distField = new Int16Array(CELL_N)
 const flowX = new Int8Array(CELL_N)
 const flowZ = new Int8Array(CELL_N)
@@ -245,12 +253,13 @@ float octDist(vec2 p) {
   return max(a.x, max(a.y, diag));
 }
 uniform float uRing;
+uniform float uDry;
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
   float cheb = max(abs(wp.x), abs(wp.z));
   float o = octDist(wp.xz);
   if (cheb >= 18.0) wp.y += 0.3;
-  else if (o < 6.0) wp.y = -1.05;
+  else if (o < 6.0) wp.y = mix(-1.05, 0.02, uDry);
   else if (o < 10.0) wp.y = mix(-0.42, -0.3, uRing);
   vWorld = wp.xyz;
   gl_Position = projectionMatrix * viewMatrix * wp;
@@ -281,6 +290,13 @@ uniform float uRing;
 uniform float uProbe;
 uniform float uTime;
 uniform float uLite;
+uniform float uWarn;
+uniform float uDry;
+uniform vec4 uLane0;
+uniform vec4 uLane1;
+uniform float uLaneT;
+uniform float uLanePhase;
+uniform vec3 uSlam;
 uniform vec3 uOcc[4];
 float octDist(vec2 p) {
   vec2 a = abs(p);
@@ -448,6 +464,40 @@ void main() {
     float spark = fract(sin(dot(floor(p * 3.0), vec2(127.1, 311.7))) * 43758.5453);
     col += uGold * step(0.84, spark) * 0.45;
   }
+  if (uWarn > 0.001 && o > 6.0 && o < 10.6) {
+    float edge = 6.0 + uWarn * 4.6;
+    float band = smoothstep(edge - 0.45, edge, o) * (1.0 - smoothstep(edge, edge + 0.16, o));
+    float fill = smoothstep(6.0, edge, o) * (1.0 - smoothstep(10.15, 10.5, o));
+    col = mix(col, vec3(0.878, 0.333, 0.169), fill * 0.40);
+    col = mix(col, uGold, band * 0.9);
+  }
+  if (uDry > 0.01 && o < 10.0) col = mix(col, col * vec3(0.55, 0.58, 0.62), uDry * (o < 6.0 ? 1.0 : 0.65));
+  if (uLaneT > 0.001) {
+    vec2 ab0 = uLane0.zw - uLane0.xy;
+    float l0 = dot(ab0, ab0);
+    float d0 = 99.0;
+    if (l0 > 0.01) {
+      float t0 = clamp(dot(p - uLane0.xy, ab0) / l0, 0.0, 1.0);
+      d0 = length(p - (uLane0.xy + ab0 * t0));
+    }
+    vec2 ab1 = uLane1.zw - uLane1.xy;
+    float l1 = dot(ab1, ab1);
+    float d1 = 99.0;
+    if (l1 > 0.01) {
+      float t1 = clamp(dot(p - uLane1.xy, ab1) / l1, 0.0, 1.0);
+      d1 = length(p - (uLane1.xy + ab1 * t1));
+    }
+    float k = max(1.0 - smoothstep(0.45, 0.72, d0), 1.0 - smoothstep(0.45, 0.72, d1));
+    vec3 pour = mix(vec3(0.878, 0.333, 0.169), uGold, uLanePhase);
+    col = mix(col, pour, k * (uLanePhase > 0.5 ? 0.28 : 0.42));
+  }
+  if (uSlam.z > 0.05) {
+    float sd = length(p - uSlam.xy);
+    float rim = smoothstep(uSlam.z - 0.28, uSlam.z, sd) * (1.0 - smoothstep(uSlam.z, uSlam.z + 0.18, sd));
+    float disc = (1.0 - smoothstep(uSlam.z - 0.15, uSlam.z, sd)) * 0.22;
+    col = mix(col, vec3(0.878, 0.333, 0.169), disc);
+    col = mix(col, uGold, rim * 0.9);
+  }
   if (uForecast > 0.5) {
     float sR = sqrt(max(0.0, 1.0 - uCosR * uCosR));
     vec2 e0 = vec2(uAxis.x * uCosR - uAxis.y * sR, uAxis.x * sR + uAxis.y * uCosR);
@@ -510,6 +560,8 @@ uniform float uGlow;
 uniform float uC;
 uniform float uTime;
 uniform float uLite;
+uniform float uGlyph;
+uniform float uFan;
 uniform vec3 uTile;
 float octDist(vec2 p) {
   vec2 a = abs(p);
@@ -545,11 +597,17 @@ void main() {
   }
   col += uGold * shim * dapple * 1.15;
   if (vMark > 19.0) col = vColor;
-  if (vMark > 0.5 && vMark < 19.0 && uC >= 58.0) {
+  float gPhase = uGlyph > 0.01 ? uGlyph : (uC >= 58.0 ? clamp((uC - 58.0) / 0.25, 0.0, 8.0) : 0.0);
+  if (vMark > 0.5 && vMark < 19.0 && gPhase > 0.01) {
     float idx = vMark - 1.0;
-    float phase = clamp((uC - 58.0) / 0.25, 0.0, 8.0);
-    float on = step(idx + 0.02, phase);
+    float on = step(idx + 0.02, gPhase);
     col = mix(col, vec3(1.0, 0.95, 0.72), on * (0.55 + 0.45 * sin(uTime * 10.0)));
+  }
+  if (uFan > 0.5) {
+    float south = step(0.45, -n.z) * step(18.0, vWorld.z);
+    float east = step(0.45, -n.x) * step(18.0, vWorld.x);
+    float soffit = max(under, max(north, max(west, max(south, east))));
+    col += uGold * soffit * 0.55;
   }
   float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
@@ -570,10 +628,12 @@ varying float vKind;
 uniform float uLevel;
 uniform float uTime;
 uniform float uLite;
+uniform float uPull;
 void main() {
   vec3 p = position;
   if (aKind < 0.5) {
     float edgeR = mix(6.0, 10.0, smoothstep(0.02, 0.35, uLevel));
+    edgeR *= mix(1.0, 0.72, clamp(uPull, 0.0, 1.0));
     if (aOct > 0.02) {
       float s = edgeR / 10.0;
       p.x *= s;
@@ -609,6 +669,9 @@ uniform float uFront;
 uniform float uLevel;
 uniform float uTime;
 uniform float uLite;
+uniform float uPull;
+uniform float uCrest;
+uniform vec3 uGold;
 float octDist(vec2 p) {
   vec2 a = abs(p);
   float diag = (a.x + a.y) * ${COS45};
@@ -618,6 +681,7 @@ void main() {
   vec2 p = vWorld.xz;
   float o = octDist(p);
   float edgeR = mix(6.0, 10.0, smoothstep(0.02, 0.35, uLevel));
+  edgeR *= mix(1.0, 0.72, clamp(uPull, 0.0, 1.0));
   float fromWall = edgeR - o;
   float t = smoothstep(0.0, max(edgeR, 0.001), o);
   vec3 water = mix(uPoolDeep, uPoolShoal, t) * 0.72;
@@ -641,9 +705,15 @@ void main() {
     float glint = smoothstep(0.38, 0.0, length(p - g));
     col += vec3(1.0, 0.86, 0.45) * glint * min(uGlow, 1.2) * 0.85;
   }
+  if (uPull > 0.01 && vKind < 0.5) {
+    float rimG = smoothstep(1.5, 0.05, fromWall);
+    col += uGold * rimG * uPull * 0.9;
+    col += vec3(0.878, 0.333, 0.169) * rimG * uPull * 0.35;
+  }
   if (uFront > 0.0 && vKind < 0.5) {
     float band = 1.0 - smoothstep(0.0, 0.55, abs(o - uFront));
-    col *= 1.0 + band * 0.07;
+    col *= 1.0 + band * (uCrest > 0.5 ? 0.55 : 0.07);
+    if (uCrest > 0.5) col += vec3(0.93, 0.96, 0.98) * band * 0.7;
   }
   float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
   col += (dither - 0.5) * (2.5 / 255.0);
@@ -685,7 +755,7 @@ export interface CloisterHandle {
   apply: () => void
   clear: (restore: boolean) => void
   warm: (renderer: WebGLRenderer, camera: Camera) => void
-  tick: (dt: number, sun: SunLike, wide: number, px: number, pz: number, lite?: boolean) => void
+  tick: (dt: number, sun: SunLike, wide: number, px: number, pz: number, lite?: boolean, runTime?: number) => void
   pin: (sun: SunLike) => void
   hold: (sun: SunLike, c: number) => void
   shoveAt: (x: number, z: number, radius: number) => { x: number; z: number } | null
@@ -694,7 +764,15 @@ export interface CloisterHandle {
   deep: (x: number, z: number) => boolean
   floorY: (x: number, z: number) => number
   guide: (x: number, z: number, px: number, pz: number) => { x: number; z: number } | null
-  plan: (time: number) => { darter: number; boss: boolean; rateMul: number; relocate: (x: number, z: number, rng: Rng) => { x: number; z: number } }
+  plan: (time: number) => { darter: number; votary: number; boss: boolean; rateMul: number; onVotary: (x: number, z: number) => void; relocate: (x: number, z: number, rng: Rng) => { x: number; z: number } }
+  soak: (x: number, z: number, radius: number, base: number, source: 'weapon' | 'cut', might: number, stamp: number) => boolean
+  cut: (sx: number, sz: number, ex: number, ez: number, active: boolean, id: number, radius: number, damage: number, might: number) => void
+  touch: (px: number, pz: number) => number
+  cleared: () => boolean
+  bossing: () => boolean
+  phase: () => number
+  debugPhase: (phase: number) => void
+  times: () => { wake: number; p2: number; p3: number; dead: number }
   info: () => CloisterInfo
   setOccluder: (i: number, circle: { x: number; z: number; r: number } | null) => void
   cover: () => { exposed: number; arcade: number; n: number; arcadeN: number }
@@ -708,7 +786,15 @@ function triCount(geo: BufferGeometry): number {
   return geo.getAttribute('position').count / 3
 }
 
-export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms; hide: Object3D[]; restore: Object3D[] }): CloisterHandle {
+export function createCloister(opts: {
+  scene: Object3D
+  uniforms: FloorUniforms
+  hide: Object3D[]
+  restore: Object3D[]
+  hooks: CastHooks
+  preload: (names: string[]) => void
+  lowpass: (hz: number) => void
+}): CloisterHandle {
   const parts: BufferGeometry[] = []
   const putBox = (w: number, h: number, d: number, x: number, y: number, z: number, color: Color, mark = 0, rotY = 0) => {
     const geo = new BoxGeometry(w, h, d)
@@ -965,6 +1051,17 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   const uTime = { value: 0 }
   const uLite = { value: 0 }
   const uProbe = { value: 0 }
+  const uWarn = { value: 0 }
+  const uDryU = { value: 0 }
+  const uPull = { value: 0 }
+  const uGlyph = { value: 0 }
+  const uCrest = { value: 0 }
+  const uFan = { value: 0 }
+  const uLane0 = { value: new Vector4() }
+  const uLane1 = { value: new Vector4() }
+  const uLaneT = { value: 0 }
+  const uLanePhase = { value: 0 }
+  const uSlam = { value: new Vector3() }
   const uOcc = { value: [new Vector3(), new Vector3(), new Vector3(), new Vector3()] }
   const floorMat = new ShaderMaterial({
     uniforms: {
@@ -989,6 +1086,13 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uProbe,
       uTime,
       uLite,
+      uWarn,
+      uDry: uDryU,
+      uLane0,
+      uLane1,
+      uLaneT,
+      uLanePhase,
+      uSlam,
       uOcc,
     },
     vertexShader: FLOOR_VERT,
@@ -1008,6 +1112,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uC,
       uTime,
       uLite,
+      uGlyph,
+      uFan,
       uTile: { value: COLOR.terracottaDark },
     },
     vertexShader: ARCH_VERT,
@@ -1027,6 +1133,9 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uLevel,
       uTime,
       uLite,
+      uPull,
+      uCrest,
+      uGold: src.uGold,
     },
     vertexShader: WATER_VERT,
     fragmentShader: WATER_FRAG,
@@ -1055,6 +1164,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     const s = STELAE[i]
     if (s) circles.push({ x: s.x, z: s.z, r: s.r })
   }
+  circles.push({ x: 0, z: 0, r: 1.65 })
 
   let active = false
   let sunRef: SunLike | null = null
@@ -1131,6 +1241,29 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   function deep(x: number, z: number): boolean {
     return cycle >= 34 && cycle < 60 && roofAt(x, z) && !isLit(x, z)
   }
+  let basinDry = 0
+  let heard = ''
+  function writeOcc(i: number, circle: { x: number; z: number; r: number } | null) {
+    if (i < 0 || i > 3) return
+    const slot = uOcc.value[i]
+    if (!slot) return
+    if (!circle || circle.r <= 0) {
+      occR[i] = 0
+      slot.set(0, 0, 0)
+      return
+    }
+    occX[i] = circle.x
+    occZ[i] = circle.z
+    occR[i] = circle.r
+    slot.set(circle.x, circle.z, circle.r)
+  }
+  const cast = createCast(opts.scene, opts.hooks, {
+    under: underLit,
+    direct,
+    deep,
+    lit: isLit,
+    brim: () => brimOn,
+  })
   function syncBound(c: number) {
     if (c < 0.6) {
       carryTo = 6 + (c / 0.6) * 4.6
@@ -1167,7 +1300,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     distField.fill(-1)
     flowX.fill(0)
     flowZ.fill(0)
-    const mask = maskId === 0 ? maskClosed : maskOpen
+    const mask = maskId === 2 ? maskDry : maskId === 0 ? maskClosed : maskOpen
     const start = cellOf(px, pz)
     if (start < 0 || mask[start]) {
       flowMs = performance.now() - t0
@@ -1235,7 +1368,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     flowMs = performance.now() - t0
   }
   function flowTick(dt: number, px: number, pz: number) {
-    const next = ringOn ? 1 : 0
+    const next = basinDry > 0.9 ? 2 : ringOn ? 1 : 0
     let hold = false
     if (next !== maskId) {
       maskId = next
@@ -1271,7 +1404,11 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   }
   const planOut = {
     darter: 0,
+    votary: 0,
     boss: false,
+    onVotary(x: number, z: number) {
+      cast.spawnVotary(x, z)
+    },
     rateMul: 1,
     relocate(x: number, z: number, rng: Rng) {
       let sx = x
@@ -1302,7 +1439,12 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       setCloisterCourt(true, circles)
       bake(maskClosed, 10)
       bake(maskOpen, 6)
+      bake(maskDry, 0)
       setCloisterBound(10, false)
+      cast.reset()
+      heard = ''
+      basinDry = 0
+      opts.preload(CUES)
       maskId = 0
       flowDirty = true
       for (let i = 0; i < opts.hide.length; i++) {
@@ -1318,6 +1460,8 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       floor.visible = false
       arch.visible = false
       water.visible = false
+      cast.reset()
+      opts.lowpass(18000)
       setCloisterCourt(false, [])
       active = false
       if (!restore) return
@@ -1359,7 +1503,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       sun.advance(0)
       sun.frozen = true
     },
-    tick(dt, sun, wide, px, pz, lite) {
+    tick(dt, sun, wide, px, pz, lite, runTime = 0) {
       if (!active) return
       sunRef = sun
       uLite.value = lite ? 1 : 0
@@ -1370,6 +1514,45 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       axisX = sun.dirX
       axisZ = sun.dirZ
       syncBound(cycle)
+      if (cast.visuals().hold) {
+        level = 1
+        brimOn = true
+        ringOn = false
+      }
+      cast.tick(dt, runTime, cycle, px, pz, 0)
+      const vis = cast.visuals()
+      if (vis.hold) {
+        level = 1
+        brimOn = true
+        ringOn = false
+        carryTo = 0
+        setCloisterBound(10, false)
+      }
+      basinDry = vis.dry
+      if (vis.dry > 0.02) {
+        level = 1 - vis.dry
+        if (vis.dry > 0.92) {
+          ringOn = true
+          brimOn = false
+          carryTo = 0
+          setCloisterBound(0, false)
+          water.visible = false
+        } else {
+          water.visible = true
+          ringOn = vis.dry > 0.55
+          setCloisterBound(vis.dry > 0.55 ? 6 : 10, false)
+        }
+      } else if (active) water.visible = true
+      const st = stateAt(cycle)
+      if (heard && st !== heard && !vis.hold) {
+        if (st === 'fill') opts.hooks.sfx('water_fill')
+        else if (st === 'ebb') opts.hooks.sfx('water_ebb')
+        else if (st === 'brim') opts.hooks.sfx('brim_chime')
+      }
+      heard = st
+      opts.lowpass(vis.hold || brimOn ? 18000 : ringOn ? 2400 : 18000)
+      const occ = cast.occluders()
+      for (let i = 0; i < 4; i++) writeOcc(i, occ[i] ?? null)
       uAxis.value.set(axisX, axisZ)
       uCosR.value = cosR
       uBrim.value = brimOn ? 1 : 0
@@ -1377,13 +1560,26 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uLevel.value = level
       uC.value = cycle
       uTime.value = sun.time
+      uWarn.value = vis.warn
+      uDryU.value = vis.dry
+      uPull.value = vis.pull
+      uGlyph.value = vis.glyph
+      uCrest.value = vis.crest > 0 ? 1 : 0
+      uFan.value = vis.fan
+      uLane0.value.copy(vis.lane0)
+      uLane1.value.copy(vis.lane1)
+      uLaneT.value = vis.laneT
+      uLanePhase.value = vis.lanePhase
+      uSlam.value.set(vis.slamX, vis.slamZ, vis.slamR)
       let glow = 0
-      if (cycle >= 8 && cycle < 26) glow = cycle < 8.25 ? 1.35 - ((cycle - 8) / 0.25) * 0.35 : 1
+      if (brimOn) glow = 1
+      else if (cycle >= 8 && cycle < 26) glow = cycle < 8.25 ? 1.35 - ((cycle - 8) / 0.25) * 0.35 : 1
       else if (cycle >= 26 && cycle < 26.3) glow = 1 - (cycle - 26) / 0.3
+      if (vis.fan > 0.5) glow = 1.2
       uGlow.value = glow
-      uForecast.value = cycle >= 6 && cycle < 8 ? 1 : 0
-      uDeep.value = cycle >= 34 ? (cycle < 34.3 ? (cycle - 34) / 0.3 : 1) : 0
-      uFront.value = cycle < 0.6 ? 6 + (cycle / 0.6) * 4.6 : -1
+      uForecast.value = !vis.hold && cycle >= 6 && cycle < 8 ? 1 : 0
+      uDeep.value = !vis.hold && cycle >= 34 ? (cycle < 34.3 ? (cycle - 34) / 0.3 : 1) : 0
+      uFront.value = vis.crest > 0 ? vis.crest : cycle < 0.6 ? 6 + (cycle / 0.6) * 4.6 : -1
       flowTick(dt, px, pz)
       publish()
     },
@@ -1403,7 +1599,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
     floorY(x, z) {
       if (Math.max(Math.abs(x), Math.abs(z)) >= 18) return 0.3
       const o = octDist(x, z)
-      if (o < 6) return -0.9
+      if (o < 6) return basinDry > 0.92 ? 0.02 : -0.9
       if (o < 10) return ringOn ? -0.3 : -0.05
       return 0
     },
@@ -1414,7 +1610,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       if (!segmentBlocked(x, z, px, pz)) return null
       const c = cellOf(x, z)
       if (c < 0) return null
-      const mask = maskId === 0 ? maskClosed : maskOpen
+      const mask = maskId === 2 ? maskDry : maskId === 0 ? maskClosed : maskOpen
       if (mask[c]) return null
       const sx = flowX[c] ?? 0
       const sz = flowZ[c] ?? 0
@@ -1424,8 +1620,10 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       return steer
     },
     plan(time) {
-      planOut.darter = time >= 90 ? 0.1 * Math.min(1, (time - 90) / 90) : 0
-      planOut.boss = false
+      const mix = cast.plan(time)
+      planOut.darter = mix.boss ? 0 : time >= 150 ? 0.1 * Math.min(1, (time - 150) / 30) : 0
+      planOut.votary = mix.votary
+      planOut.boss = mix.boss
       let mul = time >= 120 ? 1.1 : 1
       if (cycle >= 8 && cycle < 26) mul *= 0.9
       else if (cycle >= 34) mul *= 1.1
@@ -1437,19 +1635,16 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       return info
     },
     setOccluder(i, circle) {
-      if (i < 0 || i > 3) return
-      const slot = uOcc.value[i]
-      if (!slot) return
-      if (!circle || circle.r <= 0) {
-        occR[i] = 0
-        slot.set(0, 0, 0)
-        return
-      }
-      occX[i] = circle.x
-      occZ[i] = circle.z
-      occR[i] = circle.r
-      slot.set(circle.x, circle.z, circle.r)
+      writeOcc(i, circle)
     },
+    soak: (x, z, radius, base, source, might, stamp) => cast.soak(x, z, radius, base, source, might, stamp),
+    cut: (sx, sz, ex, ez, active, id, radius, damage, might) => cast.cut(sx, sz, ex, ez, active, id, radius, damage, might),
+    touch: (px, pz) => cast.touch(px, pz),
+    cleared: () => cast.cleared(),
+    bossing: () => cast.bossing(),
+    phase: () => cast.phase(),
+    debugPhase: (phase) => cast.debugPhase(phase),
+    times: () => cast.times(),
     cover() {
       let n = 0
       let litN = 0
