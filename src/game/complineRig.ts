@@ -20,8 +20,9 @@ import {
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 
-/** 1.3 clips the halo at the wake spot. 1.25 still clips it once Sela has run to about (9, 10). */
+/** Desktop visual scale. Portrait uses PORTRAIT_SCALE when the halo stays under the timer band. */
 export const COMPLINE_SCALE = 1.2
+const PORTRAIT_SCALE = 1.3
 
 const FADE = 0.12
 const POUR_START = 0.425
@@ -75,6 +76,8 @@ export interface ComplineRig {
   spread: (u: number) => void
   noteWarm: (renderer: WebGLRenderer, camera: Camera) => void
   haloTop: (out: Vector3) => boolean
+  /** Visual mesh scale only. Desktop stays at COMPLINE_SCALE. Portrait may use 1.3. Hitbox is unchanged. */
+  fit: (portrait: boolean) => void
   dispose: () => void
 }
 
@@ -96,6 +99,8 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
   let mixer: AnimationMixer | null = null
   let material: MeshStandardMaterial | null = null
   let skin: SkinnedMesh | null = null
+  let shown: Object3D | null = null
+  let visualScale = COMPLINE_SCALE
   let current: AnimationAction | null = null
   let clipName = ''
   let seen = 0
@@ -240,7 +245,8 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     triCount = geo.index ? geo.index.count / 3 : geo.getAttribute('position').count / 3
 
     // Asset front is +Z (cowl opening and ewer spout). The compline group's yaw is the only heading.
-    gltf.scene.scale.setScalar(COMPLINE_SCALE)
+    shown = gltf.scene
+    shown.scale.setScalar(visualScale)
     gltf.scene.frustumCulled = false
     gltf.scene.name = 'complineSkin'
     parent.add(gltf.scene)
@@ -394,7 +400,13 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
         return
       }
       puddle.visible = true
-      puddle.scale.setScalar(PUDDLE_R * COMPLINE_SCALE * u)
+      puddle.scale.setScalar(PUDDLE_R * visualScale * u)
+    },
+    fit(portrait) {
+      const next = portrait ? PORTRAIT_SCALE : COMPLINE_SCALE
+      if (next === visualScale) return
+      visualScale = next
+      shown?.scale.setScalar(next)
     },
     noteWarm(renderer, camera) {
       gpu = renderer

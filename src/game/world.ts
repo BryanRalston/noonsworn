@@ -1923,13 +1923,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       floats.sync(follow.camera, canvas.clientWidth, canvas.clientHeight, frameSec)
       if ((mode === 'playing' || mode === 'level') && !previewWeapon && !turnWho) {
-        tutorial.update(frameSec, player.x, player.z, follow.camera, canvas.clientWidth, canvas.clientHeight, {
-          moving: Math.hypot(frame.moveX, frame.moveY) > 0.2,
-          litNear: tutorial.active() ? enemyLitNear() : false,
-          inLight: litAt(player.x, player.z),
-          device: input.device(),
-          charges: build.pending,
-        })
+        const bossFight =
+          (activeMap === 'lattice' && (lattice?.bossing() ?? false)) ||
+          (activeMap === 'cloister' && (cloister?.bossing() ?? false))
+        if (activeMap === 'sundial' && !bossFight) {
+          tutorial.update(frameSec, player.x, player.z, follow.camera, canvas.clientWidth, canvas.clientHeight, {
+            moving: Math.hypot(frame.moveX, frame.moveY) > 0.2,
+            litNear: tutorial.active() ? enemyLitNear() : false,
+            inLight: litAt(player.x, player.z),
+            device: input.device(),
+            charges: build.pending,
+          })
+        } else tutorial.conceal()
         tips.update(frameSec)
       } else tutorial.conceal()
       floor.uniforms.uEdgeBoost.value = tutorial.outlining() ? 0.7 : 0

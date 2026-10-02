@@ -21,6 +21,7 @@ import {
   Vector4,
   WebGLRenderer,
   Camera,
+  PerspectiveCamera,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { mulberry32, type Rng } from '../core/rng'
@@ -1338,6 +1339,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       bMat.uniforms.uTime!.value = time
       enrage = time >= specBoss.enrage ? 1.5 : 1
       if (!born && time >= specBoss.wake) wake(time)
+      if (viewCam instanceof PerspectiveCamera) rig.fit(viewCam.aspect < 1)
       if (!proc && time >= 210) {
         proc = true
         for (let i = 0; i < 6; i++) enqueue(1, -3 + i * 1.2, -21.2)
@@ -1531,6 +1533,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         }
         const rate = enrage
         if (rise > 0) {
+          easeCentre(bossX, bossZ, px, pz)
           rise -= dt
           const u = 1 - Math.max(0, rise) / 3
           bossY = -1.6 + u * 1.6
@@ -1611,14 +1614,26 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
             }
           }
         }
-        if (bossOn && haloOver > 0.02) {
-          const pull = Math.min(0.2, haloOver * 0.3)
-          let sx = (wantX - bossX) * pull
-          let sz = (wantZ - bossZ) * pull
+        if (bossOn && haloOver > 0) {
+          let tx = wantX
+          let tz = wantZ
+          if (viewCam && haloNdc.y > 0.74) {
+            viewCam.updateMatrixWorld()
+            const e = viewCam.matrixWorld.elements
+            const dx = (e[12] ?? 0) - bossX
+            const dz = (e[14] ?? 0) - bossZ
+            const dist = Math.hypot(dx, dz) || 1
+            const step = Math.min(3.2, 0.55 + (haloNdc.y - 0.74) * 9)
+            tx = bossX + (dx / dist) * step
+            tz = bossZ + (dz / dist) * step
+          }
+          const pull = Math.min(0.85, 0.35 + haloOver * 1.4)
+          let sx = (tx - bossX) * pull
+          let sz = (tz - bossZ) * pull
           const sm = Math.hypot(sx, sz)
-          if (sm > 0.22) {
-            sx *= 0.22 / sm
-            sz *= 0.22 / sm
+          if (sm > 0.42) {
+            sx *= 0.42 / sm
+            sz *= 0.42 / sm
           }
           bossX += sx
           bossZ += sz
@@ -1758,7 +1773,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       return easePt
     }
     haloNdc.project(viewCam)
-    const overTop = haloNdc.y - 0.82
+    // NDC y = +1 is the top. The timer band is the top 12% (y > 0.76). Aim a little under it so the pull settles inside the safe area.
+    const overTop = haloNdc.y - 0.74
     const overBot = -0.88 - haloNdc.y
     const overX = Math.abs(haloNdc.x) - 0.86
     haloOver = Math.max(0, overTop, overBot, overX)
@@ -1767,20 +1783,18 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       wantZ = tz
       return easePt
     }
-    // Crown leaving the top: she is too far from the camera, so step toward Sela. Bottom and sides step toward court centre.
+    // Crown in the timer band: she is too far from the camera, so step the target toward the camera. Bottom and sides step toward court centre.
     if (overTop >= overBot && overTop >= overX && overTop > 0) {
-      const k = Math.min(0.7, overTop * 1.6)
-      const dx = px - tx
-      const dz = pz - tz
+      viewCam.updateMatrixWorld()
+      const e = viewCam.matrixWorld.elements
+      const dx = (e[12] ?? 0) - tx
+      const dz = (e[14] ?? 0) - tz
       const dist = Math.hypot(dx, dz) || 1
-      if (dist < 2.6) {
-        easePt.x = tx
-        easePt.z = tz + Math.min(1.4, overTop * 2.2)
-      } else {
-        const keep = Math.max(0, dist - 2.2) / dist
-        easePt.x = tx + dx * k * keep
-        easePt.z = tz + dz * k * keep
-      }
+      const step = Math.min(dist * 0.35, 1.5 + overTop * 10)
+      easePt.x = tx + (dx / dist) * step
+      easePt.z = tz + (dz / dist) * step
+      easePt.x += (px - easePt.x) * 0.15
+      easePt.z += (pz - easePt.z) * 0.15
     } else {
       const k = Math.min(0.6, Math.max(overBot, overX, 0) * 1.4)
       easePt.x = tx * (1 - k)

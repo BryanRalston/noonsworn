@@ -52,6 +52,8 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
   arrow.hidden = true
   parent.append(arrow)
   const v = new Vector3()
+  // Marker ring is CircleGeometry radius 0.8. Sample past it, and above the body and spear.
+  const RING_CLEAR = 1.35
   let step = readStep()
   let timer = 0
   let enabled = false
@@ -120,6 +122,53 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
     if (device === 'touch') return 'Power-up ready. Tap the halo.'
     if (device === 'pad') return 'Power-up ready. Press LB.'
     return 'Power-up ready. Press Tab.'
+  }
+  function screenTop(wx: number, wy: number, wz: number, camera: Camera, height: number, topY: number): number {
+    v.set(wx, wy, wz).project(camera)
+    const sy = (-v.y * 0.5 + 0.5) * height
+    return sy < topY ? sy : topY
+  }
+  function placeLabel(x: number, z: number, camera: Camera, width: number, height: number): { x: number; y: number } {
+    const c = RING_CLEAR
+    const d = c * 0.7
+    let topY = screenTop(x, 2.4, z, camera, height, 1e9)
+    topY = screenTop(x + c, 0, z, camera, height, topY)
+    topY = screenTop(x - c, 0, z, camera, height, topY)
+    topY = screenTop(x, 0, z + c, camera, height, topY)
+    topY = screenTop(x, 0, z - c, camera, height, topY)
+    topY = screenTop(x + d, 0, z + d, camera, height, topY)
+    topY = screenTop(x - d, 0, z + d, camera, height, topY)
+    topY = screenTop(x + d, 0, z - d, camera, height, topY)
+    topY = screenTop(x - d, 0, z - d, camera, height, topY)
+    v.set(x, 0, z).project(camera)
+    let left = (v.x * 0.5 + 0.5) * width
+    const labelH = Math.max(36, label.offsetHeight)
+    const labelW = Math.max(120, label.offsetWidth)
+    let top = topY - 36 - labelH
+    if (!Number.isFinite(top) || top < height * 0.12) {
+      top = height * 0.64
+      left = width * 0.5
+    }
+    const half = labelW * 0.5
+    const portrait = height > width
+    const cut = document.getElementById('btn-cut')
+    const touchOn = document.getElementById('touch-root')?.classList.contains('touch-off') === false
+    if (cut && (portrait || touchOn)) {
+      const r = cut.getBoundingClientRect()
+      const reserveL = r.width > 0 ? r.left - 16 : width - 130
+      const reserveT = r.height > 0 ? r.top - 16 : height - 150
+      const overlaps = left + half > reserveL && left - half < (r.width > 0 ? r.right + 16 : width) && top + labelH > reserveT
+      if (overlaps) {
+        const above = reserveT - labelH
+        if (above >= height * 0.45) top = above
+        else left = Math.min(left, reserveL - half)
+      }
+    }
+    if (left - half < 8) left = half + 8
+    if (left + half > width - 8) left = width - 8 - half
+    if (top < 8) top = 8
+    if (top + labelH > height - 8) top = Math.max(8, height - 8 - labelH)
+    return { x: left, y: top }
   }
   function aimArrow() {
     const halo = document.querySelector('#btn-halo')
@@ -258,15 +307,12 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
         paintGlyph(canvas, step)
         tex.needsUpdate = true
       }
-      mesh.visible = true
-      mesh.position.x = x
-      mesh.position.z = z
+      // The floor glyph is 4.8 m across and sat on the 0.8 m player ring. The label is the hint.
+      mesh.visible = false
       label.hidden = false
       label.textContent = line(now.device)
-      v.set(x, 0.4, z).project(camera)
-      const sx = (v.x * 0.5 + 0.5) * width
-      const sy = (-v.y * 0.5 + 0.5) * height + 36
-      label.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, 0)`
+      const placed = placeLabel(x, z, camera, width, height)
+      label.style.transform = `translate(${placed.x}px, ${placed.y}px) translate(-50%, 0)`
       if (step === 5 && now.charges > 0) aimArrow()
       else hideArrow()
     },
