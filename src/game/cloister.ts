@@ -495,9 +495,14 @@ void main() {
       float t1 = clamp(dot(p - uLane1.xy, ab1) / l1, 0.0, 1.0);
       d1 = length(p - (uLane1.xy + ab1 * t1));
     }
-    float k = max(1.0 - smoothstep(0.45, 0.72, d0), 1.0 - smoothstep(0.45, 0.72, d1));
-    vec3 pour = mix(vec3(0.878, 0.333, 0.169), uGold, uLanePhase);
-    col = mix(col, pour, k * (uLanePhase > 0.5 ? 0.28 : 0.42));
+    float body = max(1.0 - smoothstep(0.08, 0.50, d0), 1.0 - smoothstep(0.08, 0.50, d1));
+    float rim = max(
+      smoothstep(0.32, 0.50, d0) * (1.0 - smoothstep(0.50, 0.78, d0)),
+      smoothstep(0.32, 0.50, d1) * (1.0 - smoothstep(0.50, 0.78, d1))
+    );
+    vec3 pour = mix(vec3(0.549, 0.149, 0.129), uGold, uLanePhase);
+    col = mix(col, pour, body * 0.88);
+    col = mix(col, uGold, rim);
   }
   if (uSlam.z > 0.05) {
     float sd = length(p - uSlam.xy);
