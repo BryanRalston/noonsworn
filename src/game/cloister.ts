@@ -291,6 +291,7 @@ uniform float uProbe;
 uniform float uTime;
 uniform float uLite;
 uniform float uWarn;
+uniform float uFront;
 uniform float uDry;
 uniform vec4 uLane0;
 uniform vec4 uLane1;
@@ -470,6 +471,13 @@ void main() {
     float fill = smoothstep(6.0, edge, o) * (1.0 - smoothstep(10.15, 10.5, o));
     col = mix(col, vec3(0.878, 0.333, 0.169), fill * 0.40);
     col = mix(col, uGold, band * 0.9);
+  }
+  if (uFront > 6.0 && o > 5.7 && o < 10.9) {
+    float d = abs(o - uFront);
+    float body = 1.0 - smoothstep(0.08, 0.62, d);
+    float rim = 1.0 - smoothstep(0.28, 0.55, abs(d - 0.22));
+    col = mix(col, vec3(0.93, 0.97, 0.98), body * 0.62);
+    col = mix(col, uGold, rim * 0.8);
   }
   if (uDry > 0.01 && o < 10.0) col = mix(col, col * vec3(0.55, 0.58, 0.62), uDry * (o < 6.0 ? 1.0 : 0.65));
   if (uLaneT > 0.001) {
@@ -1092,6 +1100,7 @@ export function createCloister(opts: {
       uTime,
       uLite,
       uWarn,
+      uFront,
       uDry: uDryU,
       uLane0,
       uLane1,
