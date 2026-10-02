@@ -16,6 +16,8 @@ import {
   Object3D,
   ShaderMaterial,
   Vector4,
+  WebGLRenderer,
+  Camera,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { mulberry32, type Rng } from '../core/rng'
@@ -83,7 +85,8 @@ export interface CastPeek {
 
 export interface CloisterCast {
   reset: () => void
-  tick: (dt: number, time: number, cycle: number, px: number, pz: number, might: number) => void
+  tick: (dt: number, time: number, cycle: number, px: number, pz: number, might: number, lite?: boolean) => void
+  warm: (renderer: WebGLRenderer, camera: Camera) => void
   soak: (x: number, z: number, radius: number, base: number, source: 'weapon' | 'cut', might: number, stamp: number) => boolean
   cut: (sx: number, sz: number, ex: number, ez: number, active: boolean, id: number, radius: number, damage: number, might: number) => void
   touch: (px: number, pz: number) => number
@@ -116,10 +119,12 @@ interface Foe {
   mode: number
   vx: number
   vz: number
+  scan: number
+  best: number
 }
 
 function blank(): Foe {
-  return { alive: 0, x: 0, z: 0, hp: 0, yaw: 0, t: 0, cd: 0, wash: 0, flash: 0, heading: 0, mode: 0, vx: 0, vz: 0 }
+  return { alive: 0, x: 0, z: 0, hp: 0, yaw: 0, t: 0, cd: 0, wash: 0, flash: 0, heading: 0, mode: 0, vx: 0, vz: 0, scan: 0, best: 1e9 }
 }
 
 function tint(geo: BufferGeometry, color: Color) {
@@ -429,11 +434,20 @@ function buildBoss(): BossView {
   return { mesh, uTime, uPour, uPhase, uShudder, uDrink }
 }
 
+const loopPt = { x: 0, z: 0 }
+const outPt = { x: 0, z: 0 }
+
 function outward(x: number, z: number, ap: number): { x: number; z: number } {
   const o = octDist(x, z)
-  if (o < 1e-3) return { x: 0, z: -ap }
+  if (o < 1e-3) {
+    outPt.x = 0
+    outPt.z = -ap
+    return outPt
+  }
   const s = ap / o
-  return { x: x * s, z: z * s }
+  outPt.x = x * s
+  outPt.z = z * s
+  return outPt
 }
 
 function laneHit(px: number, pz: number, lane: Vector4, half: number): boolean {
@@ -478,6 +492,44 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   const bossParts = buildBoss()
   bossParts.mesh.visible = false
   parent.add(vMesh, bMesh, bossParts.mesh)
+  const trackPt = { x: 0, z: 0, r: 0 }
+  const occPool = [
+    { x: 0, z: 0, r: 0 },
+    { x: 0, z: 0, r: 0 },
+    { x: 0, z: 0, r: 0 },
+    { x: 0, z: 0, r: 0 },
+  ]
+  const occOut: { x: number; z: number; r: number }[] = []
+  const summonQ = Array.from({ length: 12 }, () => ({ kind: 0, x: 0, z: 0 }))
+  let qHead = 0
+  let qCount = 0
+  let qTail = 0
+  let steerTick = 0
+  function trackBoss() {
+    trackPt.x = bossX
+    trackPt.z = bossZ
+    trackPt.r = specBoss.radius
+    hooks.track(trackPt)
+  }
+  function enqueue(kind: number, x: number, z: number) {
+    if (qCount >= summonQ.length) return
+    const slot = summonQ[qTail]
+    if (!slot) return
+    slot.kind = kind
+    slot.x = x
+    slot.z = z
+    qTail = (qTail + 1) % summonQ.length
+    qCount++
+  }
+  function dequeue() {
+    if (qCount <= 0) return
+    const slot = summonQ[qHead]
+    qHead = (qHead + 1) % summonQ.length
+    qCount--
+    if (!slot) return
+    if (slot.kind === 1) spawnVotary(slot.x, slot.z)
+    else if (slot.kind === 2) spawnBlot(slot.x, slot.z)
+  }
   const dummy = new Object3D()
   const lane0 = new Vector4()
   const lane1 = new Vector4()
@@ -586,8 +638,12 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   }
 
   function spawnVotary(x: number, z: number) {
-    const spot = octDist(x, z) < 10 ? outward(x, z, 14) : { x, z }
-    placeVotary(spot.x, spot.z)
+    if (octDist(x, z) < 10) {
+      outward(x, z, 14)
+      placeVotary(outPt.x, outPt.z)
+      return
+    }
+    placeVotary(x, z)
   }
 
   function spawnBlot(tx: number, tz: number) {
@@ -633,7 +689,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     dry = 0
     bossParts.mesh.visible = true
     hooks.cull(40)
-    hooks.track({ x: bossX, z: bossZ, r: specBoss.radius })
+    trackBoss()
     hooks.sfx('compline_wake')
   }
 
@@ -786,6 +842,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       bMesh.count = 0
       bossParts.mesh.visible = false
       shudder = 0
+      qHead = 0
+      qTail = 0
+      qCount = 0
       hooks.track(null)
     },
     spawnVotary,
@@ -848,13 +907,37 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     },
     visuals: () => visual,
     occluders() {
-      const out: { x: number; z: number; r: number }[] = []
-      for (let i = 0; i < blots.length && out.length < 4; i++) {
+      let n = 0
+      for (let i = 0; i < blots.length && n < 4; i++) {
         const foe = blots[i]
         if (!foe?.alive || foe.mode !== 0) continue
-        out.push({ x: foe.x, z: foe.z, r: specB.radius })
+        const slot = occPool[n]
+        if (!slot) break
+        slot.x = foe.x
+        slot.z = foe.z
+        slot.r = specB.radius
+        occOut[n] = slot
+        n++
       }
-      return out
+      occOut.length = n
+      return occOut
+    },
+    warm(renderer, camera) {
+      const shown = [vMesh.visible, bMesh.visible, bossParts.mesh.visible]
+      const counts = [vMesh.count, bMesh.count]
+      vMesh.visible = true
+      bMesh.visible = true
+      bossParts.mesh.visible = true
+      vMesh.count = Math.max(1, counts[0] ?? 0)
+      bMesh.count = Math.max(1, counts[1] ?? 0)
+      renderer.compile(vMesh, camera)
+      renderer.compile(bMesh, camera)
+      renderer.compile(bossParts.mesh, camera)
+      vMesh.count = counts[0] ?? 0
+      bMesh.count = counts[1] ?? 0
+      vMesh.visible = shown[0] ?? false
+      bMesh.visible = shown[1] ?? false
+      bossParts.mesh.visible = shown[2] ?? false
     },
     cleared: () => bossDead,
     bossing: () => bossOn,
@@ -1017,7 +1100,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       }
       return any
     },
-    tick(dt, time, cycle, px, pz, _might) {
+    tick(dt, time, cycle, px, pz, _might, lite = false) {
+      dequeue()
+      steerTick++
       cowlCd = Math.max(0, cowlCd - dt)
       vMat.uniforms.uTime!.value = time
       bMat.uniforms.uTime!.value = time
@@ -1025,7 +1110,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       if (!born && time >= specBoss.wake) wake(time)
       if (!proc && time >= 210) {
         proc = true
-        for (let i = 0; i < 6; i++) spawnVotary(-3 + i * 1.2, -21.2)
+        for (let i = 0; i < 6; i++) enqueue(1, -3 + i * 1.2, -21.2)
         for (let i = 0; i < 4; i++) hooks.spawn(1, -2 + i * 1.4, -16.5)
       }
       const minute = Math.floor(time / 60)
@@ -1034,7 +1119,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         const n = minute <= 1 ? 2 : minute === 2 ? 3 : 4
         const aimX = phase === 2 ? bossX : px
         const aimZ = phase === 2 ? bossZ : pz
-        for (let i = 0; i < n; i++) spawnBlot(aimX, aimZ)
+        for (let i = 0; i < n; i++) enqueue(2, aimX, aimZ)
       }
       const natural = prevCycle > 40 && cycle < 2
       if (natural) {
@@ -1105,19 +1190,33 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         if (dist < 4) foe.heading = Math.atan2(dz, dx)
         else if (foe.t >= 0.25) {
           foe.t = 0
-          let best = foe.heading
-          let bestS = 1e9
-          for (let h = 0; h < 3; h++) {
-            const ang = Math.atan2(dz, dx) + (h - 1) * 0.7
+          const aim = Math.atan2(dz, dx)
+          if (lite) {
+            const h = foe.scan % 3
+            const ang = aim + (h - 1) * 0.7
             const sx = foe.x + Math.cos(ang) * 1.5
             const sz = foe.z + Math.sin(ang) * 1.5
             const score = (ask.under(sx, sz) ? 2 : 0) - (Math.cos(ang) * dx + Math.sin(ang) * dz) / dist
-            if (score < bestS) {
-              bestS = score
-              best = ang
+            if (h === 0 || score < foe.best) {
+              foe.best = score
+              foe.heading = ang
             }
+            foe.scan = h + 1
+          } else {
+            let best = foe.heading
+            let bestS = 1e9
+            for (let h = 0; h < 3; h++) {
+              const ang = aim + (h - 1) * 0.7
+              const sx = foe.x + Math.cos(ang) * 1.5
+              const sz = foe.z + Math.sin(ang) * 1.5
+              const score = (ask.under(sx, sz) ? 2 : 0) - (Math.cos(ang) * dx + Math.sin(ang) * dz) / dist
+              if (score < bestS) {
+                bestS = score
+                best = ang
+              }
+            }
+            foe.heading = best
           }
-          foe.heading = best
         }
         const step = specV.speed * dt
         const nx = foe.x + Math.cos(foe.heading) * step
@@ -1126,7 +1225,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         foe.x = slid.x
         foe.z = slid.z
         foe.yaw = foe.heading
-        foe.mode = ask.under(foe.x, foe.z) || foe.wash > 0 ? 2 : 0
+        if (!lite || (steerTick + i) % 3 === 0) foe.mode = ask.under(foe.x, foe.z) || foe.wash > 0 ? 2 : 0
+        else if (foe.wash > 0) foe.mode = 2
       }
       for (let i = 0; i < blots.length; i++) {
         const foe = blots[i]
@@ -1223,8 +1323,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           bossX += (dx / dist) * step
           bossZ += (dz / dist) * step
           if (phase === 2 && Math.floor(bossT / 10) !== Math.floor((bossT - dt) / 10)) {
-            spawnBlot(bossX, bossZ)
-            spawnBlot(bossX, bossZ)
+            enqueue(2, bossX, bossZ)
+            enqueue(2, bossX, bossZ)
           }
           pourCd -= dt * rate
           if (pourCd <= 0) {
@@ -1232,8 +1332,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
             armLanes(px, pz, phase === 2)
           }
           if (phase === 1 && Math.floor(bossT / 12) !== Math.floor((bossT - dt) / 12)) {
-            spawnVotary(px > 0 ? -21 : 21, pz)
-            spawnVotary(px, pz > 0 ? -21 : 21)
+            enqueue(1, px > 0 ? -21 : 21, pz)
+            enqueue(1, px, pz > 0 ? -21 : 21)
           }
         } else if (phase === 3) {
           if (dry < 1) {
@@ -1336,7 +1436,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         const bob = phase === 3 && slamT > 0.4 ? (0.9 - slamT) * 0.35 : Math.sin(time * 1.3) * 0.04
         bossParts.mesh.position.set(bossX, bossY + bob + (bossDead ? -2 : 0), bossZ)
         bossParts.mesh.scale.setScalar(bossHp > 0 ? BOSS_SCALE : Math.max(0.2, BOSS_SCALE))
-        hooks.track({ x: bossX, z: bossZ, r: specBoss.radius })
+        trackBoss()
       } else if (bossDead) {
         bossY -= dt * 0.8
         bossParts.mesh.position.set(bossX, bossY, bossZ)
@@ -1356,6 +1456,12 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
 function nearestLoop(px: number, pz: number): { x: number; z: number } {
   const ax = Math.abs(px)
   const az = Math.abs(pz)
-  if (ax >= az) return { x: Math.sign(px || 1) * LOOP_R, z: Math.max(-LOOP_R, Math.min(LOOP_R, pz)) }
-  return { x: Math.max(-LOOP_R, Math.min(LOOP_R, px)), z: Math.sign(pz || -1) * LOOP_R }
+  if (ax >= az) {
+    loopPt.x = Math.sign(px || 1) * LOOP_R
+    loopPt.z = Math.max(-LOOP_R, Math.min(LOOP_R, pz))
+  } else {
+    loopPt.x = Math.max(-LOOP_R, Math.min(LOOP_R, px))
+    loopPt.z = Math.sign(pz || -1) * LOOP_R
+  }
+  return loopPt
 }

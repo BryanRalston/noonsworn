@@ -1499,6 +1499,7 @@ export function createCloister(opts: {
       renderer.compile(floor, camera)
       renderer.compile(arch, camera)
       renderer.compile(water, camera)
+      cast.warm(renderer, camera)
       uProbe.value = 1
       renderer.compile(floor, camera)
       uProbe.value = prev
@@ -1538,7 +1539,7 @@ export function createCloister(opts: {
         brimOn = true
         ringOn = false
       }
-      cast.tick(dt, runTime, cycle, px, pz, 0)
+      cast.tick(dt, runTime, cycle, px, pz, 0, lite)
       const vis = cast.visuals()
       if (vis.hold) {
         level = 1
