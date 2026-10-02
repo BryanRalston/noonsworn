@@ -76,3 +76,22 @@ These seven clips are original synthesis for Lattice Terraces. They are not thir
 
 ## Caveat
 These were chosen by name, source description and waveform/loudness checks only. Nobody has listened to them in context yet. The build session must audition each in-game and swap within the same packs if one sounds wrong.
+
+## M5b Cloister cues
+
+These twelve cues are original tones generated for this milestone (sine and a low-pass fade, 22050 Hz mono). They are not copied from a sample library. Each file ships as Vorbis `.ogg` and AAC `.m4a` in `public/assets/audio/` and is copied here. Peaks were checked with `ffmpeg volumedetect` after the Vorbis encode and sit at or below -1 dBFS. No clipped samples. The optional cloister ambience loop was not added.
+
+| File | Cue | Duration |
+|---|---|---|
+| water_fill | pool fills | 1.5 s |
+| water_ebb | pool ebbs | 1.5 s |
+| brim_chime | water reaches the brim | 0.7 s |
+| brimwash_warn | glyph swell | 2.0 s |
+| brimwash_crash | foam crest | 0.6 s |
+| blot_rise | blot docks | 0.7 s |
+| blot_spit | spit | 0.32 s |
+| votary_cowl | direct-beam flash | 0.4 s |
+| compline_wake | organ drone, no vocals | 2.2 s |
+| compline_pour | ewer pour | 0.7 s |
+| compline_drink | drink | 1.1 s |
+| compline_slam | slam | 0.45 s |
