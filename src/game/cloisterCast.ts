@@ -26,6 +26,7 @@ import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 import { octDist, slideCircle } from './collision'
 import { damageAmount } from './sunClock'
+import { attachCompline } from './complineRig'
 
 const V_MAX = 18
 const B_MAX = 8
@@ -79,7 +80,7 @@ export interface CastVisual {
 export interface CastPeek {
   votaries: { x: number; z: number; hp: number; mode: number; flash: number; wash: number; yaw: number }[]
   blots: { x: number; z: number; hp: number; mode: number; yaw: number; t: number; vx: number; vz: number }[]
-  boss: { x: number; z: number; y: number; hp: number; max: number; phase: number; on: number; dead: number; rise: number }
+  boss: { x: number; z: number; y: number; hp: number; max: number; phase: number; on: number; dead: number; rise: number; rig: number; clip: string; clipT: number }
   vis: { pull: number; warn: number; glyph: number; crest: number; dry: number; hold: number; fan: number; laneT: number; slamR: number; lane0: number[]; lane1: number[]; pours: number; slams: number }
   tris: { votary: number; blot: number; boss: number; ewer: number }
 }
@@ -499,7 +500,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   vMesh.count = 0
   bMesh.count = 0
   const bossParts = buildBoss()
-  // One replaceable node at floor centre. The procedural mesh is the fallback child; a later skinned mesh swaps in beside this origin.
+  // Procedural child stays mounted. The skinned GLB hides it after a successful load.
+  const rig = attachCompline(bossParts.root, bossParts.mesh)
   bossParts.root.visible = false
   parent.add(vMesh, bMesh, bossParts.root)
   const trackPt = { x: 0, z: 0, r: 0 }
@@ -564,8 +566,13 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   let pourCd = 1.2
   let pourT = 0
   let pourOn = false
+  let pourWait = false
   let slamCd = 2
   let slamT = 0
+  let slamClip = false
+  let slamAge = 0
+  let slamHitDone = false
+  let wantShudder = false
   let selfCd = 6
   let selfT = 0
   let drink = 0
@@ -718,6 +725,14 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     hooks.track(null)
     hooks.sfx('compline_drink')
     visual.fan = 1
+    wantShudder = false
+    pourWait = false
+    pourOn = false
+    slamClip = false
+    if (rig.ready()) {
+      rig.spread(0)
+      rig.play('death')
+    }
     if (dry > 0.05) refill = 3
     else dry = 0
   }
@@ -736,6 +751,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       phase = 2
       p2at = time
       shudder = 1
+      wantShudder = true
       if (!ask.brim()) force = TUNING.cloister.wash.telegraph
       hold = true
     }
@@ -743,6 +759,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       phase = 3
       p3at = time
       shudder = 1
+      wantShudder = true
       hold = false
       drink = 0
     }
@@ -763,11 +780,43 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     lane0.set(bossX + pxn * off, bossZ + pzn * off, bossX + ux * span + pxn * off, bossZ + uz * span + pzn * off)
     lane1.set(bossX - pxn * off, bossZ - pzn * off, bossX + ux * span - pxn * off, bossZ + uz * span - pzn * off)
     if (!dual) lane1.set(0, 0, 0, 0)
+    poursFired++
+    visual.lanePhase = 0
+    if (rig.ready()) {
+      pourWait = true
+      pourOn = false
+      rig.play('pour')
+      return
+    }
     pourOn = true
     pourT = 0.8
-    visual.lanePhase = 0
-    poursFired++
     hooks.sfx('compline_pour')
+  }
+
+  function laneDamage(px: number, pz: number) {
+    if (laneHit(px, pz, lane0, 0.7) || laneHit(px, pz, lane1, 0.7)) {
+      if (hooks.vulnerable()) hooks.hurt(22, false)
+    }
+  }
+
+  function finishPour(px: number, pz: number) {
+    if (!pourOn && !pourWait) return
+    const hit = pourOn
+    pourOn = false
+    pourWait = false
+    if (!hit) return
+    visual.laneT = 1
+    visual.lanePhase = 1
+    laneDamage(px, pz)
+    pourT = -6
+  }
+
+  function slamDamage(px: number, pz: number) {
+    if (slamHitDone) return
+    slamHitDone = true
+    const dx = px - bossX
+    const dz = pz - bossZ
+    if (dx * dx + dz * dz <= 16 && hooks.vulnerable()) hooks.hurt(25, false)
   }
 
   function applyWashHit(px: number, pz: number, crest: number) {
@@ -857,6 +906,13 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       bMesh.count = 0
       bossParts.root.visible = false
       shudder = 0
+      pourWait = false
+      slamClip = false
+      slamAge = 0
+      slamHitDone = false
+      wantShudder = false
+      rig.spread(0)
+      rig.play('idle', true)
       qHead = 0
       qTail = 0
       qCount = 0
@@ -892,7 +948,20 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       return {
         votaries: votariesOut,
         blots: blotsOut,
-        boss: { x: bossX, z: bossZ, y: bossY, hp: bossHp, max: specBoss.hp, phase, on: bossOn ? 1 : 0, dead: bossDead ? 1 : 0, rise },
+        boss: {
+          x: bossX,
+          z: bossZ,
+          y: bossY,
+          hp: bossHp,
+          max: specBoss.hp,
+          phase,
+          on: bossOn ? 1 : 0,
+          dead: bossDead ? 1 : 0,
+          rise,
+          rig: rig.ready() ? 1 : 0,
+          clip: rig.clip(),
+          clipT: rig.time(),
+        },
         vis: {
           pull: visual.pull,
           warn: visual.warn,
@@ -911,7 +980,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         tris: {
           votary: trisOf(vGeo),
           blot: trisOf(bGeo),
-          boss: trisOf(bossParts.mesh.geometry),
+          boss: rig.ready() ? rig.tris() : trisOf(bossParts.mesh.geometry),
           ewer: 0,
         },
       }
@@ -938,6 +1007,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       return occOut
     },
     warm(renderer, camera) {
+      rig.noteWarm(renderer, camera)
       const shown = [vMesh.visible, bMesh.visible, bossParts.root.visible]
       const counts = [vMesh.count, bMesh.count]
       vMesh.visible = true
@@ -954,13 +1024,19 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       bMesh.visible = shown[1] ?? false
       bossParts.root.visible = shown[2] ?? false
     },
-    cleared: () => bossDead,
+    cleared: () => {
+      if (!bossDead) return false
+      // Hold the clear card until the death clip finishes, so the collapse and the ink puddle actually play.
+      if (rig.ready() && rig.clip() === 'death' && rig.time() < 1.98) return false
+      return true
+    },
     bossing: () => bossOn,
     phase: () => phase,
     debugPhase(next) {
       if (!born) wake(270)
       phase = next
       shudder = 1
+      wantShudder = next > 0
       if (next >= 2) {
         hold = true
         bossHp = Math.min(bossHp, specBoss.hp * 0.55)
@@ -980,6 +1056,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       bGeo.dispose()
       vMat.dispose()
       bMat.dispose()
+      rig.dispose()
       bossParts.mesh.geometry.dispose()
       const mat = bossParts.mesh.material
       if (!Array.isArray(mat)) mat.dispose()
@@ -1309,6 +1386,11 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       visual.laneT = 0
       if (bossOn) {
         bossT += dt
+        if (rig.ready() && wantShudder) {
+          wantShudder = false
+          finishPour(px, pz)
+          rig.play('shudder')
+        }
         const rate = enrage
         if (rise > 0) {
           rise -= dt
@@ -1372,9 +1454,14 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
             slamCd -= dt * rate
             if (slamCd <= 0) {
               slamCd = 4
-              slamT = 0.9
               slamsFired++
               hooks.sfx('compline_slam')
+              if (rig.ready()) {
+                slamClip = true
+                slamAge = 0
+                slamHitDone = false
+                rig.play('slam')
+              } else slamT = 0.9
             }
             selfCd -= dt * rate
             if (selfCd <= 0) {
@@ -1383,16 +1470,46 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
             }
           }
         }
-        if (pourOn) {
+        const rigOn = rig.ready()
+        if (rigOn) {
+          const ev = rig.step(dt)
+          const span = rig.span()
+          if (ev.pourStart && pourWait) {
+            pourWait = false
+            pourOn = true
+            pourT = span
+            visual.lanePhase = 0
+            hooks.sfx('compline_pour')
+          }
+          if (ev.pourEnd) finishPour(px, pz)
+          if (ev.slamHit) slamDamage(px, pz)
+          if (pourOn) {
+            pourT -= dt
+            visual.laneT = pourT > 0 ? 1 - pourT / span : 1
+            visual.lanePhase = pourT > 0 ? 0 : 1
+            if (pourT <= -0.08) finishPour(px, pz)
+          } else if (pourT < 0) {
+            pourT += dt
+            visual.laneT = Math.max(0, 1 + pourT / 6)
+            visual.lanePhase = 1
+          }
+          if (slamClip) {
+            slamAge += dt
+            visual.slamX = bossX
+            visual.slamZ = bossZ
+            visual.slamR = 4 * Math.min(1, slamAge / 0.56)
+            if (slamAge >= 0.62) slamDamage(px, pz)
+            if (slamHitDone) slamClip = false
+          }
+          rig.glow(phase, false)
+        } else if (pourOn) {
           pourT -= dt
           visual.laneT = pourT > 0 ? 1 - pourT / 0.8 : Math.max(0, visual.laneT)
           visual.lanePhase = pourT > 0 ? 0 : 1
           if (pourT <= 0 && pourOn) {
             pourOn = false
             visual.laneT = 1
-            if (laneHit(px, pz, lane0, 0.7) || laneHit(px, pz, lane1, 0.7)) {
-              if (hooks.vulnerable()) hooks.hurt(22, false)
-            }
+            laneDamage(px, pz)
             pourT = -6
           }
         } else if (pourT < 0) {
@@ -1400,7 +1517,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           visual.laneT = Math.max(0, 1 + pourT / 6)
           visual.lanePhase = 1
         }
-        if (slamT > 0) {
+        if (!rigOn && slamT > 0) {
           slamT -= dt
           visual.slamX = bossX
           visual.slamZ = bossZ
@@ -1445,16 +1562,31 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         bossParts.uDrink.value = phase === 3 && drink > 0 && drink < 4 ? 1 : 0
         bossParts.root.rotation.y = face
         bossParts.root.rotation.x = 0
-        const bob = phase === 3 && slamT > 0.4 ? (0.9 - slamT) * 0.35 : Math.sin(time * 1.3) * 0.04
-        bossParts.root.position.set(bossX, bossY + bob + (bossDead ? -2 : 0), bossZ)
-        bossParts.root.scale.setScalar(bossHp > 0 ? BOSS_SCALE : Math.max(0.2, BOSS_SCALE))
+        if (rigOn) {
+          bossParts.root.position.set(bossX, bossY, bossZ)
+          bossParts.root.scale.setScalar(1)
+        } else {
+          const bob = phase === 3 && slamT > 0.4 ? (0.9 - slamT) * 0.35 : Math.sin(time * 1.3) * 0.04
+          bossParts.root.position.set(bossX, bossY + bob + (bossDead ? -2 : 0), bossZ)
+          bossParts.root.scale.setScalar(bossHp > 0 ? BOSS_SCALE : Math.max(0.2, BOSS_SCALE))
+        }
         trackBoss()
       } else if (bossDead) {
-        bossY -= dt * 0.8
-        bossParts.root.position.set(bossX, bossY, bossZ)
-        const s = Math.max(0, 1 + bossY * 0.3)
-        bossParts.root.scale.setScalar(s)
-        if (s <= 0.05) bossParts.root.visible = false
+        if (rig.ready()) {
+          const ev = rig.step(dt)
+          const t = rig.time()
+          if (t >= 0.75) rig.spread(Math.min(1, (t - 0.75) / 0.872))
+          if (ev.haloLand) hooks.sfx('compline_slam')
+          rig.glow(0, true)
+          bossParts.root.position.set(bossX, bossY, bossZ)
+          bossParts.root.scale.setScalar(1)
+        } else {
+          bossY -= dt * 0.8
+          bossParts.root.position.set(bossX, bossY, bossZ)
+          const s = Math.max(0, 1 + bossY * 0.3)
+          bossParts.root.scale.setScalar(s)
+          if (s <= 0.05) bossParts.root.visible = false
+        }
       }
       prevCycle = cycle
       sync(vMesh, votaries, vHot, () => 0, () => 1)

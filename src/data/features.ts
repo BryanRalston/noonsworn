@@ -97,5 +97,6 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Shadow-Clock', feature: 'Brimwash', status: 'shipped', since: 'M5b' },
   { area: 'Combat & Weapons', feature: 'The Compline', status: 'shipped', since: 'M5b' },
   { area: 'Combat & Weapons', feature: 'Compline is a pale stone bell-robed statue with a gold ewer', status: 'shipped', since: 'M5b.1' },
+  { area: 'Combat & Weapons', feature: 'Compline is a skinned statue that pours, slams, and sinks into an ink puddle', status: 'shipped', since: 'M5b.3' },
   { area: 'Maps', feature: 'Westering Stair coming soon', status: 'shipped', since: 'M5b' },
 ]
