@@ -2088,6 +2088,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     pressCut: () => {
       frame.cutPressed = true
     },
+    releaseCut: () => {
+      frame.cutPressed = false
+    },
     renderNow: () => loop.render(1, 0.016, 16),
     pulseMirage: () => {
       frame.miragePressed = true
@@ -2152,6 +2155,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     debugPhase: (n: number) => {
       cloister?.debugPhase(n)
     },
+    peek: () => (activeMap === 'cloister' && cloister ? cloister.peek() : null),
+    spawnVotary: (x: number, z: number) => cloister?.spawnVotary(x, z),
+    placeVotary: (x: number, z: number) => cloister?.placeVotary(x, z),
+    spawnBlot: (x: number, z: number) => cloister?.spawnBlot(x, z),
+    rules: (x: number, z: number) => (activeMap === 'cloister' && cloister ? cloister.rules(x, z) : null),
     arm: () => {
       build.level = 13
       build.spear = 4

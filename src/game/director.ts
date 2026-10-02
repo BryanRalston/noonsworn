@@ -71,7 +71,7 @@ export function createDirector(): Director {
       }
       const wave = waveAt(time)
       const rate = wave.rate * (lattice?.rateMul ?? 1)
-      const minCount = Math.min(wave.min, TUNING.designCap, boss ? 40 : TUNING.designCap)
+      const minCount = boss ? 0 : Math.min(wave.min, TUNING.designCap)
       director.acc += rate * dt
       const hour = Math.floor(time / TUNING.packEvery)
       if (!boss && hour > director.hour && time < TUNING.runLength && wave.pack > 0) {

@@ -1,8 +1,10 @@
 import {
+  BoxGeometry,
   BufferGeometry,
   Color,
   ConeGeometry,
   CylinderGeometry,
+  TorusGeometry,
   DynamicDrawUsage,
   Float32BufferAttribute,
   InstancedBufferAttribute,
@@ -71,6 +73,14 @@ export interface CastVisual {
   fan: number
 }
 
+export interface CastPeek {
+  votaries: { x: number; z: number; hp: number; mode: number; flash: number; wash: number; yaw: number }[]
+  blots: { x: number; z: number; hp: number; mode: number; yaw: number; t: number; vx: number; vz: number }[]
+  boss: { x: number; z: number; y: number; hp: number; max: number; phase: number; on: number; dead: number; rise: number }
+  vis: { pull: number; warn: number; glyph: number; crest: number; dry: number; hold: number; fan: number; laneT: number; slamR: number; lane0: number[]; lane1: number[] }
+  tris: { votary: number; blot: number; boss: number; ewer: number }
+}
+
 export interface CloisterCast {
   reset: () => void
   tick: (dt: number, time: number, cycle: number, px: number, pz: number, might: number) => void
@@ -78,6 +88,9 @@ export interface CloisterCast {
   cut: (sx: number, sz: number, ex: number, ez: number, active: boolean, id: number, radius: number, damage: number, might: number) => void
   touch: (px: number, pz: number) => number
   spawnVotary: (x: number, z: number) => void
+  placeVotary: (x: number, z: number) => void
+  spawnBlot: (x: number, z: number) => void
+  peek: () => CastPeek
   plan: (time: number) => { votary: number; boss: boolean }
   visuals: () => CastVisual
   occluders: () => { x: number; z: number; r: number }[]
@@ -236,44 +249,68 @@ function foeMat(): ShaderMaterial {
   })
 }
 
+const BOSS_SCALE = 1.22
+const PALE = new Color('#E4D2B0')
+
+function ring(radius: number, tube: number, y: number, color: Color): BufferGeometry {
+  const geo = new TorusGeometry(radius, tube, 6, 16)
+  geo.rotateX(Math.PI / 2)
+  geo.translate(0, y, 0)
+  paint(geo, color, 0)
+  return geo
+}
+
+function rib(w: number, h: number, d: number, radius: number, y: number, ang: number, color: Color): BufferGeometry {
+  const geo = new BoxGeometry(w, h, d)
+  geo.translate(Math.sin(ang) * radius, y, Math.cos(ang) * radius)
+  geo.rotateY(-ang)
+  paint(geo, color, 0)
+  return geo
+}
+
 function buildBoss(): { mesh: Mesh; ewer: Mesh } {
-  const robe = new CylinderGeometry(0.7, 1.15, 2.5, 8, 1)
-  robe.translate(0, 1.35, 0)
-  paint(robe, INK, 0)
-  const cowl = new ConeGeometry(0.62, 1.15, 8)
-  cowl.translate(0, 3.05, 0)
+  const skirt = new CylinderGeometry(0.62, 0.92, 1.25, 10, 1)
+  skirt.translate(0, 0.68, 0)
+  paint(skirt, INK, 0)
+  const torso = new CylinderGeometry(0.4, 0.55, 1.05, 10, 1)
+  torso.translate(0, 1.7, 0)
+  paint(torso, INK, 0)
+  const cowl = new ConeGeometry(0.5, 0.85, 10)
+  cowl.translate(0, 2.5, 0)
   paint(cowl, INK, 0)
-  const collar = new CylinderGeometry(0.48, 0.52, 0.12, 8, 1)
-  collar.translate(0, 2.45, 0.05)
-  paint(collar, new Color('#E4D2B0'), 0)
-  const stole = new CylinderGeometry(0.22, 0.42, 2.3, 6, 1)
-  stole.translate(0.05, 1.35, 1.05)
-  paint(stole, CRIMSON, 0)
-  const sash = new CylinderGeometry(1.05, 1.2, 0.42, 8, 1)
-  sash.translate(0, 1.7, 0.2)
-  paint(sash, CRIMSON, 0)
-  const seam = new CylinderGeometry(0.045, 0.045, 1.15, 4, 1)
-  seam.translate(0, 1.7, 0.62)
-  paint(seam, GOLD, 0)
-  const sleeve = new CylinderGeometry(0.1, 0.14, 0.85, 5, 1)
-  sleeve.translate(0.48, 1.85, 0.28)
-  sleeve.rotateZ(0.55)
+  const face = new CylinderGeometry(0.18, 0.18, 0.05, 8, 1)
+  face.rotateX(Math.PI / 2)
+  face.translate(0, 2.15, 0.38)
+  paint(face, PALE, 0)
+  const parts: BufferGeometry[] = [
+    skirt,
+    torso,
+    cowl,
+    face,
+    ring(0.9, 0.07, 0.14, GOLD),
+    ring(0.46, 0.055, 2.18, GOLD),
+    ring(0.42, 0.06, 1.95, PALE),
+    ring(0.58, 0.055, 1.42, CRIMSON),
+  ]
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2
+    parts.push(rib(0.16, 1.15, 0.07, 0.72, 0.85, ang, CRIMSON))
+    parts.push(rib(0.06, 1.35, 0.05, 0.58, 1.35, ang + 0.4, GOLD))
+  }
+  const sleeve = new CylinderGeometry(0.1, 0.13, 0.7, 6, 1)
+  sleeve.translate(0.42, 1.75, 0.22)
+  sleeve.rotateZ(0.6)
   paint(sleeve, INK, 0)
-  const geo = mergeGeometries([robe, cowl, collar, stole, sash, seam, sleeve], false)
+  parts.push(sleeve)
+  const geo = mergeGeometries(parts, false)
   if (!geo) throw new Error('compline')
-  robe.dispose()
-  cowl.dispose()
-  collar.dispose()
-  stole.dispose()
-  sash.dispose()
-  seam.dispose()
-  sleeve.dispose()
+  for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
   const mat = new ShaderMaterial({
     vertexShader: `attribute vec3 color; varying vec3 vColor; varying vec3 vN; void main(){ vColor = color; vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `precision mediump float; varying vec3 vColor; varying vec3 vN; void main(){ float ndl = clamp(dot(normalize(vN), normalize(vec3(-0.35, 0.86, -0.3))), 0.0, 1.0); gl_FragColor = vec4(vColor * mix(0.62, 1.08, ndl), 1.0); }`,
   })
   const mesh = new Mesh(geo, mat)
-  mesh.scale.setScalar(1.28)
+  mesh.scale.setScalar(BOSS_SCALE)
   mesh.frustumCulled = false
   mesh.castShadow = false
   const bowl = new CylinderGeometry(0.18, 0.26, 0.42, 7, 1)
@@ -326,7 +363,7 @@ function laneHit(px: number, pz: number, lane: Vector4, half: number): boolean {
 }
 
 export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): CloisterCast {
-  const rng: Rng = mulberry32(7)
+  let rng: Rng = mulberry32(7)
   const votaries: Foe[] = []
   const blots: Foe[] = []
   for (let i = 0; i < V_MAX; i++) votaries.push(blank())
@@ -437,30 +474,34 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     hot.needsUpdate = true
   }
 
-  function spawnVotary(x: number, z: number) {
+  function placeVotary(x: number, z: number) {
     const foe = take(votaries)
     if (!foe) return
-    const spot = octDist(x, z) < 10 ? outward(x, z, 14) : { x, z }
     foe.alive = 1
-    foe.x = spot.x
-    foe.z = spot.z
+    foe.x = x
+    foe.z = z
     foe.hp = specV.hp
     foe.yaw = 0
     foe.t = 0
     foe.cd = 0
     foe.wash = 0
     foe.flash = 0
-    foe.heading = Math.atan2(-spot.z, -spot.x || 1)
+    foe.heading = Math.atan2(-z, -x || 1)
     foe.mode = 0
     foe.vx = 0
     foe.vz = -1
+  }
+
+  function spawnVotary(x: number, z: number) {
+    const spot = octDist(x, z) < 10 ? outward(x, z, 14) : { x, z }
+    placeVotary(spot.x, spot.z)
   }
 
   function spawnBlot(tx: number, tz: number) {
     if (living(blots) >= 4) return
     const foe = take(blots)
     if (!foe) return
-    const j = (rng() - 0.5) * 0.35
+    const j = (rng() - 0.5) * ((20 * Math.PI) / 180)
     const c = Math.cos(j)
     const s = Math.sin(j)
     const dock = outward(tx * c - tz * s, tx * s + tz * c, specB.dock)
@@ -603,6 +644,26 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
 
   const cast: CloisterCast = {
     reset() {
+      rng = mulberry32(7)
+      wakeAt = 0
+      p2at = 0
+      p3at = 0
+      deadAt = 0
+      stamp = 1e9
+      cowlCd = 0
+      rise = 0
+      pourT = 0
+      pourOn = false
+      slamT = 0
+      selfT = 0
+      contactCd = 0
+      visual.hold = false
+      visual.dry = 0
+      visual.laneT = 0
+      visual.slamR = 0
+      visual.pull = 0
+      visual.warn = 0
+      visual.crest = 0
       for (let i = 0; i < votaries.length; i++) {
         const foe = votaries[i]
         if (foe) foe.alive = 0
@@ -631,6 +692,57 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       hooks.track(null)
     },
     spawnVotary,
+    placeVotary,
+    spawnBlot,
+    peek() {
+      const pack = (foe: Foe) => ({
+        x: foe.x,
+        z: foe.z,
+        hp: foe.hp,
+        mode: foe.mode,
+        flash: foe.flash,
+        wash: foe.wash,
+        yaw: foe.yaw,
+        t: foe.t,
+        vx: foe.vx,
+        vz: foe.vz,
+      })
+      const votariesOut = []
+      for (let i = 0; i < votaries.length; i++) {
+        const foe = votaries[i]
+        if (foe?.alive) votariesOut.push(pack(foe))
+      }
+      const blotsOut = []
+      for (let i = 0; i < blots.length; i++) {
+        const foe = blots[i]
+        if (foe?.alive) blotsOut.push(pack(foe))
+      }
+      const trisOf = (geo: BufferGeometry) => (geo.index ? geo.index.count / 3 : geo.getAttribute('position').count / 3)
+      return {
+        votaries: votariesOut,
+        blots: blotsOut,
+        boss: { x: bossX, z: bossZ, y: bossY, hp: bossHp, max: specBoss.hp, phase, on: bossOn ? 1 : 0, dead: bossDead ? 1 : 0, rise },
+        vis: {
+          pull: visual.pull,
+          warn: visual.warn,
+          glyph: visual.glyph,
+          crest: visual.crest,
+          dry: visual.dry,
+          hold: visual.hold ? 1 : 0,
+          fan: visual.fan,
+          laneT: visual.laneT,
+          slamR: visual.slamR,
+          lane0: [visual.lane0.x, visual.lane0.y, visual.lane0.z, visual.lane0.w],
+          lane1: [visual.lane1.x, visual.lane1.y, visual.lane1.z, visual.lane1.w],
+        },
+        tris: {
+          votary: trisOf(vGeo),
+          blot: trisOf(bGeo),
+          boss: trisOf(bossParts.mesh.geometry),
+          ewer: trisOf(bossParts.ewer.geometry),
+        },
+      }
+    },
     plan(time) {
       const votary = time >= 90 ? 0.12 * Math.min(1, (time - 90) / 120) : 0
       return { votary, boss: bossOn }
@@ -735,6 +847,21 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         if (foe.hp <= 0) {
           foe.alive = 0
           hooks.xp(foe.x, foe.z, specV.xp)
+        }
+      }
+      for (let i = 0; i < blots.length; i++) {
+        const foe = blots[i]
+        if (!foe?.alive || foe.mode === 3 || foe.heading === id) continue
+        const reach = foe.mode === 0 ? specB.radius : 0.45
+        if (!hit(foe.x, foe.z, reach)) continue
+        foe.heading = id
+        let amount = damage * (1 + TUNING.passive.might * might)
+        if (foe.mode === 0) amount *= TUNING.armoredWeapon
+        else amount = damageAmount(damage, ask.lit(foe.x, foe.z), 'cut', might, ask.deep(foe.x, foe.z))
+        foe.hp -= amount
+        if (foe.hp <= 0) {
+          foe.alive = 0
+          hooks.xp(foe.x, foe.z, specB.xp)
         }
       }
       if (bossOn && hit(bossX, bossZ, specBoss.radius) && stamp !== -id) {
@@ -1104,7 +1231,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         bossParts.mesh.rotation.x = pourOn ? -0.28 : phase === 3 && drink > 0 && drink < 4 ? 0.4 : 0
         const bob = phase === 3 && slamT > 0.4 ? (0.9 - slamT) * 0.7 : Math.sin(time * 3.1) * 0.06
         bossParts.mesh.position.set(bossX, bossY + bob + (bossDead ? -2 : 0), bossZ)
-        bossParts.mesh.scale.setScalar(bossHp > 0 ? 1.28 : Math.max(0.2, 1.28))
+        bossParts.mesh.scale.setScalar(bossHp > 0 ? BOSS_SCALE : Math.max(0.2, BOSS_SCALE))
         const pourTilt = pourOn ? -1.05 : -0.25
         bossParts.ewer.position.set(bossX + Math.sin(face) * 0.55, bossY + 1.7, bossZ + Math.cos(face) * 0.55)
         bossParts.ewer.rotation.set(pourTilt, face, 0)

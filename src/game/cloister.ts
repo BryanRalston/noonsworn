@@ -22,7 +22,7 @@ import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 import type { FloorUniforms } from '../render/floorShader'
 import { PILLARS, cloisterWalk, octDist, segmentBlocked, setCloisterBound, setCloisterCourt } from './collision'
-import { createCast, type CastHooks } from './cloisterCast'
+import { createCast, type CastHooks, type CloisterCast } from './cloisterCast'
 
 const SOUTH = Math.PI / 2
 const TAU = Math.PI * 2
@@ -773,6 +773,11 @@ export interface CloisterHandle {
   phase: () => number
   debugPhase: (phase: number) => void
   times: () => { wake: number; p2: number; p3: number; dead: number }
+  peek: () => ReturnType<CloisterCast['peek']>
+  spawnVotary: (x: number, z: number) => void
+  placeVotary: (x: number, z: number) => void
+  spawnBlot: (x: number, z: number) => void
+  rules: (x: number, z: number) => { under: boolean; direct: boolean; deep: boolean; lit: boolean }
   info: () => CloisterInfo
   setOccluder: (i: number, circle: { x: number; z: number; r: number } | null) => void
   cover: () => { exposed: number; arcade: number; n: number; arcadeN: number }
@@ -1627,7 +1632,7 @@ export function createCloister(opts: {
       let mul = time >= 120 ? 1.1 : 1
       if (cycle >= 8 && cycle < 26) mul *= 0.9
       else if (cycle >= 34) mul *= 1.1
-      planOut.rateMul = mul
+      planOut.rateMul = mix.boss ? 0.08 : mul
       return planOut
     },
     info() {
@@ -1645,6 +1650,11 @@ export function createCloister(opts: {
     phase: () => cast.phase(),
     debugPhase: (phase) => cast.debugPhase(phase),
     times: () => cast.times(),
+    peek: () => cast.peek(),
+    spawnVotary: (x, z) => cast.spawnVotary(x, z),
+    placeVotary: (x, z) => cast.placeVotary(x, z),
+    spawnBlot: (x, z) => cast.spawnBlot(x, z),
+    rules: (x, z) => ({ under: underLit(x, z), direct: direct(x, z), deep: deep(x, z), lit: isLit(x, z) }),
     cover() {
       let n = 0
       let litN = 0
