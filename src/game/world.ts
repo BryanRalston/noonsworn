@@ -2160,6 +2160,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     spawnVotary: (x: number, z: number) => cloister?.spawnVotary(x, z),
     placeVotary: (x: number, z: number) => cloister?.placeVotary(x, z),
     spawnBlot: (x: number, z: number) => cloister?.spawnBlot(x, z),
+    haloScreen: () => (activeMap === 'cloister' && cloister ? cloister.haloScreen(follow.camera) : null),
     rules: (x: number, z: number) => (activeMap === 'cloister' && cloister ? cloister.rules(x, z) : null),
     arm: () => {
       build.level = 13

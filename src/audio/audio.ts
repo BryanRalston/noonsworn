@@ -235,6 +235,32 @@ export function createAudio(fxRng: () => number): AudioBus {
     play(pick(names), sfxBus, v.gain, v.rate, kind)
   }
 
+  function haloClank() {
+    if (!unlocked || muted) return
+    const c = ensure()
+    if (!sfxBus) return
+    const now = c.currentTime
+    const ring = c.createGain()
+    ring.gain.setValueAtTime(0.0001, now)
+    ring.gain.exponentialRampToValueAtTime(0.16, now + 0.006)
+    ring.gain.exponentialRampToValueAtTime(0.0001, now + 0.16)
+    ring.connect(sfxBus)
+    const freqs = [780, 1240]
+    for (let i = 0; i < freqs.length; i++) {
+      const osc = c.createOscillator()
+      osc.type = i === 0 ? 'triangle' : 'sine'
+      const f = freqs[i] ?? 780
+      osc.frequency.setValueAtTime(f, now)
+      osc.frequency.exponentialRampToValueAtTime(f * 0.64, now + 0.14)
+      const g = c.createGain()
+      g.gain.value = i === 0 ? 0.72 : 0.32
+      osc.connect(g)
+      g.connect(ring)
+      osc.start(now)
+      osc.stop(now + 0.18)
+    }
+  }
+
   function duckTap() {
     if (!ctx || !duckGain) return
     const now = ctx.currentTime
@@ -370,6 +396,10 @@ export function createAudio(fxRng: () => number): AudioBus {
       void loadSet(names)
     },
     cue(name) {
+      if (name === 'compline_halo') {
+        haloClank()
+        return
+      }
       const kind = name === 'water_fill' || name === 'water_ebb' ? 'water' : name === 'blot_spit' ? 'blot_spit' : name.startsWith('compline') ? 'compline' : null
       play(name, sfxBus, 0.7, 1, kind)
       if (name === 'brimwash_crash' || name === 'compline_slam') duckTap()

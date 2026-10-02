@@ -5,9 +5,11 @@ import {
   ConeGeometry,
   CylinderGeometry,
   LatheGeometry,
+  RingGeometry,
   SphereGeometry,
   TorusGeometry,
   Vector2,
+  Vector3,
   DynamicDrawUsage,
   Float32BufferAttribute,
   InstancedBufferAttribute,
@@ -95,6 +97,7 @@ export interface CloisterCast {
   spawnVotary: (x: number, z: number) => void
   placeVotary: (x: number, z: number) => void
   spawnBlot: (x: number, z: number) => void
+  haloScreen: (camera: Camera) => { x: number; y: number; z: number; inFrame: boolean } | null
   peek: () => CastPeek
   plan: (time: number) => { votary: number; boss: boolean }
   visuals: () => CastVisual
@@ -162,18 +165,35 @@ function votaryGeo(): BufferGeometry {
   return geo
 }
 
+function tagKind(geo: BufferGeometry, kind: number) {
+  const n = geo.getAttribute('position').count
+  const a = new Float32Array(n)
+  a.fill(kind)
+  geo.setAttribute('aKind', new Float32BufferAttribute(a, 1))
+}
+
 function blotGeo(): BufferGeometry {
   const disc = new CylinderGeometry(1.15, 1.2, 0.12, 8, 1)
   tint(disc, new Color(0.05, 0.04, 0.08))
+  tagKind(disc, 0)
   const lip = TorusLike()
+  tagKind(lip, 1)
   const eyes = [ -0.28, 0, 0.28 ]
   const parts: BufferGeometry[] = [disc, lip]
   for (let i = 0; i < eyes.length; i++) {
     const eye = new SphereGeometry(0.07, 4, 3)
     eye.translate(eyes[i] ?? 0, 0.1, 0.55)
     tint(eye, EYE)
+    tagKind(eye, 2)
     parts.push(eye)
   }
+  // Ripple stays inside this geometry so the InstancedMesh is still one draw.
+  const ring = new RingGeometry(1.38, 1.62, 24)
+  ring.rotateX(-Math.PI / 2)
+  ring.translate(0, 0.015, 0)
+  tint(ring, new Color(0.45, 0.22, 0.55))
+  tagKind(ring, 3)
+  parts.push(ring)
   const geo = mergeGeometries(parts, false)
   if (!geo) throw new Error('blot')
   for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
@@ -239,8 +259,113 @@ function foeMat(): ShaderMaterial {
   })
 }
 
+const BLOT_VERT = /* glsl */ `
+precision mediump float;
+attribute float aHot;
+attribute vec3 color;
+attribute float aKind;
+varying vec3 vNormal;
+varying vec3 vColor;
+varying float vHot;
+varying float vKind;
+varying vec3 vWorld;
+varying vec3 vLocal;
+uniform float uTime;
+void main() {
+  vec3 p = position;
+  float ang = atan(position.z, position.x);
+  float rad = length(position.xz);
+  float edge = smoothstep(0.5, 1.2, rad);
+  float wob = sin(ang * 5.0 + uTime * 1.35) * (0.02 + edge * 0.09);
+  p.x += cos(ang) * wob;
+  p.z += sin(ang) * wob;
+  #ifdef USE_INSTANCING
+    float inst = length(instanceMatrix[0].xyz);
+  #else
+    float inst = 1.0;
+  #endif
+  if (aKind > 2.5) {
+    if (inst < 0.5) {
+      p = vec3(0.0, 0.04, 0.0);
+    } else {
+      float pulse = 1.0 + 0.07 * sin(uTime * 1.15);
+      p.x *= pulse;
+      p.z *= pulse;
+      p.y += sin(ang * 8.0 - uTime * 2.1) * 0.012;
+    }
+  }
+  #ifdef USE_INSTANCING
+    vec3 nrm = mat3(instanceMatrix) * normal;
+    vec4 wp = modelMatrix * instanceMatrix * vec4(p, 1.0);
+  #else
+    vec3 nrm = normal;
+    vec4 wp = modelMatrix * vec4(p, 1.0);
+  #endif
+  vNormal = normalize(nrm);
+  vColor = color;
+  vHot = aHot;
+  vKind = aKind;
+  vWorld = wp.xyz;
+  vLocal = p;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}
+`
+
+const BLOT_FRAG = /* glsl */ `
+precision mediump float;
+varying vec3 vNormal;
+varying vec3 vColor;
+varying float vHot;
+varying float vKind;
+varying vec3 vWorld;
+varying vec3 vLocal;
+uniform float uTime;
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 viewDir = normalize(cameraPosition - vWorld);
+  if (vKind > 2.5) {
+    float wave = 0.45 + 0.55 * sin(uTime * 1.35 + vLocal.x * 3.0);
+    vec3 violet = vec3(0.28, 0.08, 0.38);
+    vec3 gold = vec3(0.55, 0.36, 0.1);
+    vec3 ring = mix(violet, gold, 0.35 + 0.4 * sin(uTime * 0.65));
+    gl_FragColor = vec4(ring * (0.55 + 0.4 * wave), 1.0);
+    return;
+  }
+  vec3 ink = vec3(0.04, 0.022, 0.05);
+  vec3 goldHot = vec3(0.62, 0.44, 0.14);
+  vec3 lapis = vec3(0.14, 0.16, 0.32);
+  vec3 base = ink;
+  if (vHot > 1.5) base = mix(ink, lapis, 0.55);
+  else if (vHot > 0.5) base = mix(ink, goldHot, 0.4);
+  float ndl = clamp(dot(n, normalize(vec3(-0.35, 0.86, -0.35))), 0.0, 1.0);
+  vec3 col = base * mix(0.75, 1.1, ndl);
+  if (vKind > 1.5) {
+    gl_FragColor = vec4(vColor, 1.0);
+    return;
+  }
+  // The disc top is one flat normal, so a Blinn lobe would light the whole face.
+  // The sheen is a moving stripe instead.
+  float band = smoothstep(0.07, 0.0, abs(vLocal.x * 0.42 + sin(uTime * 0.45) * 0.2));
+  col += vec3(0.62, 0.58, 0.7) * band * 0.34;
+  float fres = pow(1.0 - clamp(dot(n, viewDir), 0.0, 1.0), 4.0);
+  vec3 rim = mix(vec3(0.42, 0.14, 0.58), vec3(0.82, 0.58, 0.22), 0.48);
+  col += rim * fres * 0.4;
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
+function blotMat(): ShaderMaterial {
+  const mat = new ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: BLOT_VERT,
+    fragmentShader: BLOT_FRAG,
+  })
+  mat.toneMapped = false
+  mat.fog = false
+  return mat
+}
+
 const BOSS_SCALE = 1
-const LOOP_R = 12
 const STONE = new Color('#D9CBB0')
 const STONE_DEEP = new Color('#B8A88C')
 const FACE = new Color('#100c0a')
@@ -441,6 +566,8 @@ function buildBoss(): BossView {
 }
 
 const loopPt = { x: 0, z: 0 }
+const easePt = { x: 0, z: 0 }
+const haloNdc = new Vector3()
 const outPt = { x: 0, z: 0 }
 const steerScan = new Uint8Array(V_MAX)
 const steerBest = new Float32Array(V_MAX)
@@ -492,7 +619,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   vGeo.setAttribute('aHot', vHot)
   bGeo.setAttribute('aHot', bHot)
   const vMat = foeMat()
-  const bMat = foeMat()
+  const bMat = blotMat()
   const vMesh = new InstancedMesh(vGeo, vMat, V_MAX)
   const bMesh = new InstancedMesh(bGeo, bMat, B_MAX)
   vMesh.frustumCulled = false
@@ -502,6 +629,10 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   const bossParts = buildBoss()
   // Procedural child stays mounted. The skinned GLB hides it after a successful load.
   const rig = attachCompline(bossParts.root, bossParts.mesh)
+  let viewCam: Camera | null = null
+  let haloOver = 0
+  let wantX = 0
+  let wantZ = 0
   bossParts.root.visible = false
   parent.add(vMesh, bMesh, bossParts.root)
   const trackPt = { x: 0, z: 0, r: 0 }
@@ -697,8 +828,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     bossDead = false
     bossHp = specBoss.hp
     phase = 1
-    bossX = 2.2
-    bossZ = 1.6
+    bossX = 1.2
+    bossZ = 6.6
     bossY = -1.6
     rise = 3
     riseHit = false
@@ -1006,7 +1137,14 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       occOut.length = n
       return occOut
     },
+    haloScreen(camera) {
+      if (!rig.haloTop(haloNdc)) return null
+      haloNdc.project(camera)
+      const inFrame = haloNdc.z >= -1 && haloNdc.z <= 1 && haloNdc.x >= -1 && haloNdc.x <= 1 && haloNdc.y >= -1 && haloNdc.y <= 1
+      return { x: haloNdc.x, y: haloNdc.y, z: haloNdc.z, inFrame }
+    },
     warm(renderer, camera) {
+      viewCam = camera
       rig.noteWarm(renderer, camera)
       const shown = [vMesh.visible, bMesh.visible, bossParts.root.visible]
       const counts = [vMesh.count, bMesh.count]
@@ -1407,8 +1545,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           }
         } else if (phase === 1 || phase === 2) {
           const loop = nearestLoop(px, pz)
-          const tx = loop.x
-          const tz = loop.z
+          const eased = easeCentre(loop.x, loop.z, px, pz)
+          const tx = eased.x
+          const tz = eased.z
           const dx = tx - bossX
           const dz = tz - bossZ
           const dist = Math.hypot(dx, dz) || 1
@@ -1432,8 +1571,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         } else if (phase === 3) {
           if (dry < 1) {
             const rim = outward(bossX, bossZ, 8)
-            const dx = rim.x - bossX
-            const dz = rim.z - bossZ
+            const eased = easeCentre(rim.x, rim.z, px, pz)
+            const dx = eased.x - bossX
+            const dz = eased.z - bossZ
             const dist = Math.hypot(dx, dz) || 1
             if (dist > 0.4 && drink <= 0) {
               const step = Math.min(dist, specBoss.speed1 * dt)
@@ -1445,8 +1585,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
               if (drink >= 4) hooks.sfx('compline_drink')
             }
           } else {
-            const dx = px - bossX
-            const dz = pz - bossZ
+            const eased = easeCentre(px, pz, px, pz)
+            const dx = eased.x - bossX
+            const dz = eased.z - bossZ
             const dist = Math.hypot(dx, dz) || 1
             const step = Math.min(dist, specBoss.speed3 * rate * dt)
             bossX += (dx / dist) * step
@@ -1469,6 +1610,18 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
               selfT = 1.6
             }
           }
+        }
+        if (bossOn && haloOver > 0.02) {
+          const pull = Math.min(0.2, haloOver * 0.3)
+          let sx = (wantX - bossX) * pull
+          let sz = (wantZ - bossZ) * pull
+          const sm = Math.hypot(sx, sz)
+          if (sm > 0.22) {
+            sx *= 0.22 / sm
+            sz *= 0.22 / sm
+          }
+          bossX += sx
+          bossZ += sz
         }
         const rigOn = rig.ready()
         if (rigOn) {
@@ -1576,7 +1729,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           const ev = rig.step(dt)
           const t = rig.time()
           if (t >= 0.75) rig.spread(Math.min(1, (t - 0.75) / 0.872))
-          if (ev.haloLand) hooks.sfx('compline_slam')
+          if (ev.haloLand) hooks.sfx('compline_halo')
           rig.glow(0, true)
           bossParts.root.position.set(bossX, bossY, bossZ)
           bossParts.root.scale.setScalar(1)
@@ -1594,32 +1747,69 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       contactCd = Math.max(0, contactCd - dt)
     },
   }
+
+  function easeCentre(tx: number, tz: number, px: number, pz: number): { x: number; z: number } {
+    easePt.x = tx
+    easePt.z = tz
+    wantX = tx
+    wantZ = tz
+    if (!viewCam || !rig.haloTop(haloNdc)) {
+      haloOver = 0
+      return easePt
+    }
+    haloNdc.project(viewCam)
+    const overTop = haloNdc.y - 0.82
+    const overBot = -0.88 - haloNdc.y
+    const overX = Math.abs(haloNdc.x) - 0.86
+    haloOver = Math.max(0, overTop, overBot, overX)
+    if (haloOver <= 0) {
+      wantX = tx
+      wantZ = tz
+      return easePt
+    }
+    // Crown leaving the top: she is too far from the camera, so step toward Sela. Bottom and sides step toward court centre.
+    if (overTop >= overBot && overTop >= overX && overTop > 0) {
+      const k = Math.min(0.7, overTop * 1.6)
+      const dx = px - tx
+      const dz = pz - tz
+      const dist = Math.hypot(dx, dz) || 1
+      if (dist < 2.6) {
+        easePt.x = tx
+        easePt.z = tz + Math.min(1.4, overTop * 2.2)
+      } else {
+        const keep = Math.max(0, dist - 2.2) / dist
+        easePt.x = tx + dx * k * keep
+        easePt.z = tz + dz * k * keep
+      }
+    } else {
+      const k = Math.min(0.6, Math.max(overBot, overX, 0) * 1.4)
+      easePt.x = tx * (1 - k)
+      easePt.z = tz * (1 - k)
+    }
+    wantX = easePt.x
+    wantZ = easePt.z
+    return easePt
+  }
+
   return cast
 }
 
 function nearestLoop(px: number, pz: number): { x: number; z: number } {
-  const ax = Math.abs(px)
-  const az = Math.abs(pz)
-  if (ax >= az) {
-    loopPt.x = Math.sign(px || 1) * LOOP_R
-    loopPt.z = Math.max(-LOOP_R, Math.min(LOOP_R, pz))
-  } else {
-    loopPt.x = Math.max(-LOOP_R, Math.min(LOOP_R, px))
-    loopPt.z = Math.sign(pz || -1) * LOOP_R
+  // Stand on the court-centre side of Sela, which is the far side of the southeast camera, and prefer the south half.
+  let dx = -px
+  let dz = -pz
+  let len = Math.hypot(dx, dz)
+  if (len < 3) {
+    dx = 0.4
+    dz = 1
+    len = Math.hypot(dx, dz)
   }
-  // Blend toward a southeast court point so she stays off the far colonnade and low in the southeast view.
-  let bx = loopPt.x * 0.38 + 2.48
-  let bz = loopPt.z * 0.38 + 2.48
-  const o = octDist(bx, bz)
-  if (o < 10.4) {
-    const s = 11 / Math.max(o, 0.25)
-    bx *= s
-    bz *= s
-  }
-  if (bx > 14) bx = 14
-  else if (bx < -8) bx = -8
-  if (bz > 14) bz = 14
-  else if (bz < -6) bz = -6
+  let bx = px + (dx / len) * 5.4
+  let bz = pz + (dz / len) * 5.4
+  if (bz < 2.2) bz = bz * 0.45 + 2.2
+  if (bz > 8.8) bz = 8.8
+  if (bx > 8) bx = 8
+  else if (bx < -4) bx = -4
   loopPt.x = bx
   loopPt.z = bz
   return loopPt

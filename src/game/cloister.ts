@@ -801,6 +801,7 @@ export interface CloisterHandle {
   spawnVotary: (x: number, z: number) => void
   placeVotary: (x: number, z: number) => void
   spawnBlot: (x: number, z: number) => void
+  haloScreen: (camera: Camera) => { x: number; y: number; z: number; inFrame: boolean } | null
   rules: (x: number, z: number) => { under: boolean; direct: boolean; deep: boolean; lit: boolean }
   info: () => CloisterInfo
   setOccluder: (i: number, circle: { x: number; z: number; r: number } | null) => void
@@ -1681,6 +1682,7 @@ export function createCloister(opts: {
     spawnVotary: (x, z) => cast.spawnVotary(x, z),
     placeVotary: (x, z) => cast.placeVotary(x, z),
     spawnBlot: (x, z) => cast.spawnBlot(x, z),
+    haloScreen: (camera) => cast.haloScreen(camera),
     rules: (x, z) => ({ under: underLit(x, z), direct: direct(x, z), deep: deep(x, z), lit: isLit(x, z) }),
     cover() {
       let n = 0

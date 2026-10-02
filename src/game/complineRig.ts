@@ -1,5 +1,6 @@
 import {
   AnimationMixer,
+  Bone,
   CircleGeometry,
   LoopOnce,
   LoopRepeat,
@@ -7,7 +8,9 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   NearestFilter,
+  Quaternion,
   SkinnedMesh,
+  Vector3,
   type AnimationAction,
   type AnimationClip,
   type Camera,
@@ -71,6 +74,7 @@ export interface ComplineRig {
   glow: (phase: number, dead: boolean) => void
   spread: (u: number) => void
   noteWarm: (renderer: WebGLRenderer, camera: Camera) => void
+  haloTop: (out: Vector3) => boolean
   dispose: () => void
 }
 
@@ -104,7 +108,31 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
   let triCount = 0
   let gpu: WebGLRenderer | null = null
   let cam: Camera | null = null
+  let haloBone: Bone | null = null
+  let upperR: Bone | null = null
+  let forearmR: Bone | null = null
+  let handR: Bone | null = null
   const actions: Partial<Record<ClipName, AnimationAction>> = {}
+  // Centroid of the gold ewer on hand_R at slam_hit, bone-local. The spout is not along local +Y.
+  const tipLocal = new Vector3(0.452, 0.355, -0.155)
+  const yAxis = new Vector3(0, 1, 0)
+  const tipAxis = tipLocal.clone().normalize()
+  const vShoulder = new Vector3()
+  const vTip = new Vector3()
+  const vTarget = new Vector3()
+  const vDir = new Vector3()
+  const vAlong = new Vector3()
+  const vHand0 = new Vector3()
+  const qWorld = new Quaternion()
+  const qParent = new Quaternion()
+  const qTurn = new Quaternion()
+  const qClipU = new Quaternion()
+  const qClipF = new Quaternion()
+  const qClipH = new Quaternion()
+  const qPlantU = new Quaternion()
+  const qPlantF = new Quaternion()
+  const qPlantH = new Quaternion()
+
 
   function cross(bit: number, t: number, at: number): boolean {
     if (seen & bit) return false
@@ -173,6 +201,32 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     mat.emissiveIntensity = 1.6
     mat.roughness = 0.78
     mat.metalness = 0
+    // Lift and desaturate stone only. Emissive columns, ink, crimson, and gold stay on the authored colours.
+    mat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  vec3 stoneC = diffuseColor.rgb;
+  float stoneHi = max(stoneC.r, max(stoneC.g, stoneC.b));
+  float stoneLo = min(stoneC.r, min(stoneC.g, stoneC.b));
+  float stoneL = dot(stoneC, vec3(0.2126, 0.7152, 0.0722));
+  bool stoneSkip = stoneL < 0.16;
+  #ifdef USE_EMISSIVEMAP
+    if (vEmissiveMapUv.x > 0.25) stoneSkip = true;
+  #endif
+  if (stoneC.r > stoneC.g * 1.65 && stoneC.r > stoneC.b * 1.65 && stoneHi - stoneLo > 0.08) stoneSkip = true;
+  if (stoneC.b < stoneC.g * 0.55 && stoneC.r > stoneC.b * 1.45 && stoneHi > 0.2) stoneSkip = true;
+  if (!stoneSkip) {
+    stoneC = mix(stoneC, vec3(stoneL), 0.30);
+    stoneC *= 1.23;
+    diffuseColor.rgb = stoneC;
+  }
+}
+`,
+      )
+    }
+    mat.customProgramCacheKey = () => 'compline-stone-m5b4'
     if (mat.emissiveMap) {
       mat.emissiveMap.magFilter = NearestFilter
       mat.emissiveMap.minFilter = NearestFilter
@@ -207,6 +261,10 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     })
     material = mat
     skin = skinned
+    haloBone = skinned.skeleton.getBoneByName('halo') ?? null
+    upperR = skinned.skeleton.getBoneByName('upperarm_R') ?? null
+    forearmR = skinned.skeleton.getBoneByName('forearm_R') ?? null
+    handR = skinned.skeleton.getBoneByName('hand_R') ?? null
     play(queued ?? 'idle', true)
     queued = null
     if (gpu && cam) {
@@ -230,6 +288,74 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     }
   })()
 
+  // Swing `localAxis` (unit, bone space) onto a unit world direction.
+  function pointBone(bone: Bone, localAxis: Vector3, dir: Vector3) {
+    bone.updateWorldMatrix(true, false)
+    bone.getWorldQuaternion(qWorld)
+    vAlong.copy(localAxis).applyQuaternion(qWorld)
+    const len = vAlong.length()
+    if (len < 1e-5) return
+    vAlong.multiplyScalar(1 / len)
+    qTurn.setFromUnitVectors(vAlong, dir)
+    qTurn.multiply(qWorld)
+    const parent = bone.parent
+    if (!parent) return
+    parent.getWorldQuaternion(qParent)
+    bone.quaternion.copy(qParent.invert()).multiply(qTurn)
+  }
+
+  // The clip holds the ewer about 1.5 m up, out to the statue's right. Aim that chain at the floor under it.
+  function plantSlamHand() {
+    if (clipName !== 'slam' || !upperR || !forearmR || !handR || !current) return
+    const d = current.time - slamHitT
+    let w = 0
+    if (d >= -0.22 && d <= 0.16) w = d < 0 ? (d + 0.22) / 0.22 : 1 - d / 0.16
+    if (w <= 0) return
+    upperR.updateWorldMatrix(true, false)
+    upperR.getWorldPosition(vShoulder)
+    parent.updateWorldMatrix(true, false)
+    parent.getWorldPosition(vTarget)
+    parent.getWorldQuaternion(qWorld)
+    // Model faces local +Z. The ewer hangs on local -X, so the slam lands in front and on that side.
+    vAlong.set(0, 0, 1).applyQuaternion(qWorld)
+    vAlong.y = 0
+    if (vAlong.lengthSq() < 1e-6) vAlong.set(0, 0, 1)
+    vAlong.normalize()
+    vDir.set(-1, 0, 0).applyQuaternion(qWorld)
+    vDir.y = 0
+    if (vDir.lengthSq() < 1e-6) vDir.set(-1, 0, 0)
+    vDir.normalize()
+    vTarget.addScaledVector(vAlong, 2.15).addScaledVector(vDir, 0.55)
+    vTarget.y = 0.35
+    vDir.copy(vTarget).sub(vShoulder)
+    const dist = vDir.length()
+    if (dist < 0.2) return
+    vDir.multiplyScalar(1 / dist)
+    qClipU.copy(upperR.quaternion)
+    qClipF.copy(forearmR.quaternion)
+    qClipH.copy(handR.quaternion)
+    vHand0.copy(handR.position)
+    pointBone(upperR, yAxis, vDir)
+    pointBone(forearmR, yAxis, vDir)
+    pointBone(handR, tipAxis, vDir)
+    qPlantU.copy(upperR.quaternion)
+    qPlantF.copy(forearmR.quaternion)
+    qPlantH.copy(handR.quaternion)
+    forearmR.updateWorldMatrix(true, false)
+    const e = forearmR.matrixWorld.elements
+    const sy = Math.hypot(e[4] ?? 0, e[5] ?? 0, e[6] ?? 0) || 1
+    handR.updateWorldMatrix(true, false)
+    vTip.copy(tipLocal).applyMatrix4(handR.matrixWorld)
+    const short = vDir.dot(vTarget.sub(vTip))
+    const extra = Math.min(1.6, Math.max(-0.6, short / sy))
+    forearmR.getWorldQuaternion(qWorld)
+    vAlong.copy(vDir).applyQuaternion(qWorld.invert())
+    upperR.quaternion.copy(qClipU).slerp(qPlantU, w)
+    forearmR.quaternion.copy(qClipF).slerp(qPlantF, w)
+    handR.quaternion.copy(qClipH).slerp(qPlantH, w)
+    handR.position.copy(vHand0).addScaledVector(vAlong, extra * w)
+  }
+
   return {
     ready: () => mixer !== null,
     step(dt) {
@@ -240,6 +366,7 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
       step.haloLand = false
       if (!mixer || !current) return step
       mixer.update(dt)
+      plantSlamHand()
       const t = current.time
       if (clipName === 'pour') {
         step.pourStart = cross(BIT_POUR_START, t, pourStartT)
@@ -272,6 +399,13 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     noteWarm(renderer, camera) {
       gpu = renderer
       cam = camera
+    },
+    haloTop(out) {
+      if (!haloBone) return false
+      haloBone.updateWorldMatrix(true, false)
+      // Ring radius is 0.62 m and the ring tilts back. This local point is the high side of that ring.
+      out.set(0, 0.58, -0.28).applyMatrix4(haloBone.matrixWorld)
+      return true
     },
     dispose() {
       mixer?.stopAllAction()
