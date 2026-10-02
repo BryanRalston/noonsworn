@@ -77,7 +77,7 @@ export interface CastPeek {
   votaries: { x: number; z: number; hp: number; mode: number; flash: number; wash: number; yaw: number }[]
   blots: { x: number; z: number; hp: number; mode: number; yaw: number; t: number; vx: number; vz: number }[]
   boss: { x: number; z: number; y: number; hp: number; max: number; phase: number; on: number; dead: number; rise: number }
-  vis: { pull: number; warn: number; glyph: number; crest: number; dry: number; hold: number; fan: number; laneT: number; slamR: number; lane0: number[]; lane1: number[] }
+  vis: { pull: number; warn: number; glyph: number; crest: number; dry: number; hold: number; fan: number; laneT: number; slamR: number; lane0: number[]; lane1: number[]; pours: number; slams: number }
   tris: { votary: number; blot: number; boss: number; ewer: number }
 }
 
@@ -432,6 +432,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   let deadAt = 0
   let wakeAt = 0
   let contactCd = 0
+  let poursFired = 0
+  let slamsFired = 0
   let enrage = 1
   const specV = TUNING.cloister.votary
   const specB = TUNING.cloister.blot
@@ -601,6 +603,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     pourOn = true
     pourT = 0.8
     visual.lanePhase = 0
+    poursFired++
     hooks.sfx('compline_pour')
   }
 
@@ -657,6 +660,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       slamT = 0
       selfT = 0
       contactCd = 0
+      poursFired = 0
+      slamsFired = 0
       visual.hold = false
       visual.dry = 0
       visual.laneT = 0
@@ -732,6 +737,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           fan: visual.fan,
           laneT: visual.laneT,
           slamR: visual.slamR,
+          pours: poursFired,
+          slams: slamsFired,
           lane0: [visual.lane0.x, visual.lane0.y, visual.lane0.z, visual.lane0.w],
           lane1: [visual.lane1.x, visual.lane1.y, visual.lane1.z, visual.lane1.w],
         },
@@ -1131,7 +1138,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           }
           pourCd -= dt * rate
           if (pourCd <= 0) {
-            pourCd = (phase === 2 ? 3.6 : 3.2) / rate
+            pourCd = phase === 2 ? 3.6 : 3.2
             armLanes(px, pz, phase === 2)
           }
           if (phase === 1 && Math.floor(bossT / 12) !== Math.floor((bossT - dt) / 12)) {
@@ -1162,13 +1169,14 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
             bossZ += (dz / dist) * step
             slamCd -= dt * rate
             if (slamCd <= 0) {
-              slamCd = 4 / rate
+              slamCd = 4
               slamT = 0.9
+              slamsFired++
               hooks.sfx('compline_slam')
             }
             selfCd -= dt * rate
             if (selfCd <= 0) {
-              selfCd = 16 / rate
+              selfCd = 16
               selfT = 1.6
             }
           }
