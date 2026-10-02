@@ -280,6 +280,7 @@ uniform float uDeep;
 uniform float uRing;
 uniform float uProbe;
 uniform float uTime;
+uniform float uLite;
 uniform vec3 uOcc[4];
 float octDist(vec2 p) {
   vec2 a = abs(p);
@@ -397,6 +398,7 @@ float archPatch(vec2 p) {
 }
 float caustic(vec2 p) {
   float a = sin(p.x * 1.85 + uTime * 0.8);
+  if (uLite > 0.5) return smoothstep(0.15, 0.72, a * 0.55 + 0.35);
   float b = sin(p.y * 1.45 - uTime * 0.62);
   return smoothstep(0.15, 0.72, a * b + 0.35);
 }
@@ -414,8 +416,10 @@ void main() {
   vec3 stone = stoneTone(p);
   if (o > 6.0 && o < 10.0 && uRing > 0.5) {
     stone *= vec3(0.46, 0.50, 0.48);
-    float sheen = pow(0.5 + 0.5 * sin(p.x * 0.55 + uTime * 0.35), 6.0);
-    stone += vec3(0.5, 0.58, 0.54) * sheen * 0.28;
+    if (uLite < 0.5) {
+      float sheen = pow(0.5 + 0.5 * sin(p.x * 0.55 + uTime * 0.35), 6.0);
+      stone += vec3(0.5, 0.58, 0.54) * sheen * 0.28;
+    }
   }
   float roof = smoothstep(17.7, 18.3, cheb);
   float bay = archPatch(p);
@@ -425,20 +429,22 @@ void main() {
   vec3 shaded = mix(garthShade, arcadeShade, roof);
   float reflected = reflectSoft(p);
   float lit = clamp(max(directSoft(p), max(reflected, glintSoft(p))), 0.0, 1.0);
-  float rip = 0.86 + 0.14 * sin(p.x * 1.7 + uTime * 2.1) * sin(p.y * 1.4 - uTime * 1.6);
+  float sx = sin(p.x * 1.7 + uTime * 2.1);
+  float rip = 0.86 + 0.14 * sx;
+  if (uLite < 0.5) rip = 0.86 + 0.14 * sx * sin(p.y * 1.4 - uTime * 1.6);
   vec3 bright = mix(stone, uGold, 0.42) * vec3(1.22, 1.08, 0.82) * mix(1.0, rip, reflected);
   bright *= mix(1.0, mix(0.28, 1.0, bay), roof);
   vec3 col = mix(shaded, bright, lit);
-  col += uGold * caustic(p) * reflected * (0.45 + roof * 0.75);
+  if (uLite < 0.5) col += uGold * caustic(p) * reflected * (0.45 + roof * 0.75);
   float cope = smoothstep(9.55, 9.82, o) * (1.0 - smoothstep(10.28, 10.6, o));
   float trim = smoothstep(10.08, 10.2, o) * (1.0 - smoothstep(10.24, 10.42, o));
   col = mix(col, uSand * vec3(1.05, 1.01, 0.92), cope * (1.0 - roof));
   col = mix(col, uGold, trim * 0.9);
-  if (cheb < 17.8 && o >= 10.0 && o < 17.6) {
+  if (uLite < 0.5 && cheb < 17.8 && o >= 10.0 && o < 17.6) {
     float ring = abs(fract(o * 0.42) - 0.5);
     col = mix(col, uGold, (1.0 - smoothstep(0.012, 0.045, ring)) * 0.55);
   }
-  if (o > 6.0 && o < 10.0 && directHard(p)) {
+  if (uLite < 0.5 && o > 6.0 && o < 10.0 && directHard(p)) {
     float spark = fract(sin(dot(floor(p * 3.0), vec2(127.1, 311.7))) * 43758.5453);
     col += uGold * step(0.84, spark) * 0.45;
   }
@@ -503,6 +509,7 @@ uniform float uCosR;
 uniform float uGlow;
 uniform float uC;
 uniform float uTime;
+uniform float uLite;
 uniform vec3 uTile;
 float octDist(vec2 p) {
   vec2 a = abs(p);
@@ -531,8 +538,11 @@ void main() {
   float west = step(0.45, n.x) * step(vWorld.x, -18.0);
   float roofTop = step(0.45, n.y) * step(3.4, vWorld.y) * max(north, west);
   float shim = max(under, max(north, max(west, roofTop))) * wedge * min(uGlow, 1.25);
-  float spot = sin(vWorld.x * 2.4 + vWorld.z * 1.7 + uTime * 0.9);
-  float dapple = smoothstep(0.35, 0.85, spot);
+  float dapple = 0.65;
+  if (uLite < 0.5) {
+    float spot = sin(vWorld.x * 2.4 + vWorld.z * 1.7 + uTime * 0.9);
+    dapple = smoothstep(0.35, 0.85, spot);
+  }
   col += uGold * shim * dapple * 1.15;
   if (vMark > 19.0) col = vColor;
   if (vMark > 0.5 && vMark < 19.0 && uC >= 58.0) {
@@ -559,6 +569,7 @@ varying vec3 vColor;
 varying float vKind;
 uniform float uLevel;
 uniform float uTime;
+uniform float uLite;
 void main() {
   vec3 p = position;
   if (aKind < 0.5) {
@@ -569,7 +580,7 @@ void main() {
       p.z *= s;
     }
     p.y = mix(-0.82, -0.04, uLevel);
-    p.y += sin(p.x * 1.7 + uTime * 1.4) * cos(p.z * 1.3 - uTime) * 0.008 * uLevel;
+    if (uLite < 0.5) p.y += sin(p.x * 1.7 + uTime * 1.4) * cos(p.z * 1.3 - uTime) * 0.008 * uLevel;
   } else if (aKind > 1.5) {
     p.y = mix(-0.82, -0.04, uLevel) + 0.045;
   }
@@ -597,6 +608,7 @@ uniform float uGlow;
 uniform float uFront;
 uniform float uLevel;
 uniform float uTime;
+uniform float uLite;
 float octDist(vec2 p) {
   vec2 a = abs(p);
   float diag = (a.x + a.y) * ${COS45};
@@ -616,8 +628,11 @@ void main() {
   float grout = smoothstep(0.42, 0.49, max(cell.x, cell.y));
   water = mix(water, water * vec3(0.62, 0.7, 0.72), grout * nearRim);
   float rim = smoothstep(1.7, 0.12, fromWall);
-  float rip = sin(o * 8.0 - uTime * 0.8) * 0.5 + 0.5;
-  float line = smoothstep(0.62, 0.9, rip);
+  float line = 0.0;
+  if (uLite < 0.5) {
+    float rip = sin(o * 8.0 - uTime * 0.8) * 0.5 + 0.5;
+    line = smoothstep(0.62, 0.9, rip);
+  }
   water *= 1.0 + line * rim * 0.08;
   vec3 col = vKind > 1.5 ? vColor * 0.9 : (vKind > 0.5 ? uPoolDeep * 0.5 : water);
   if (vKind < 0.5 && uGlow > 0.05) {
@@ -670,7 +685,7 @@ export interface CloisterHandle {
   apply: () => void
   clear: (restore: boolean) => void
   warm: (renderer: WebGLRenderer, camera: Camera) => void
-  tick: (dt: number, sun: SunLike, wide: number, px: number, pz: number) => void
+  tick: (dt: number, sun: SunLike, wide: number, px: number, pz: number, lite?: boolean) => void
   pin: (sun: SunLike) => void
   hold: (sun: SunLike, c: number) => void
   shoveAt: (x: number, z: number, radius: number) => { x: number; z: number } | null
@@ -948,6 +963,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
   const uFront = { value: -1 }
   const uC = { value: Number(TUNING.cloister.pin) }
   const uTime = { value: 0 }
+  const uLite = { value: 0 }
   const uProbe = { value: 0 }
   const uOcc = { value: [new Vector3(), new Vector3(), new Vector3(), new Vector3()] }
   const floorMat = new ShaderMaterial({
@@ -972,6 +988,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uRing,
       uProbe,
       uTime,
+      uLite,
       uOcc,
     },
     vertexShader: FLOOR_VERT,
@@ -990,6 +1007,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uGlow,
       uC,
       uTime,
+      uLite,
       uTile: { value: COLOR.terracottaDark },
     },
     vertexShader: ARCH_VERT,
@@ -1008,6 +1026,7 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       uFront,
       uLevel,
       uTime,
+      uLite,
     },
     vertexShader: WATER_VERT,
     fragmentShader: WATER_FRAG,
@@ -1340,9 +1359,10 @@ export function createCloister(opts: { scene: Object3D; uniforms: FloorUniforms;
       sun.advance(0)
       sun.frozen = true
     },
-    tick(dt, sun, wide, px, pz) {
+    tick(dt, sun, wide, px, pz, lite) {
       if (!active) return
       sunRef = sun
+      uLite.value = lite ? 1 : 0
       cycle = cycleSecond(sun.angle, sun.dir)
       level = levelAt(cycle)
       betaDeg = Math.max(40, Math.min(60, TUNING.cloister.betaR + TUNING.wideDeg * Math.max(0, Math.min(TUNING.wideMax, wide))))

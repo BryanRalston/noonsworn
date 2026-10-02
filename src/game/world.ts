@@ -1342,7 +1342,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
       if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
-      if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z)
+      if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high')
       temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
       temple.mask(floor.uniforms.uWing.value)
       temple.kinds(floor.uniforms.uKind.value)
