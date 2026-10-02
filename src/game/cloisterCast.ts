@@ -4,7 +4,10 @@ import {
   Color,
   ConeGeometry,
   CylinderGeometry,
+  LatheGeometry,
+  SphereGeometry,
   TorusGeometry,
+  Vector2,
   DynamicDrawUsage,
   Float32BufferAttribute,
   InstancedBufferAttribute,
@@ -12,8 +15,6 @@ import {
   Mesh,
   Object3D,
   ShaderMaterial,
-  SphereGeometry,
-  Uint16BufferAttribute,
   Vector4,
 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -25,7 +26,6 @@ import { damageAmount } from './sunClock'
 
 const V_MAX = 18
 const B_MAX = 8
-const INK = new Color(0.16, 0.07, 0.18)
 const EYE = new Color(0.75, 0.95, 1)
 const GOLD = COLOR.sunGold
 const CRIMSON = COLOR.crimson
@@ -120,23 +120,6 @@ interface Foe {
 
 function blank(): Foe {
   return { alive: 0, x: 0, z: 0, hp: 0, yaw: 0, t: 0, cd: 0, wash: 0, flash: 0, heading: 0, mode: 0, vx: 0, vz: 0 }
-}
-
-function paint(geo: BufferGeometry, color: Color, bone: number) {
-  const n = geo.getAttribute('position').count
-  const col = new Float32Array(n * 3)
-  const idx = new Uint16Array(n * 4)
-  const w = new Float32Array(n * 4)
-  for (let i = 0; i < n; i++) {
-    col[i * 3] = color.r
-    col[i * 3 + 1] = color.g
-    col[i * 3 + 2] = color.b
-    idx[i * 4] = bone
-    w[i * 4] = 1
-  }
-  geo.setAttribute('color', new Float32BufferAttribute(col, 3))
-  geo.setAttribute('skinIndex', new Uint16BufferAttribute(idx, 4))
-  geo.setAttribute('skinWeight', new Float32BufferAttribute(w, 4))
 }
 
 function tint(geo: BufferGeometry, color: Color) {
@@ -249,93 +232,201 @@ function foeMat(): ShaderMaterial {
   })
 }
 
-const BOSS_SCALE = 1.22
-const PALE = new Color('#E4D2B0')
+const BOSS_SCALE = 1
+const LOOP_R = 12
+const STONE = new Color('#D9CBB0')
+const STONE_DEEP = new Color('#B8A88C')
+const FACE = new Color('#100c0a')
+const HEM = new Color('#1A1410')
+const EYE_GOLD = new Color('#E8C36A')
 
-function ring(radius: number, tube: number, y: number, color: Color): BufferGeometry {
-  const geo = new TorusGeometry(radius, tube, 6, 16)
-  geo.rotateX(Math.PI / 2)
-  geo.translate(0, y, 0)
-  paint(geo, color, 0)
-  return geo
+interface BossView {
+  mesh: Mesh
+  uTime: { value: number }
+  uPour: { value: number }
+  uPhase: { value: number }
+  uShudder: { value: number }
+  uDrink: { value: number }
 }
 
-function rib(w: number, h: number, d: number, radius: number, y: number, ang: number, color: Color): BufferGeometry {
-  const geo = new BoxGeometry(w, h, d)
-  geo.translate(Math.sin(ang) * radius, y, Math.cos(ang) * radius)
-  geo.rotateY(-ang)
-  paint(geo, color, 0)
-  return geo
-}
-
-function buildBoss(): { mesh: Mesh; ewer: Mesh } {
-  const skirt = new CylinderGeometry(0.62, 0.92, 1.25, 10, 1)
-  skirt.translate(0, 0.68, 0)
-  paint(skirt, INK, 0)
-  const torso = new CylinderGeometry(0.4, 0.55, 1.05, 10, 1)
-  torso.translate(0, 1.7, 0)
-  paint(torso, INK, 0)
-  const cowl = new ConeGeometry(0.5, 0.85, 10)
-  cowl.translate(0, 2.5, 0)
-  paint(cowl, INK, 0)
-  const face = new CylinderGeometry(0.18, 0.18, 0.05, 8, 1)
-  face.rotateX(Math.PI / 2)
-  face.translate(0, 2.15, 0.38)
-  paint(face, PALE, 0)
-  const parts: BufferGeometry[] = [
-    skirt,
-    torso,
-    cowl,
-    face,
-    ring(0.9, 0.07, 0.14, GOLD),
-    ring(0.46, 0.055, 2.18, GOLD),
-    ring(0.42, 0.06, 1.95, PALE),
-    ring(0.58, 0.055, 1.42, CRIMSON),
-  ]
-  for (let i = 0; i < 4; i++) {
-    const ang = (i / 4) * Math.PI * 2
-    parts.push(rib(0.16, 1.15, 0.07, 0.72, 0.85, ang, CRIMSON))
-    parts.push(rib(0.06, 1.35, 0.05, 0.58, 1.35, ang + 0.4, GOLD))
-  }
-  const sleeve = new CylinderGeometry(0.1, 0.13, 0.7, 6, 1)
-  sleeve.translate(0.42, 1.75, 0.22)
-  sleeve.rotateZ(0.6)
-  paint(sleeve, INK, 0)
-  parts.push(sleeve)
-  const geo = mergeGeometries(parts, false)
-  if (!geo) throw new Error('compline')
-  for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
-  const mat = new ShaderMaterial({
-    vertexShader: `attribute vec3 color; varying vec3 vColor; varying vec3 vN; void main(){ vColor = color; vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `precision mediump float; varying vec3 vColor; varying vec3 vN; void main(){ float ndl = clamp(dot(normalize(vN), normalize(vec3(-0.35, 0.86, -0.3))), 0.0, 1.0); gl_FragColor = vec4(vColor * mix(0.62, 1.08, ndl), 1.0); }`,
-  })
-  const mesh = new Mesh(geo, mat)
-  mesh.scale.setScalar(BOSS_SCALE)
-  mesh.frustumCulled = false
-  mesh.castShadow = false
-  const bowl = new CylinderGeometry(0.18, 0.26, 0.42, 7, 1)
-  paintPlain(bowl, COLOR.bronze)
-  const lip = new CylinderGeometry(0.28, 0.2, 0.08, 7, 1)
-  lip.translate(0, 0.24, 0)
-  paintPlain(lip, GOLD)
-  const ewerGeo = mergeGeometries([bowl, lip], false)
-  if (!ewerGeo) throw new Error('ewer')
-  bowl.dispose()
-  lip.dispose()
-  const ewer = new Mesh(ewerGeo, mat)
-  ewer.frustumCulled = false
-  return { mesh, ewer }
-}
-
-function paintPlain(geo: BufferGeometry, color: Color) {
+function stampPart(geo: BufferGeometry, color: Color, part: number): BufferGeometry {
   const n = geo.getAttribute('position').count
   const col = new Float32Array(n * 3)
+  const parts = new Float32Array(n)
   for (let i = 0; i < n; i++) {
     col[i * 3] = color.r
     col[i * 3 + 1] = color.g
     col[i * 3 + 2] = color.b
+    parts[i] = part
   }
   geo.setAttribute('color', new Float32BufferAttribute(col, 3))
+  geo.setAttribute('aPart', new Float32BufferAttribute(parts, 1))
+  return geo
+}
+
+function paintLathe(geo: BufferGeometry, part: number): BufferGeometry {
+  const pos = geo.getAttribute('position')
+  const col = new Float32Array(pos.count * 3)
+  const parts = new Float32Array(pos.count)
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    const ang = Math.atan2(x, z)
+    let color = y < 2.4 ? STONE_DEEP : STONE
+    if (y < 0.2) color = HEM
+    else if ((y > 0.24 && y < 0.4) || (y > 5.9 && y < 6.15)) color = GOLD
+    if (Math.abs(ang) < 0.72 && y > 0.36 && y < 5.05) color = CRIMSON
+    col[i * 3] = color.r
+    col[i * 3 + 1] = color.g
+    col[i * 3 + 2] = color.b
+    parts[i] = part
+  }
+  geo.setAttribute('color', new Float32BufferAttribute(col, 3))
+  geo.setAttribute('aPart', new Float32BufferAttribute(parts, 1))
+  return geo
+}
+
+function lathe(pts: Vector2[], seg: number, part: number): BufferGeometry {
+  return paintLathe(new LatheGeometry(pts, seg), part)
+}
+
+function buildBoss(): BossView {
+  const bell = lathe(
+    [
+      new Vector2(2.7, 0),
+      new Vector2(3.45, 0.12),
+      new Vector2(3.3, 0.4),
+      new Vector2(2.85, 1.2),
+      new Vector2(2.35, 2.5),
+      new Vector2(2.15, 3.7),
+      new Vector2(2.45, 4.55),
+      new Vector2(2.85, 5.15),
+      new Vector2(2.3, 5.7),
+      new Vector2(1.55, 6.2),
+    ],
+    22,
+    0,
+  )
+  const face = new CylinderGeometry(1.02, 1.02, 0.06, 14)
+  face.rotateX(0.42)
+  face.translate(0, 6.32, 0.28)
+  stampPart(face, FACE, 0)
+  const rim = new TorusGeometry(1.12, 0.11, 6, 18)
+  rim.rotateX(-1.15)
+  rim.translate(0, 6.32, 0.28)
+  stampPart(rim, STONE_DEEP, 0)
+  const lining = new TorusGeometry(0.92, 0.07, 5, 16)
+  lining.rotateX(-1.15)
+  lining.translate(0, 6.4, 0.42)
+  stampPart(lining, CRIMSON, 0)
+  const eyeL = new SphereGeometry(0.16, 7, 5)
+  eyeL.translate(-0.42, 6.48, 0.4)
+  stampPart(eyeL, EYE_GOLD, 2)
+  const eyeR = new SphereGeometry(0.16, 7, 5)
+  eyeR.translate(0.42, 6.48, 0.4)
+  stampPart(eyeR, EYE_GOLD, 2)
+  const arm = new CylinderGeometry(0.28, 0.34, 1.55, 6, 1)
+  arm.rotateZ(-Math.PI / 3)
+  arm.translate(2.7, 4.35, 0.3)
+  stampPart(arm, STONE, 1)
+  const bowl = new CylinderGeometry(0.58, 0.82, 2.15, 10, 1)
+  bowl.translate(3.7, 3.25, 0.5)
+  stampPart(bowl, GOLD, 1)
+  const neck = new CylinderGeometry(0.26, 0.42, 0.55, 8, 1)
+  neck.translate(3.7, 4.55, 0.5)
+  stampPart(neck, GOLD, 1)
+  const lip = new CylinderGeometry(0.66, 0.3, 0.22, 10, 1)
+  lip.translate(3.7, 4.9, 0.5)
+  stampPart(lip, GOLD, 1)
+  const handle = new TorusGeometry(0.52, 0.07, 5, 10)
+  handle.rotateY(Math.PI / 2)
+  handle.translate(4.35, 3.7, 0.5)
+  stampPart(handle, GOLD, 1)
+  const halo = new TorusGeometry(1.25, 0.045, 6, 24)
+  halo.rotateX(Math.PI / 2)
+  halo.translate(0, 7.15, -0.15)
+  stampPart(halo, GOLD, 2)
+  const hemRing = new TorusGeometry(3.42, 0.045, 4, 24)
+  hemRing.rotateX(Math.PI / 2)
+  hemRing.translate(0, 0.32, 0)
+  stampPart(hemRing, GOLD, 0)
+  const parts: BufferGeometry[] = [bell, face, rim, lining, eyeL, eyeR, arm, bowl, neck, lip, handle, halo, hemRing]
+  for (let i = 0; i < 4; i++) {
+    const ang = (i - 1.5) * 0.42
+    const drip = new BoxGeometry(0.34, 1.35, 0.16)
+    drip.translate(Math.sin(ang) * 3.15, 0.85, Math.cos(ang) * 3.15)
+    stampPart(drip, HEM, 3)
+    parts.push(drip)
+  }
+  const geo = mergeGeometries(parts, false)
+  if (!geo) throw new Error('compline')
+  for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
+  const uTime = { value: 0 }
+  const uPour = { value: 0 }
+  const uPhase = { value: 1 }
+  const uShudder = { value: 0 }
+  const uDrink = { value: 0 }
+  const mat = new ShaderMaterial({
+    uniforms: { uTime, uPour, uPhase, uShudder, uDrink },
+    vertexShader: /* glsl */ `
+      attribute vec3 color;
+      attribute float aPart;
+      uniform float uTime;
+      uniform float uPour;
+      uniform float uShudder;
+      uniform float uDrink;
+      varying vec3 vColor;
+      varying vec3 vN;
+      varying float vPart;
+      void main() {
+        vec3 p = position;
+        float h = clamp(position.y / 6.9, 0.0, 1.0);
+        p.x += sin(uTime * 0.65) * 0.09 * h;
+        p.z += cos(uTime * 0.5) * 0.045 * h;
+        p.x += sin(uTime * 23.0 + position.y * 2.2) * uShudder * 0.07 * h;
+        p.z += uDrink * h * 0.42;
+        if (aPart > 0.5 && aPart < 1.5) {
+          vec3 pivot = vec3(2.05, 5.15, 0.15);
+          vec3 q = p - pivot;
+          float a = -uPour * 0.9;
+          float cs = cos(a);
+          float sn = sin(a);
+          float y = q.y * cs - q.z * sn;
+          float z = q.y * sn + q.z * cs;
+          q.y = y;
+          q.z = z;
+          p = q + pivot;
+        }
+        if (aPart > 2.5) {
+          p.y -= 0.12 * (0.5 + 0.5 * sin(uTime * 1.2 + position.x * 3.0));
+        }
+        vN = normalize(normalMatrix * normal);
+        vColor = color;
+        vPart = aPart;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      precision mediump float;
+      varying vec3 vColor;
+      varying vec3 vN;
+      varying float vPart;
+      uniform float uPhase;
+      void main() {
+        float ndl = clamp(dot(normalize(vN), normalize(vec3(-0.35, 0.86, -0.3))), 0.0, 1.0);
+        vec3 col = vColor * mix(0.58, 1.12, ndl);
+        if (vPart > 1.5 && vPart < 2.5) col += vec3(0.95, 0.78, 0.34) * (0.55 + 0.35 * uPhase);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  })
+  const mesh = new Mesh(geo, mat)
+  mesh.name = 'compline'
+  mesh.scale.setScalar(BOSS_SCALE)
+  mesh.frustumCulled = false
+  mesh.castShadow = false
+  return { mesh, uTime, uPour, uPhase, uShudder, uDrink }
 }
 
 function outward(x: number, z: number, ap: number): { x: number; z: number } {
@@ -386,8 +477,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   bMesh.count = 0
   const bossParts = buildBoss()
   bossParts.mesh.visible = false
-  bossParts.ewer.visible = false
-  parent.add(vMesh, bMesh, bossParts.mesh, bossParts.ewer)
+  parent.add(vMesh, bMesh, bossParts.mesh)
   const dummy = new Object3D()
   const lane0 = new Vector4()
   const lane1 = new Vector4()
@@ -435,6 +525,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   let poursFired = 0
   let slamsFired = 0
   let enrage = 1
+  let shudder = 0
   const specV = TUNING.cloister.votary
   const specB = TUNING.cloister.blot
   const specBoss = TUNING.cloister.boss
@@ -541,7 +632,6 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     hold = false
     dry = 0
     bossParts.mesh.visible = true
-    bossParts.ewer.visible = true
     hooks.cull(40)
     hooks.track({ x: bossX, z: bossZ, r: specBoss.radius })
     hooks.sfx('compline_wake')
@@ -574,12 +664,14 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     if (bossHp <= specBoss.hp * 0.6 && phase === 1) {
       phase = 2
       p2at = time
+      shudder = 1
       if (!ask.brim()) force = TUNING.cloister.wash.telegraph
       hold = true
     }
     if (bossHp <= specBoss.hp * 0.25 && phase === 2) {
       phase = 3
       p3at = time
+      shudder = 1
       hold = false
       drink = 0
     }
@@ -693,7 +785,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       vMesh.count = 0
       bMesh.count = 0
       bossParts.mesh.visible = false
-      bossParts.ewer.visible = false
+      shudder = 0
       hooks.track(null)
     },
     spawnVotary,
@@ -746,7 +838,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           votary: trisOf(vGeo),
           blot: trisOf(bGeo),
           boss: trisOf(bossParts.mesh.geometry),
-          ewer: trisOf(bossParts.ewer.geometry),
+          ewer: 0,
         },
       }
     },
@@ -770,6 +862,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     debugPhase(next) {
       if (!born) wake(270)
       phase = next
+      shudder = 1
       if (next >= 2) {
         hold = true
         bossHp = Math.min(bossHp, specBoss.hp * 0.55)
@@ -792,9 +885,6 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       bossParts.mesh.geometry.dispose()
       const mat = bossParts.mesh.material
       if (!Array.isArray(mat)) mat.dispose()
-      bossParts.ewer.geometry.dispose()
-      const em = bossParts.ewer.material
-      if (!Array.isArray(em)) em.dispose()
     },
     touch(px, pz) {
       if (contactCd > 0) return 0
@@ -1120,8 +1210,8 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           let tx = loop.x
           let tz = loop.z
           const reach = Math.max(Math.abs(bossX), Math.abs(bossZ))
-          if (reach < 15) {
-            const s = 16.4 / Math.max(reach, 0.25)
+          if (reach < LOOP_R - 0.8) {
+            const s = LOOP_R / Math.max(reach, 0.25)
             tx = bossX * s
             tz = bossZ * s
           }
@@ -1235,24 +1325,24 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           }
         }
         const face = Math.atan2(px - bossX, pz - bossZ)
+        shudder = Math.max(0, shudder - dt * 1.6)
+        bossParts.uTime.value = time
+        bossParts.uPour.value = pourOn ? 1 : pourT < 0 ? Math.max(0, 0.45 + pourT / 6) : 0
+        bossParts.uPhase.value = phase
+        bossParts.uShudder.value = shudder
+        bossParts.uDrink.value = phase === 3 && drink > 0 && drink < 4 ? 1 : 0
         bossParts.mesh.rotation.y = face
-        bossParts.mesh.rotation.x = pourOn ? -0.28 : phase === 3 && drink > 0 && drink < 4 ? 0.4 : 0
-        const bob = phase === 3 && slamT > 0.4 ? (0.9 - slamT) * 0.7 : Math.sin(time * 3.1) * 0.06
+        bossParts.mesh.rotation.x = 0
+        const bob = phase === 3 && slamT > 0.4 ? (0.9 - slamT) * 0.35 : Math.sin(time * 1.3) * 0.04
         bossParts.mesh.position.set(bossX, bossY + bob + (bossDead ? -2 : 0), bossZ)
         bossParts.mesh.scale.setScalar(bossHp > 0 ? BOSS_SCALE : Math.max(0.2, BOSS_SCALE))
-        const pourTilt = pourOn ? -1.05 : -0.25
-        bossParts.ewer.position.set(bossX + Math.sin(face) * 0.55, bossY + 1.7, bossZ + Math.cos(face) * 0.55)
-        bossParts.ewer.rotation.set(pourTilt, face, 0)
         hooks.track({ x: bossX, z: bossZ, r: specBoss.radius })
       } else if (bossDead) {
         bossY -= dt * 0.8
         bossParts.mesh.position.set(bossX, bossY, bossZ)
         const s = Math.max(0, 1 + bossY * 0.3)
         bossParts.mesh.scale.setScalar(s)
-        if (s <= 0.05) {
-          bossParts.mesh.visible = false
-          bossParts.ewer.visible = false
-        }
+        if (s <= 0.05) bossParts.mesh.visible = false
       }
       prevCycle = cycle
       sync(vMesh, votaries, vHot, () => 0, () => 1)
@@ -1266,6 +1356,6 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
 function nearestLoop(px: number, pz: number): { x: number; z: number } {
   const ax = Math.abs(px)
   const az = Math.abs(pz)
-  if (ax >= az) return { x: Math.sign(px || 1) * 16.4, z: Math.max(-16.4, Math.min(16.4, pz)) }
-  return { x: Math.max(-16.4, Math.min(16.4, px)), z: Math.sign(pz || -1) * 16.4 }
+  if (ax >= az) return { x: Math.sign(px || 1) * LOOP_R, z: Math.max(-LOOP_R, Math.min(LOOP_R, pz)) }
+  return { x: Math.max(-LOOP_R, Math.min(LOOP_R, px)), z: Math.sign(pz || -1) * LOOP_R }
 }
