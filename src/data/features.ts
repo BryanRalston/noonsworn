@@ -104,4 +104,9 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Compline reads at 1.3x on portrait; desktop stays 1.2', status: 'shipped', since: 'M5c' },
   { area: 'Graphics/Performance', feature: 'Compline halo pull samples the last render and idles while the boss is down; the death puddle replaces the body draw', status: 'shipped', since: 'M5c.1' },
   { area: 'Maps', feature: 'Westering Stair coming soon', status: 'shipped', since: 'M5b' },
+  { area: 'Maps', feature: 'Westering Stair map', status: 'shipped', since: 'M6a' },
+  { area: 'Shadow-Clock', feature: 'Westering sun', status: 'shipped', since: 'M6a' },
+  { area: 'Maps', feature: 'Sealed stone', status: 'shipped', since: 'M6a' },
+  { area: 'Combat & Weapons', feature: 'Dormant Newel', status: 'shipped', since: 'M6a' },
+  { area: 'Maps', feature: 'Stair unlock', status: 'shipped', since: 'M6a' },
 ]

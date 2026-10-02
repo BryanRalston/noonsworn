@@ -58,15 +58,15 @@ export const MAP_DEFS: MapDef[] = [
   {
     id: 'stair',
     name: 'The Westering Stair',
-    hook: '',
+    hook: 'The sun is going down. Climb with it.',
     footprint: 48,
     pillars: 'sanctum',
     cookie: null,
-    keyart: null,
+    keyart: 'assets/maps/stair-key.webp',
     wave: 'stair',
     boss: null,
     unlock: 'cloister',
-    playable: false,
+    playable: true,
   },
 ]
 

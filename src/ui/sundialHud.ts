@@ -1,6 +1,13 @@
 export interface Sundial {
   root: HTMLElement
-  set: (angle: number, seconds: number, gate?: boolean, terraces?: number, water?: { dir: number } | null) => void
+  set: (
+    angle: number,
+    seconds: number,
+    gate?: boolean,
+    terraces?: number,
+    water?: { dir: number } | null,
+    stair?: { elev: number; countdown: number } | null,
+  ) => void
 }
 
 function thetaAt(c: number, dir: number): number {
@@ -32,6 +39,8 @@ export function createSundial(parent: HTMLElement): Sundial {
       <path id="water-deep" hidden></path>
       <path id="water-brim" hidden></path>
       <circle id="sun-dot" cx="36" cy="8" r="4"></circle>
+      <path id="stair-arc" hidden></path>
+      <circle id="stair-elev" r="2.2" cx="36" cy="12" hidden></circle>
       <g id="terrace-ticks" visibility="hidden">
         <circle class="terrace" data-bit="1" cx="22" cy="58" r="2.1"></circle>
         <circle class="terrace" data-bit="2" cx="36" cy="58" r="2.1"></circle>
@@ -46,9 +55,11 @@ export function createSundial(parent: HTMLElement): Sundial {
   const marks = [...root.querySelectorAll<SVGCircleElement>('#terrace-ticks circle')]
   const brimArc = root.querySelector('#water-brim') as SVGPathElement
   const deepArc = root.querySelector('#water-deep') as SVGPathElement
+  const stairArc = root.querySelector('#stair-arc') as SVGPathElement
+  const stairElev = root.querySelector('#stair-elev') as SVGCircleElement
   return {
     root,
-    set(angle, seconds, gate = false, terraces?: number, water?: { dir: number } | null) {
+    set(angle, seconds, gate = false, terraces?: number, water?: { dir: number } | null, stair?: { elev: number; countdown: number } | null) {
       root.classList.toggle('gate', gate)
       const showWater = !!water
       brimArc.toggleAttribute('hidden', !showWater)
@@ -66,6 +77,27 @@ export function createSundial(parent: HTMLElement): Sundial {
       const m = Math.floor(clamped / 60)
       const sec = clamped % 60
       clock.textContent = `${m}:${sec < 10 ? '0' : ''}${sec}`
+      const showStair = !!stair
+      stairArc.toggleAttribute('hidden', !showStair)
+      stairElev.toggleAttribute('hidden', !showStair)
+      if (stair) {
+        const sweep = Math.min(1.98 * Math.PI, (Math.max(0, Math.min(60, stair.countdown)) / 60) * Math.PI * 2)
+        const a0 = -Math.PI / 2
+        if (sweep < 0.05) stairArc.setAttribute('d', '')
+        else {
+          const r = 30
+          const a1 = a0 + sweep
+          const x0 = 36 + Math.cos(a0) * r
+          const y0 = 36 + Math.sin(a0) * r
+          const x1 = 36 + Math.cos(a1) * r
+          const y1 = 36 + Math.sin(a1) * r
+          const large = sweep > Math.PI ? 1 : 0
+          stairArc.setAttribute('d', `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`)
+        }
+        const elevAng = -Math.PI / 2 + ((38 - stair.elev) / 34.5) * Math.PI * 0.85
+        stairElev.setAttribute('cx', `${36 + Math.cos(elevAng) * 28}`)
+        stairElev.setAttribute('cy', `${36 + Math.sin(elevAng) * 28}`)
+      }
       if (terraces == null) ticks.setAttribute('visibility', 'hidden')
       else {
         ticks.setAttribute('visibility', 'visible')

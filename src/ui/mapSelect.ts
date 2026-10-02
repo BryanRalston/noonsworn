@@ -1,6 +1,6 @@
 import { MAP_DEFS, type MapRecord } from '../data/maps'
 
-export type MapChoice = 'sundial' | 'lattice' | 'cloister'
+export type MapChoice = 'sundial' | 'lattice' | 'cloister' | 'stair'
 
 export interface MapSelect {
   open: (save: MapRecord) => void
@@ -128,7 +128,7 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
       }
       if (confirm) {
         const def = MAP_DEFS[focus]
-        if (def && (def.id === 'sundial' || def.id === 'lattice' || def.id === 'cloister')) choose(def.id)
+        if (def && (def.id === 'sundial' || def.id === 'lattice' || def.id === 'cloister' || def.id === 'stair')) choose(def.id)
       }
       return null
     },

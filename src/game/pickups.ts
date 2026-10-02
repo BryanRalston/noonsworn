@@ -14,6 +14,7 @@ export interface Pickups {
   used: () => number
   visit: (fn: (x: number, z: number) => void) => void
   shove: (apply: (x: number, z: number) => { x: number; z: number } | null) => void
+  setLift: (fn: ((x: number, z: number) => number) | null) => void
 }
 
 export function createPickups(): Pickups {
@@ -28,6 +29,7 @@ export function createPickups(): Pickups {
   const alive = new Uint8Array(MAX)
   const age = new Float32Array(MAX)
   const free = new FreeList(MAX)
+  let lift: ((x: number, z: number) => number) | null = null
 
   const pickups: Pickups = {
     mesh,
@@ -39,6 +41,9 @@ export function createPickups(): Pickups {
     },
     visit(fn) {
       for (let i = 0; i < MAX; i++) if (alive[i]) fn(x[i] ?? 0, z[i] ?? 0)
+    },
+    setLift(fn) {
+      lift = fn
     },
     shove(apply) {
       for (let i = 0; i < MAX; i++) {
@@ -123,7 +128,8 @@ export function createPickups(): Pickups {
       let n = 0
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
-        writeInstance(mesh, n, x[i] ?? 0, 0.35, z[i] ?? 0, 0, 1)
+        const gemY = lift ? lift(x[i] ?? 0, z[i] ?? 0) : 0.35
+        writeInstance(mesh, n, x[i] ?? 0, gemY, z[i] ?? 0, 0, 1)
         const gain = litAt?.(x[i] ?? 0, z[i] ?? 0) ? 0.35 : 0.2
         gemTint.copy(teal).multiplyScalar(gain)
         mesh.setColorAt(n, gemTint)

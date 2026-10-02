@@ -59,6 +59,7 @@ import { createSunClock, damageAmount } from './sunClock'
 import { cellBlocked, resetHomePillars, setBeds } from './collision'
 import type { CloisterHandle } from './cloister'
 import type { LatticeHandle } from './lattice'
+import type { StairHandle } from './stair'
 import { createTemple, writeFloorPillars } from './temple'
 import { createTraps } from './traps'
 import { createHalo } from './weapons/halo'
@@ -317,15 +318,19 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'splash'
-  let activeMap: 'sundial' | 'lattice' | 'cloister' = 'sundial'
-  let wantMap: 'sundial' | 'lattice' | 'cloister' = 'sundial'
+  let activeMap: 'sundial' | 'lattice' | 'cloister' | 'stair' = 'sundial'
+  let wantMap: 'sundial' | 'lattice' | 'cloister' | 'stair' = 'sundial'
   let lattice: LatticeHandle | null = null
   let latticeGate: Promise<void> | null = null
   let latticePending = false
   let cloister: CloisterHandle | null = null
   let cloisterGate: Promise<void> | null = null
   let cloisterPending = false
+  let stair: StairHandle | null = null
+  let stairGate: Promise<void> | null = null
+  let stairPending = false
   let hintBits = Number(storageGet('noonsworn.cloister.hints') ?? '0') || 0
+  let stairBits = Number(storageGet('noonsworn.stair.hints') ?? '0') || 0
   let prevStep = 0
   let endAt = 0
   let xpWindow = 0
@@ -399,6 +404,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   function litAt(x: number, z: number): boolean {
+    if (activeMap === 'stair' && stair?.ready) return stair.isLit(x, z)
     if (activeMap === 'cloister' && cloister?.ready) return cloister.isLit(x, z)
     if (activeMap === 'lattice' && lattice?.ready) return lattice.isLit(sunLit, x, z)
     return sunLit(x, z)
@@ -438,6 +444,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         floats.push(x, z, `${Math.round(amount)}`, crit ? 'crit' : lit ? 'hot' : 'arm')
       }
       if (killed) audio.kill(lit)
+      if (killed && lit && activeMap === 'stair' && stair) stair.sealAt(x, z)
       if (killed && lit) {
         if (time - litBurstAt > 0.12) litBurst = 0
         litBurst++
@@ -534,16 +541,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       endAt = performance.now()
       if (next === 'dead') audio.death()
       else audio.win()
-      if (noteRun(activeMap, time, kills, next === 'clear')) {
-        if (activeMap === 'cloister') {
-          screens.setToast('The Westering Stair — coming soon')
-          showToast('The Westering Stair — coming soon', 4.2)
-          markSeen('stair')
-        } else {
-          screens.setToast('New temple opened')
-          if (activeMap === 'lattice') markSeen('cloister')
-          else if (activeMap === 'sundial') markSeen('lattice')
-        }
+      const opened = noteRun(activeMap, time, kills, next === 'clear')
+      if (activeMap === 'stair' && next === 'clear') {
+        screens.setToast('All four temples held')
+        showToast('All four temples held', 4.2)
+      } else if (opened && activeMap === 'cloister') {
+        screens.setToast('New temple opened')
+        showToast('New temple opened', 4.2)
+        markSeen('stair')
+      } else if (opened) {
+        screens.setToast('New temple opened')
+        if (activeMap === 'lattice') markSeen('cloister')
+        else if (activeMap === 'sundial') markSeen('lattice')
       }
     } else {
       screens.setToast(null)
@@ -584,7 +593,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     ctx.lite = quality.tier !== 'high'
     ctx.might = build.might
     ctx.searing = build.searing
-    ctx.guide = activeMap === 'cloister' && cloister ? cloister.guide : temple.routing() ? temple.guide : null
+    ctx.guide = activeMap === 'stair' && stair ? stair.guide : activeMap === 'cloister' && cloister ? cloister.guide : temple.routing() ? temple.guide : null
     ctx.deep = activeMap === 'cloister' && cloister ? cloister.deep : null
     ctx.pass = traps.phasing()
     ctx.lureX = traps.decoyX()
@@ -697,6 +706,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   function clearedNow(): boolean {
     if (activeMap === 'lattice') return !!lattice?.cleared()
     if (activeMap === 'cloister') return !!cloister?.cleared()
+    if (activeMap === 'stair') return time >= TUNING.runLength
     return time >= TUNING.runLength
   }
 
@@ -804,6 +814,33 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     return cloisterGate ?? Promise.resolve()
   }
 
+  function ensureStair(): Promise<void> {
+    if (stair?.ready) return Promise.resolve()
+    if (!stairGate) {
+      stairGate = import('./stair')
+        .then(async (mod) => {
+          const mat = horde.darterMesh.material
+          if (Array.isArray(mat) || !(mat instanceof ShaderMaterial)) throw new Error('enemy material')
+          const handle = mod.createStair({
+            scene: gpu.scene,
+            fog: floor.uniforms,
+            enemyMat: mat,
+            darter: horde.darterMesh,
+            hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay, scatter],
+            restore: [floorMesh, shell, pillars, inlay, scatter],
+          })
+          stair = handle
+          await handle.load()
+        })
+        .finally(() => {
+          stairGate = null
+        })
+    }
+    return stairGate ?? Promise.resolve()
+  }
+
+  const stairLift = (x: number, z: number) => (stair ? stair.floorY(x, z) + 0.35 : 0.35)
+
   function waterCode(name: string | null): number | null {
     if (name === 'fill') return 4
     if (name === 'brim') return 17
@@ -814,15 +851,26 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   function noteHint(t: number, prev: number) {
-    if (activeMap !== 'cloister' || previewWeapon || t - prev > 1) return
-    const say = (bit: number, text: string) => {
-      if (hintBits & bit) return
-      hintBits |= bit
-      storageSet('noonsworn.cloister.hints', String(hintBits))
+    if (previewWeapon || t - prev > 1) return
+    if (activeMap === 'cloister') {
+      const say = (bit: number, text: string) => {
+        if (hintBits & bit) return
+        hintBits |= bit
+        storageSet('noonsworn.cloister.hints', String(hintBits))
+        showToast(text, 4.2)
+      }
+      if (t >= 2 && t < 8 && prev < 2) say(1, 'High water throws the sun under the arches.')
+      if (t >= 31 && t < 40 && prev < 31) say(2, 'Low water: the arches go deep. Hold the bright stone.')
+    }
+    if (activeMap !== 'stair') return
+    const sayStair = (bit: number, text: string) => {
+      if (stairBits & bit) return
+      stairBits |= bit
+      storageSet('noonsworn.stair.hints', String(stairBits))
       showToast(text, 4.2)
     }
-    if (t >= 2 && t < 8 && prev < 2) say(1, 'High water throws the sun under the arches.')
-    if (t >= 31 && t < 40 && prev < 31) say(2, 'Low water: the arches go deep. Hold the bright stone.')
+    if (t >= 3 && prev < 3) sayStair(1, 'Kills in sunlight seal the stone.')
+    if (t >= 56 && prev < 56) sayStair(2, 'The sun is sinking. The shadows will reach further.')
   }
 
   function startRun() {
@@ -852,6 +900,22 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         })
         .catch((err) => {
           cloisterPending = false
+          wantMap = 'sundial'
+          if (import.meta.env.DEV) console.error(err)
+          startRun()
+        })
+      return
+    }
+    if (wantMap === 'stair' && !stair?.ready) {
+      if (stairPending) return
+      stairPending = true
+      void ensureStair()
+        .then(() => {
+          stairPending = false
+          if (wantMap === 'stair') startRun()
+        })
+        .catch((err) => {
+          stairPending = false
           wantMap = 'sundial'
           if (import.meta.env.DEV) console.error(err)
           startRun()
@@ -888,15 +952,38 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     temple.setRouting(activeMap === 'lattice' || activeMap === 'cloister')
     temple.reset(rng)
     traps.reset(temple)
-    if (activeMap === 'lattice' && lattice) {
+    if (activeMap === 'stair' && stair) {
       cloister?.clear(false)
+      lattice?.clear()
+      outer.visible = false
+      stair.apply()
+      pickups.setLift(stairLift)
+      if (!previewWeapon) {
+        player.x = 16
+        player.z = 0
+        player.px = 16
+        player.pz = 0
+        player.yaw = Math.PI / 2
+        player.prevYaw = Math.PI / 2
+        follow.snap(16, 0)
+      }
+      stair.warm(gpu.renderer, follow.camera)
+      prewarmDraw()
+    } else if (activeMap === 'lattice' && lattice) {
+      stair?.clear(false)
+      cloister?.clear(false)
+      outer.visible = true
       outer.position.y = -0.05
+      pickups.setLift(null)
       lattice.apply()
       lattice.warm(gpu.renderer, follow.camera)
       prewarmDraw()
     } else if (activeMap === 'cloister' && cloister) {
+      stair?.clear(false)
       lattice?.clear()
+      outer.visible = true
       outer.position.y = -2.2
+      pickups.setLift(null)
       cloister.apply()
       cloister.pin(sun)
       if (!previewWeapon) {
@@ -914,8 +1001,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       cloister.warm(gpu.renderer, follow.camera)
       prewarmDraw()
     } else {
+      stair?.clear(true)
       cloister?.clear(false)
+      outer.visible = true
       outer.position.y = -0.05
+      pickups.setLift(null)
       lattice?.clear()
     }
     hud.setCharges(0)
@@ -1057,10 +1147,17 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       startRun()
       return
     }
+    if (import.meta.env.DEV && params.get('map') === 'stair') {
+      wantMap = 'stair'
+      startRun()
+      return
+    }
     const saved = loadMaps()
     if (saved.unlocked.some((id) => id !== 'sundial')) {
       mapSelect.open(saved)
-      if (saved.unlocked.includes('cloister') && !saved.seen.includes('cloister') && markSeen('cloister')) {
+      if (saved.unlocked.includes('stair') && !saved.seen.includes('stair') && markSeen('stair')) {
+        mapSelect.toast('New temple opened')
+      } else if (saved.unlocked.includes('cloister') && !saved.seen.includes('cloister') && markSeen('cloister')) {
         mapSelect.toast('New temple opened')
       }
       return
@@ -1237,6 +1334,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     })
     if (import.meta.env.DEV && params.get('map') === 'lattice') wantMap = 'lattice'
     if (import.meta.env.DEV && params.get('map') === 'cloister') wantMap = 'cloister'
+    if (import.meta.env.DEV && params.get('map') === 'stair') wantMap = 'stair'
     requestAnimationFrame(() => startRun())
   } else if (turnWho) {
     requestAnimationFrame(() => startRun())
@@ -1385,7 +1483,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         bus.emit('runEnd', { victory: true, time, kills, level: build.level })
         return false
       }
-      sun.timeScale = Math.max(0.4, 1 - 0.12 * build.longday)
+      sun.timeScale = activeMap === 'stair' ? 1 : Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
       if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
       if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high', time)
@@ -1674,6 +1772,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       fillCtx(dt)
       const cam = follow.camera.position
+      if (activeMap === 'stair' && stair) stair.tick(dt, time, build.wide, build.longday, player.x, player.z, cam.x, cam.z)
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
       if (!horde.frozen && !turnWho) {
         const poured = temple.takeSpawns()
@@ -1691,11 +1790,26 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           cam.z,
           poured,
           temple.pickWing,
-          activeMap === 'lattice' ? latticePlan(time, bossUp) : activeMap === 'cloister' && cloister ? cloister.plan(time) : undefined,
+          activeMap === 'lattice' ? latticePlan(time, bossUp) : activeMap === 'cloister' && cloister ? cloister.plan(time) : activeMap === 'stair' && stair ? stair.plan(time) : undefined,
         )
       }
       const hordeT = performance.now()
       horde.update(ctx)
+      if (activeMap === 'stair' && time >= 15) {
+        // Mite reach is 0.8 m and the shared push holds a crowd at 0.9 m, so on
+        // an open terrace they never touch her. Hounds, which do connect, are
+        // held until 0:30. Pull the inner ring into reach once the opening has
+        // had time to close, or an idle Sela outlasts 35 s.
+        horde.shove((x, z, radius) => {
+          if (radius > 0.4) return null
+          const dx = x - player.x
+          const dz = z - player.z
+          const d = Math.hypot(dx, dz)
+          if (d > 1.45 || d < 0.72) return null
+          const k = 0.72 / d
+          return { x: player.x + dx * k, z: player.z + dz * k }
+        })
+      }
       if (activeMap === 'cloister' && cloister) {
         horde.shove((x, z, radius) => cloister?.shoveAt(x, z, radius) ?? null)
         pickups.shove((x, z) => cloister?.shoveAt(x, z, 0) ?? null)
@@ -1753,6 +1867,17 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           guard++
         }
       }
+      if (import.meta.env.DEV && activeMap === 'stair' && params.get('bench') === '1' && !previewWeapon) {
+        player.invuln = 1e6
+        const want = Math.max(1, Math.min(400, Number(params.get('n') ?? '400') || 400))
+        let guard = 0
+        while (horde.count() < want && guard < 80) {
+          const ang = guard * 2.399 + time
+          const dist = 8 + (guard % 10) * 0.7
+          horde.spawn(0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, 400, player.x, player.z)
+          guard++
+        }
+      }
       tick++
       return hitStop <= 0
     },
@@ -1776,8 +1901,13 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         }
       }
       follow.update(x, z, frameSec, sx, sz)
-      const len = Math.hypot(sun.x, sun.z) || 1
-      gpu.sunLight.position.set(x + (sun.x / len) * 16, 11, z + (sun.z / len) * 16)
+      if (activeMap === 'stair' && stair) {
+        const aim = stair.lightOffset()
+        gpu.sunLight.position.set(x + aim.x, aim.y, z + aim.z)
+      } else {
+        const len = Math.hypot(sun.x, sun.z) || 1
+        gpu.sunLight.position.set(x + (sun.x / len) * 16, 11, z + (sun.z / len) * 16)
+      }
       gpu.sunLight.target.position.set(x, 0, z)
       const lookDist = follow.lookDistance()
       const fogNear = lookDist + TUNING.arena.fogAhead
@@ -1810,7 +1940,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       if (import.meta.env.DEV && (turnWho === 'mite' || turnWho === 'hound')) {
         horde.face(Number(params.get('yaw') ?? '0'))
       }
-      const groundY = activeMap === 'cloister' && cloister ? cloister.floorY(x, z) : activeMap === 'lattice' && lattice ? lattice.floorY(z) : 0
+      const groundY = activeMap === 'stair' && stair ? stair.floorY(x, z) : activeMap === 'cloister' && cloister ? cloister.floorY(x, z) : activeMap === 'lattice' && lattice ? lattice.floorY(z) : 0
       playerView.position.set(x, traps.lift() + groundY, z)
       playerView.rotation.y = turnWho === 'sela' ? player.yaw : yaw
       const slashNow = halo.pulses !== animSlashSeen
@@ -1855,7 +1985,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       sela.halo.visible = playerView.visible
       fx.setFocus(x, z)
       const syncT = performance.now()
-      if (activeMap === 'cloister' && cloister) {
+      if (activeMap === 'stair' && stair) {
+        const court = stair
+        horde.ground = (z, x = 0) => court.floorY(x, z)
+      } else if (activeMap === 'cloister' && cloister) {
         const court = cloister
         horde.ground = (z, x = 0) => court.floorY(x, z)
       } else if (activeMap === 'lattice' && lattice) {
@@ -1953,6 +2086,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         temple.telegraph(),
         activeMap === 'lattice' && lattice ? lattice.terraceMask() : undefined,
         activeMap === 'cloister' ? { dir: sun.dir } : null,
+        activeMap === 'stair' && stair ? stair.hud() : null,
       )
       const aim = temple.arrow()
       if (!aim || (mode !== 'playing' && mode !== 'level')) gateArrow.hidden = true
@@ -2070,8 +2204,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       queuedSeed = n >>> 0
       startRun()
     },
-    setMap: (id: 'sundial' | 'lattice' | 'cloister') => {
-      if (id === 'sundial' || id === 'lattice' || id === 'cloister') wantMap = id
+    setMap: (id: 'sundial' | 'lattice' | 'cloister' | 'stair') => {
+      if (id === 'sundial' || id === 'lattice' || id === 'cloister' || id === 'stair') wantMap = id
     },
     spawnStress,
     sun,
@@ -2155,7 +2289,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     espalier: () => (activeMap === 'lattice' && lattice ? lattice.bossInfo() : null),
     shutters: () => (activeMap === 'lattice' && lattice ? lattice.plateInfo() : null),
     latticeTris: () => (lattice ? lattice.tris() : null),
-    whenReady: () => cloisterGate ?? latticeGate ?? Promise.resolve(),
+    whenReady: () => stairGate ?? cloisterGate ?? latticeGate ?? Promise.resolve(),
     water: () => (activeMap === 'cloister' && cloister ? cloister.info() : null),
     compline: () => (activeMap === 'cloister' && cloister ? { phase: cloister.phase(), boss: cloister.bossing(), clear: cloister.cleared(), times: cloister.times() } : null),
     debugPhase: (n: number) => {
@@ -2195,6 +2329,66 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     muteHints: () => {
       hintBits = 3
       storageSet('noonsworn.cloister.hints', '3')
+    },
+    muteStair: () => {
+      stairBits = 3
+      storageSet('noonsworn.stair.hints', '3')
+    },
+    stairSun: () => (activeMap === 'stair' && stair ? stair.sunInfo() : null),
+    stairPlan: (t: number) => {
+      if (activeMap !== 'stair' || !stair) return null
+      const p = stair.plan(t)
+      return { darter: p.darter, boss: p.boss, rateMul: p.rateMul, houndFrom: p.houndFrom }
+    },
+    stairAgree: (points: { x: number; z: number }[]) => {
+      if (activeMap !== 'stair' || !stair) return { tested: 0, agree: 0 }
+      stair.place(time, build.wide, build.longday)
+      return stair.agree(gpu.renderer, follow.camera, points, [playerView, horde.miteMesh, horde.houndMesh, horde.darterMesh, scatter, outer])
+    },
+    stairCover: () => (activeMap === 'stair' && stair ? stair.cover() : null),
+    stairCpu: () => (activeMap === 'stair' && stair ? stair.cpu() : null),
+    stairMixer: () => (stair ? stair.mixerTicks() : 0),
+    stairSeek: (t: number) => {
+      time = t
+      if (activeMap === 'stair' && stair) stair.place(t, build.wide, build.longday)
+    },
+    stairBenchLit: () => (activeMap === 'stair' && stair ? stair.benchLit() : null),
+    stairBenchDecay: () => (activeMap === 'stair' && stair ? stair.benchDecay() : null),
+    stairTris: () => (stair ? stair.tris() : null),
+    stairSeals: () => {
+      if (!stair) return null
+      const s = stair.seals()
+      let full = 0
+      for (let i = 0; i < s.bytes.length; i++) if ((s.bytes[i] ?? 0) >= 250) full++
+      return { n: s.n, uploadMax: s.uploadMax, decayHz: s.decayHz, shadeGlideOnly: s.shadeGlideOnly, full }
+    },
+    stairMark: (x: number, z: number, on: boolean) => {
+      stair?.mark(x, z, on)
+    },
+    sealBlock: (tile: number, seconds: number) => {
+      stair?.sealBlock(tile, seconds)
+    },
+    snuffSeal: (tile: number) => {
+      stair?.snuffSeal(tile)
+    },
+    setSunElevation: (e: number, glideSeconds: number) => {
+      stair?.setSunElevation(e, glideSeconds)
+    },
+    drawLedger: () => {
+      const names: string[] = []
+      gpu.scene.traverse((obj) => {
+        const mesh = obj as Mesh
+        if (!mesh.isMesh || !mesh.visible) return
+        let parent = mesh.parent
+        while (parent) {
+          if (!parent.visible) return
+          parent = parent.parent
+        }
+        const inst = mesh as InstancedMesh
+        if (inst.isInstancedMesh && inst.count < 1) return
+        names.push(mesh.name || mesh.type)
+      })
+      return names
     },
     cloisterAgree: (points: { x: number; z: number }[]) => {
       if (activeMap !== 'cloister' || !cloister) return { tested: 0, agree: 0 }

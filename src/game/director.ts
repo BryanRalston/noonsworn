@@ -35,6 +35,7 @@ export interface Director {
       votary?: number
       onVotary?: (x: number, z: number) => void
       relocate?: (x: number, z: number, rng: Rng) => { x: number; z: number }
+      houndFrom?: number
     },
   ) => void
 }
@@ -89,7 +90,7 @@ export function createDirector(): Director {
           horde.spawn(0, packX, packZ, false, cap, px, pz)
         }
       }
-      if (!boss && !forcedHound && time >= 18) {
+      if (!boss && !forcedHound && time >= (lattice?.houndFrom ?? 18)) {
         forcedHound = true
         const spot = pickSpawn(px, pz, TUNING.hound.radius, rng, camX, camZ)
         const parked = lattice?.relocate ? lattice.relocate(spot.x, spot.z, rng) : spot
@@ -113,7 +114,7 @@ export function createDirector(): Director {
       let spawned = 0
       while ((director.acc >= 1 || horde.count() < minCount) && spawned < TUNING.spawnBurst && (boss || time < TUNING.runLength)) {
         if (director.acc >= 1) director.acc -= 1
-        const houndChance = wave.hound
+        const houndChance = time < (lattice?.houndFrom ?? 0) ? 0 : wave.hound
         const darterP = lattice?.darter ?? 0
         let kind: 0 | 1 | 2 = 0
         if (boss) kind = lattice?.onVotary ? 0 : rng() < darterP ? 2 : 0

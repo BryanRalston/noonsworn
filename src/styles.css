@@ -646,6 +646,10 @@ h1 { color: var(--goldHot); font-size: 40px; }
 #water-brim, #water-deep { fill: none; }
 #water-brim { stroke: #2c5a8a; stroke-width: 2.2; }
 #water-deep { stroke: #232c5e; stroke-width: 2.8; }
+#stair-arc[hidden], #stair-elev[hidden] { display: none; }
+#stair-arc, #stair-elev { fill: none; }
+#stair-arc { stroke: #f2b632; stroke-width: 2.6; stroke-dasharray: 2.2 1.6; }
+#stair-elev { fill: #fff3b0; }
 #picker-toast { margin: 0; font-size: 16px; color: var(--goldHot); }
 .map-card.locked.cloister::before {
   background:

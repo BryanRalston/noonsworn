@@ -39,6 +39,13 @@ export const HEX = {
   linen: '#FBF6EC',
   ink: '#141225',
   horizon: '#E4C7A2',
+  stairStone: '#E2C79A',
+  stairStoneDeep: '#B8956A',
+  stairTerracotta: '#B5583A',
+  stairTerracottaDeep: '#8E432C',
+  rose: '#E8B49A',
+  duskPlum: '#4A3A78',
+  stairCypress: '#2E4A32',
 } as const
 
 function c(hex: string): Color {
@@ -84,6 +91,13 @@ export const COLOR = {
   linen: c(HEX.linen),
   ink: c(HEX.ink),
   horizon: c(HEX.horizon),
+  stairStone: c(HEX.stairStone),
+  stairStoneDeep: c(HEX.stairStoneDeep),
+  stairTerracotta: c(HEX.stairTerracotta),
+  stairTerracottaDeep: c(HEX.stairTerracottaDeep),
+  rose: c(HEX.rose),
+  duskPlum: c(HEX.duskPlum),
+  stairCypress: c(HEX.stairCypress),
 }
 
 export function mountPalette(target: HTMLElement) {

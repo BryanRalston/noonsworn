@@ -367,6 +367,7 @@ function pushBoxes(cx: number, cz: number, radius: number, list: readonly AABB[]
 }
 
 export function resolveCircle(x0: number, z0: number, radius: number): { x: number; z: number } {
+  if (stairOn && stairBody) return stairBody.resolve(x0, z0, radius)
   if (cloisterOn) return resolveCloister(x0, z0, radius)
   let cx = x0
   let cz = z0
@@ -424,6 +425,7 @@ export function resolveCircle(x0: number, z0: number, radius: number): { x: numb
 
 /** Keeps a move that a planter would cancel by sliding along the wall toward a stair. Sundial has no beds, so it only resolves the destination. */
 export function slideCircle(x0: number, z0: number, x1: number, z1: number, radius: number): { x: number; z: number } {
+  if (stairOn && stairBody) return stairBody.slide(x0, z0, x1, z1, radius)
   if (cloisterOn) return slideCloister(x0, z0, x1, z1, radius)
   if (BEDS.length === 0) return resolveCircle(x1, z1, radius)
   // Open middle of the terraces has no posts and no beds, so the move is already free.
@@ -513,6 +515,7 @@ function inWing(side: number, x: number, z: number, radius: number): boolean {
 }
 
 export function insideArena(x: number, z: number, radius: number): boolean {
+  if (stairOn && stairBody) return stairBody.inside(x, z, radius)
   if (cloisterOn) return cloisterWalk(x, z, radius)
   const limit = HALF - radius - 0.3
   if (Math.abs(x) <= limit && Math.abs(z) <= limit) {
@@ -561,6 +564,7 @@ function segHitsBox(x0: number, z0: number, x1: number, z1: number, b: AABB): bo
 }
 
 export function segmentBlocked(x0: number, z0: number, x1: number, z1: number): boolean {
+  if (stairOn && stairBody) return stairBody.blocked(x0, z0, x1, z1)
   if (cloisterOn) return cloisterSegment(x0, z0, x1, z1)
   if (BEDS.length > 0) {
     for (let i = 0; i < BEDS.length; i++) {
@@ -687,6 +691,26 @@ export function setCloisterBound(minOct: number, onCrest: boolean) {
 
 export function cloisterCourt(): boolean {
   return cloisterOn
+}
+
+/** Stair court. Off until that map applies, so every path above stays the sanctum or the cloister. */
+export interface StairBody {
+  resolve: (x: number, z: number, radius: number) => { x: number; z: number }
+  slide: (x0: number, z0: number, x1: number, z1: number, radius: number) => { x: number; z: number }
+  inside: (x: number, z: number, radius: number) => boolean
+  blocked: (x0: number, z0: number, x1: number, z1: number) => boolean
+}
+
+let stairOn = false
+let stairBody: StairBody | null = null
+
+export function setStairCourt(on: boolean, body: StairBody | null) {
+  stairOn = on
+  stairBody = on ? body : null
+}
+
+export function stairCourt(): boolean {
+  return stairOn
 }
 
 function cloisterLimit(radius: number): number {
