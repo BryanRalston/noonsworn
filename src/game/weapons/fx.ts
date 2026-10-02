@@ -1,13 +1,14 @@
 import {
-  AdditiveBlending,
   Color,
+  CustomBlending,
   DoubleSide,
   InstancedBufferAttribute,
   InstancedMesh,
   LinearFilter,
   LinearMipmapLinearFilter,
-  NormalBlending,
   Object3D,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
   PlaneGeometry,
   ShaderMaterial,
   SRGBColorSpace,
@@ -90,7 +91,6 @@ export const FX = {
 
 export interface WeaponFx {
   mesh: InstancedMesh
-  hot: InstancedMesh
   setTier: (tier: TierName) => void
   hit: (x: number, z: number, lit: boolean, scale?: number) => void
   streak: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number, rgb: readonly number[], upright?: boolean) => void
@@ -121,44 +121,42 @@ function hash(n: number): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
-function makeMaterial(map: ReturnType<TextureLoader['load']>, additive: boolean): ShaderMaterial {
+function makeMaterial(map: ReturnType<TextureLoader['load']>): ShaderMaterial {
   return new ShaderMaterial({
     uniforms: { uMap: { value: map } },
     vertexShader: `
       attribute vec4 iUv;
       attribute float iFlag;
+      attribute float iHot;
       varying vec2 vFxUv;
       varying vec3 vCol;
+      varying float vHot;
       void main() {
         vec2 tuv = iFlag > 0.5 ? vec2(uv.y, uv.x) : uv;
         vFxUv = iUv.xy + tuv * iUv.zw;
         vCol = instanceColor;
+        vHot = iHot;
         vec4 world = instanceMatrix * vec4(position.xyz, 1.0);
         gl_Position = projectionMatrix * modelViewMatrix * world;
       }
     `,
-    fragmentShader: additive
-      ? `
+    fragmentShader: `
       uniform sampler2D uMap;
       varying vec2 vFxUv;
       varying vec3 vCol;
+      varying float vHot;
       void main() {
         vec4 tex = texture2D(uMap, vFxUv);
-        vec3 col = vCol * tex.rgb * tex.a;
-        if (max(col.r, max(col.g, col.b)) < 0.02) discard;
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `
-      : `
-      uniform sampler2D uMap;
-      varying vec2 vFxUv;
-      varying vec3 vCol;
-      void main() {
-        vec4 tex = texture2D(uMap, vFxUv);
-        float fade = clamp(max(vCol.r, max(vCol.g, vCol.b)), 0.0, 1.0);
-        float alpha = tex.a * fade;
-        if (alpha < 0.02) discard;
-        gl_FragColor = vec4(vCol * tex.rgb, alpha);
+        if (vHot > 0.5) {
+          vec3 col = vCol * tex.rgb * tex.a;
+          if (max(col.r, max(col.g, col.b)) < 0.02) discard;
+          gl_FragColor = vec4(col, 0.0);
+        } else {
+          float fade = clamp(max(vCol.r, max(vCol.g, vCol.b)), 0.0, 1.0);
+          float alpha = tex.a * fade;
+          if (alpha < 0.02) discard;
+          gl_FragColor = vec4(vCol * tex.rgb * alpha, alpha);
+        }
       }
     `,
     transparent: true,
@@ -167,7 +165,11 @@ function makeMaterial(map: ReturnType<TextureLoader['load']>, additive: boolean)
     polygonOffset: true,
     polygonOffsetFactor: -4,
     polygonOffsetUnits: -4,
-    blending: additive ? AdditiveBlending : NormalBlending,
+    blending: CustomBlending,
+    blendSrc: OneFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    blendSrcAlpha: OneFactor,
+    blendDstAlpha: OneMinusSrcAlphaFactor,
     toneMapped: false,
     side: DoubleSide,
     fog: false,
@@ -192,15 +194,32 @@ export function createWeaponFx(): WeaponFx {
   map.generateMipmaps = true
   map.flipY = true
   const geo = new PlaneGeometry(1, 1)
-  const mesh = new InstancedMesh(geo, makeMaterial(map, false), MAX)
-  const hot = new InstancedMesh(geo, makeMaterial(map, true), MAX)
-  for (const m of [mesh, hot]) {
-    m.count = 0
-    m.frustumCulled = false
-    m.renderOrder = 5
-    m.geometry.setAttribute('iUv', new InstancedBufferAttribute(new Float32Array(MAX * 4), 4))
-    m.geometry.setAttribute('iFlag', new InstancedBufferAttribute(new Float32Array(MAX), 1))
-    m.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX * 3), 3)
+  const mesh = new InstancedMesh(geo, makeMaterial(map), MAX)
+  mesh.count = 0
+  mesh.frustumCulled = false
+  mesh.renderOrder = 5
+  const uvA = new InstancedBufferAttribute(new Float32Array(MAX * 4), 4)
+  const flagA = new InstancedBufferAttribute(new Float32Array(MAX), 1)
+  const hotA = new InstancedBufferAttribute(new Float32Array(MAX), 1)
+  mesh.geometry.setAttribute('iUv', uvA)
+  mesh.geometry.setAttribute('iFlag', flagA)
+  mesh.geometry.setAttribute('iHot', hotA)
+  mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX * 3), 3)
+  const fxRange = {
+    matrix: { start: 0, count: 0 },
+    uv: { start: 0, count: 0 },
+    flag: { start: 0, count: 0 },
+    hot: { start: 0, count: 0 },
+    color: { start: 0, count: 0 },
+  }
+  function stageFx(attr: InstancedBufferAttribute, elements: number, range: { start: number; count: number }) {
+    if (elements <= 0) return
+    range.start = 0
+    range.count = elements
+    const list = attr.updateRanges
+    list[0] = range
+    list.length = 1
+    attr.needsUpdate = true
   }
 
   const x = new Float32Array(MAX)
@@ -328,7 +347,6 @@ export function createWeaponFx(): WeaponFx {
 
   const fx: WeaponFx = {
     mesh,
-    hot,
     setTier(next) {
       tier = next
     },
@@ -425,12 +443,7 @@ export function createWeaponFx(): WeaponFx {
       focus.set(px, pz)
     },
     update(dt) {
-      const uvA = mesh.geometry.getAttribute('iUv') as InstancedBufferAttribute
-      const uvH = hot.geometry.getAttribute('iUv') as InstancedBufferAttribute
-      const flagA = mesh.geometry.getAttribute('iFlag') as InstancedBufferAttribute
-      const flagH = hot.geometry.getAttribute('iFlag') as InstancedBufferAttribute
       let nA = 0
-      let nH = 0
       const limit = cap()
       let drawn = 0
       const face = TUNING.camera.yaw
@@ -473,33 +486,23 @@ export function createWeaponFx(): WeaponFx {
         }
         dummy.updateMatrix()
         const rect = UV[cell[i] ?? 0] ?? UV[0]
-        const target = hotBit[i] ? hot : mesh
-        const uv = hotBit[i] ? uvH : uvA
-        const n = hotBit[i] ? nH : nA
-        target.setMatrixAt(n, dummy.matrix)
-        uv.setXYZW(n, rect[0], rect[1], rect[2], rect[3])
-        const flag = hotBit[i] ? flagH : flagA
-        flag.setX(n, ribbon[i] ? 1 : 0)
+        const n = nA
+        mesh.setMatrixAt(n, dummy.matrix)
+        uvA.setXYZW(n, rect[0], rect[1], rect[2], rect[3])
+        flagA.setX(n, ribbon[i] ? 1 : 0)
+        hotA.setX(n, hotBit[i] ? 1 : 0)
         tint.setRGB((cr[i] ?? 0) * fade, (cg[i] ?? 0) * fade, (cb[i] ?? 0) * fade)
-        target.setColorAt(n, tint)
-        if (hotBit[i]) nH++
-        else nA++
+        mesh.setColorAt(n, tint)
+        nA++
       }
       mesh.count = nA
-      hot.count = nH
       mesh.visible = nA > 0
-      hot.visible = nH > 0
       if (nA > 0) {
-        mesh.instanceMatrix.needsUpdate = true
-        uvA.needsUpdate = true
-        flagA.needsUpdate = true
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-      }
-      if (nH > 0) {
-        hot.instanceMatrix.needsUpdate = true
-        uvH.needsUpdate = true
-        flagH.needsUpdate = true
-        if (hot.instanceColor) hot.instanceColor.needsUpdate = true
+        stageFx(mesh.instanceMatrix, nA * 16, fxRange.matrix)
+        stageFx(uvA, nA * 4, fxRange.uv)
+        stageFx(flagA, nA, fxRange.flag)
+        stageFx(hotA, nA, fxRange.hot)
+        if (mesh.instanceColor) stageFx(mesh.instanceColor, nA * 3, fxRange.color)
       }
     },
     clear() {
@@ -509,9 +512,7 @@ export function createWeaponFx(): WeaponFx {
       active = 0
       cursor = RESERVED
       mesh.count = 0
-      hot.count = 0
       mesh.visible = false
-      hot.visible = false
     },
     ready,
   }

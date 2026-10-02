@@ -298,7 +298,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const shadows = createBlobShadows()
   const shards = createShards()
   const bloom = createBloom()
-  gpu.scene.add(sky, outer, scatter, floorMesh, wingFloor, shell, pillars, wingPillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh, fx.hot)
+  gpu.scene.add(sky, outer, scatter, floorMesh, wingFloor, shell, pillars, wingPillars, inlay, shadows.mesh, playerView, shards.mesh, fx.mesh)
   temple.attach(shell, wingFloor, wingPillars, gpu.scene, wallMat)
   traps.attach(gpu.scene)
   const tutorial = createTutorial(ui, gpu.scene)
@@ -1209,7 +1209,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     hook.__ns = () => ({
       calls: stats.calls,
       fx: fx.mesh.count,
-      hot: fx.hot.count,
+      hot: 0,
       spears: spears.mesh.count,
       enemies: horde.count(),
       kills,
@@ -2024,7 +2024,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     fx.ray(0, 1, 0, 0, 1.2, 0.12, 0.2)
     fx.update(0.016)
     if (fx.mesh.count < 1) fx.mesh.count = 1
-    if (fx.hot.count < 1) fx.hot.count = 1
     shards.burst(0, 0, true)
     shards.burst(0.4, 0, false)
     shards.update(0.016)
