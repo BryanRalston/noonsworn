@@ -215,7 +215,18 @@ h1 { color: var(--goldHot); font-size: 40px; }
 .ring-bg { fill: none; stroke: var(--shadeDeep); stroke-width: 3; }
 .ring-fg { fill: none; stroke: var(--gold); stroke-width: 3; }
 
-#floats { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+#floats {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
 .float { position: absolute; left: 0; top: 0; font: 700 10px/1 system-ui, sans-serif; color: var(--goldHot); text-shadow: 0 1px 0 #141225; }
 .float.arm { font-size: 8px; color: #c8c4d4; }
 .float.pop { font-size: 13px; letter-spacing: 0.08em; }

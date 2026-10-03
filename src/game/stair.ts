@@ -69,9 +69,9 @@ const GLIDES = [
   { t0: 240, t1: 246, from: 3, to: 4 },
   { t0: 270, t1: 276, from: 4, to: 5 },
 ]
-// k0 is warm sandstone. k4 is a dusty amber-rose, dark enough that a light
-// ink fill clears 3:1, and not the old neon #F58A4E.
-const LIT_HEX = ['#DBAE6E', '#CCA56A', '#B8946A', '#B48C78', '#A67C70', '#9A7068']
+// k0 is warm sandstone. k4 is a dusk terracotta so the light ink fill
+// clears 3:1 on the canvas, and not the old neon #F58A4E.
+const LIT_HEX = ['#DBAE6E', '#CCA56A', '#B8946A', '#B48C78', '#8A564C', '#7E5248']
 const SHADE_HEX = ['#5A4C60', '#524658', '#4A3E50', '#443848', '#3E323C', '#382C36']
 const NICHES = [
   { x: 18, z: -21.6 },
@@ -1067,6 +1067,10 @@ export function createStair(opts: {
           col = mix(col, uFogColor, fogT);
         }
         gl_FragColor = vec4(col, 1.0);
+        // Bloom draws this into a linear target, where the encode is a no-op, then tonemaps once.
+        // On the canvas the same pair encodes a single time, matching the other floors.
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   })

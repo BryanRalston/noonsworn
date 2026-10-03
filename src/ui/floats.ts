@@ -63,6 +63,15 @@ export function createFloats(parent: HTMLElement, _cap: number): Floats {
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.lineWidth = 3
+      const box = getComputedStyle(canvas)
+      const insetOf = (name: string) => {
+        const n = parseFloat(box.getPropertyValue(name))
+        return Number.isFinite(n) ? n : 0
+      }
+      const safeLeft = insetOf('--safe-left') + 8
+      const safeRight = insetOf('--safe-right') + 8
+      const safeTop = insetOf('--safe-top') + 8
+      const safeBottom = insetOf('--safe-bottom') + 8
       for (let i = live.length - 1; i >= 0; i--) {
         const row = live[i]
         if (!row) continue
@@ -85,10 +94,18 @@ export function createFloats(parent: HTMLElement, _cap: number): Floats {
         }
         const born = 1 - Math.min(1, row.t / 0.7)
         const pop = 1.4 - 0.4 * Math.min(1, born / 0.22)
-        ctx.save()
-        ctx.translate(sx, sy)
-        ctx.scale(pop, pop)
         ctx.font = FONT[row.kind]
+        const halfW = ctx.measureText(row.text).width * 0.5 * pop + 4 * pop
+        const halfH = (row.kind === 'pop' ? 16 : 12) * pop
+        const minX = safeLeft + halfW
+        const maxX = pw - safeRight - halfW
+        const minY = safeTop + halfH
+        const maxY = ph - safeBottom - halfH
+        const cx = minX <= maxX ? Math.min(maxX, Math.max(minX, sx)) : pw * 0.5
+        const cy = minY <= maxY ? Math.min(maxY, Math.max(minY, sy)) : ph * 0.5
+        ctx.save()
+        ctx.translate(cx, cy)
+        ctx.scale(pop, pop)
         ctx.strokeStyle = '#141225'
         ctx.fillStyle = row.kind === 'crit' ? '#F2C14A' : row.kind === 'arm' ? '#c8c4d4' : '#fff3b0'
         ctx.lineWidth = 4
