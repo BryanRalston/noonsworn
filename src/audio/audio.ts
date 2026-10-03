@@ -68,6 +68,7 @@ export interface AudioBus {
   meter: () => { peak: number; clipped: number; voices: number; duck: number }
   preload: (names: readonly string[]) => void
   cue: (name: string) => void
+  bed: (name: string, gain: number) => void
   lowpass: (hz: number) => void
   lowpassHz: () => number
 }
@@ -107,7 +108,7 @@ export function createAudio(fxRng: () => number): AudioBus {
   }
   const live: Record<string, number> = { hit: 0, armored: 0, kill: 0, xp: 0, spear: 0, shimmer: 0, exposed: 0, hurt: 0, level: 0, total: 0 }
   let voicePeak = 0
-  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1, slam: 3, land: 1, hum: 2, bloom: 4, shutter: 2, dart: 4, boss: 2, water: 1, blot_spit: 3, compline: 1 }
+  const caps: Record<string, number> = { hit: 6, armored: 3, kill: 6, xp: 4, spear: 4, shimmer: 3, exposed: 3, hurt: 2, level: 1, slam: 3, land: 1, hum: 2, bloom: 4, shutter: 2, dart: 4, boss: 2, water: 1, blot_spit: 3, compline: 1, seal: 2, fade: 1, feed: 2, stair: 4 }
   let clipped = 0
   let held = 0
   let xpWindow = 0
@@ -233,6 +234,67 @@ export function createAudio(fxRng: () => number): AudioBus {
   function one(names: string[], gain: number, kind: string | null) {
     const v = vary(gain)
     play(pick(names), sfxBus, v.gain, v.rate, kind)
+  }
+
+  function newelDisc() {
+    if (!unlocked || muted) return
+    const c = ensure()
+    if (!sfxBus) return
+    const now = c.currentTime
+    const ring = c.createGain()
+    ring.gain.setValueAtTime(0.0001, now)
+    ring.gain.exponentialRampToValueAtTime(0.2, now + 0.004)
+    ring.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+    ring.connect(sfxBus)
+    const freqs = [210, 420, 630]
+    for (let i = 0; i < freqs.length; i++) {
+      const osc = c.createOscillator()
+      osc.type = i === 0 ? 'triangle' : 'sine'
+      const f = freqs[i] ?? 210
+      osc.frequency.setValueAtTime(f, now)
+      osc.frequency.exponentialRampToValueAtTime(f * 0.55, now + 0.18)
+      const g = c.createGain()
+      g.gain.value = i === 0 ? 0.8 : 0.28
+      osc.connect(g)
+      g.connect(ring)
+      osc.start(now)
+      osc.stop(now + 0.24)
+    }
+  }
+
+  const gateAt: Record<string, number[]> = {}
+  function gated(name: string, perSec: number): boolean {
+    const now = performance.now()
+    const list = gateAt[name] ?? (gateAt[name] = [])
+    while (list.length && (list[0] ?? 0) < now - 1000) list.shift()
+    if (list.length >= perSec) return false
+    list.push(now)
+    return true
+  }
+
+  const beds = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>()
+  function bed(name: string, gain: number) {
+    if (!unlocked || !ctx || !sfxBus) return
+    const row = beds.get(name)
+    if (gain <= 0) {
+      if (row) row.gain.gain.value = 0
+      return
+    }
+    if (!row) {
+      const buf = buffers.get(name)
+      if (!buf) return
+      const g = ctx.createGain()
+      g.gain.value = gain
+      g.connect(sfxBus)
+      const src = ctx.createBufferSource()
+      src.buffer = buf
+      src.loop = true
+      src.connect(g)
+      src.start()
+      beds.set(name, { src, gain: g })
+      return
+    }
+    row.gain.gain.value = gain
   }
 
   function haloClank() {
@@ -400,10 +462,25 @@ export function createAudio(fxRng: () => number): AudioBus {
         haloClank()
         return
       }
-      const kind = name === 'water_fill' || name === 'water_ebb' ? 'water' : name === 'blot_spit' ? 'blot_spit' : name.startsWith('compline') ? 'compline' : null
-      play(name, sfxBus, 0.7, 1, kind)
-      if (name === 'brimwash_crash' || name === 'compline_slam') duckTap()
+      if (name === 'newel_disc') {
+        newelDisc()
+        return
+      }
+      if (name === 'seal_set' && !gated(name, 8)) return
+      if (name === 'seal_fade' && !gated(name, 2)) return
+      const kind = name === 'water_fill' || name === 'water_ebb' ? 'water'
+        : name === 'blot_spit' ? 'blot_spit'
+        : name.startsWith('compline') ? 'compline'
+        : name === 'seal_set' ? 'seal'
+        : name === 'seal_fade' ? 'fade'
+        : name === 'hushmaw_feed' ? 'feed'
+        : name.startsWith('newel') || name.startsWith('courser') || name.startsWith('hushmaw') || name === 'westering_bell' || name === 'sun_glide' ? 'stair'
+        : null
+      const rate = name === 'seal_set' ? 1 + (fxRng() * 2 - 1) * 0.06 : 1
+      play(name, sfxBus, 0.7, rate, kind)
+      if (name === 'brimwash_crash' || name === 'compline_slam' || name === 'newel_cast' || name === 'newel_fall') duckTap()
     },
+    bed,
     lowpass(hz) {
       if (!musicLow || !ctx) return
       if (Math.abs(lowHz - hz) < 1) return

@@ -177,6 +177,9 @@ export interface Horde {
   onDart: (() => void) | null
   bossHit: ((x: number, z: number, radius: number, base: number, source: DamageSource, might: number, stamp: number) => boolean) | null
   bossAt: { x: number; z: number; r: number } | null
+  /** While set, a boss already in spear range keeps the shot. Stair only. */
+  bossLock: boolean
+  annexNear: ((x: number, z: number, range: number) => { x: number; z: number } | null) | null
 }
 
 export interface HordeCtx {
@@ -471,6 +474,8 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     ground: () => 0,
     bossHit: null,
     bossAt: null,
+    bossLock: false,
+    annexNear: null,
     radial(cx, cz, radius, amount, hitCtx) {
       if (horde.frozen) return
       const r2 = radius * radius

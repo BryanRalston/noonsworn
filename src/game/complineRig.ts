@@ -30,7 +30,7 @@ const POUR_END = 0.86
 const SLAM_HIT = 0.56
 const COLLAPSE = 0.75
 const HALO_LAND = 1.622
-const PUDDLE_R = 2.45
+const PUDDLE_R = 2.7
 
 const CLIP_NAMES = ['idle', 'pour', 'slam', 'shudder', 'death'] as const
 type ClipName = (typeof CLIP_NAMES)[number]
@@ -113,6 +113,7 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
   let collapseT = COLLAPSE
   let haloLandT = HALO_LAND
   let triCount = 0
+  let slamAuthored = false
   let gpu: WebGLRenderer | null = null
   let cam: Camera | null = null
   let haloBone: Bone | null = null
@@ -202,17 +203,20 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     haloLandT = eventAt(death, 'halo_land', HALO_LAND)
 
     const mat = source.clone()
-    mat.vertexColors = true
+    const textured = !!mat.map
+    mat.vertexColors = !textured
     mat.color.setRGB(1, 1, 1)
     mat.emissive.setRGB(1, 1, 1)
     mat.emissiveIntensity = 1.6
     mat.roughness = 0.78
     mat.metalness = 0
-    // Lift and desaturate stone only. Emissive columns, ink, crimson, and gold stay on the authored colours.
-    mat.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
+    if (mat.map) mat.map.channel = 1
+    // The h3d albedo already carries its tone. The stone lift washes that texture and pales the water.
+    if (!textured) {
+      mat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
 {
   vec3 stoneC = diffuseColor.rgb;
   float stoneHi = max(stoneC.r, max(stoneC.g, stoneC.b));
@@ -231,9 +235,11 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
   }
 }
 `,
-      )
+        )
+      }
+      mat.customProgramCacheKey = () => 'compline-stone-m5b4'
     }
-    mat.customProgramCacheKey = () => 'compline-stone-m5b4'
+    slamAuthored = textured
     if (mat.emissiveMap) {
       mat.emissiveMap.magFilter = NearestFilter
       mat.emissiveMap.minFilter = NearestFilter
@@ -283,7 +289,7 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     }
   }
 
-  const url = `${import.meta.env.BASE_URL}assets/chars/compline_v2_meshopt.glb`
+  const url = `${import.meta.env.BASE_URL}assets/chars/compline_h3d_meshopt.glb`
   void (async () => {
     try {
       await MeshoptDecoder.ready
@@ -314,6 +320,7 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
 
   // The clip holds the ewer about 1.5 m up, out to the statue's right. Aim that chain at the floor under it.
   function plantSlamHand() {
+    if (slamAuthored) return
     if (clipName !== 'slam' || !upperR || !forearmR || !handR || !current) return
     const d = current.time - slamHitT
     let w = 0

@@ -6,6 +6,7 @@ import type { Horde, HordeCtx } from '../enemies/horde'
 import { type WeaponFx } from './fx'
 
 const QUERY = new Int16Array(48)
+const bossStamp = new Float64Array(TUNING.halo.maxDiscs)
 
 export interface HaloStats {
   damage: number
@@ -120,7 +121,12 @@ export function createHalo(fx: WeaponFx): Halo {
           fx.hit(hx, hz, lit)
           if (hit === 2) horde.slay(slot, ctx)
         }
-        horde.bossHit?.(sx, sz, TUNING.halo.discR + TUNING.halo.reachPad, stats.damage, 'weapon', might, 10 + d)
+        if ((bossStamp[d] ?? 0) > time) bossStamp[d] = 0
+        const gate = !horde.bossLock || time - (bossStamp[d] ?? 0) >= TUNING.halo.hitEvery
+        if (gate) {
+          const landed = horde.bossHit?.(sx, sz, TUNING.halo.discR + TUNING.halo.reachPad, stats.damage, 'weapon', might, 10 + d)
+          if (landed && horde.bossLock) bossStamp[d] = time
+        }
       }
     },
     sync() {

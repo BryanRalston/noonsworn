@@ -112,4 +112,9 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Dormant Newel is the h3d statue on warm sandstone', status: 'shipped', since: 'M6a.1' },
   { area: 'Maps', feature: 'Stair stone matches the Sundial, shade tints the tiles, and a live fight stays within 20 draws', status: 'shipped', since: 'M6A.2' },
   { area: 'Maps', feature: 'Stair floor encodes to sRGB, and callouts stay inside the safe area', status: 'shipped', since: 'M6A.3' },
+  { area: 'Combat & Weapons', feature: 'Slant Courser', status: 'shipped', since: 'M6b' },
+  { area: 'Combat & Weapons', feature: 'Hushmaw', status: 'shipped', since: 'M6b' },
+  { area: 'Shadow-Clock', feature: 'Duskpitch', status: 'shipped', since: 'M6b' },
+  { area: 'Combat & Weapons', feature: 'The Newel', status: 'shipped', since: 'M6b' },
+  { area: 'Maps', feature: 'Four temples clear', status: 'shipped', since: 'M6b' },
 ]

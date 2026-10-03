@@ -331,6 +331,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let stairPending = false
   let hintBits = Number(storageGet('noonsworn.cloister.hints') ?? '0') || 0
   let stairBits = Number(storageGet('noonsworn.stair.hints') ?? '0') || 0
+  let stairLow = -1
+  const stairGlides: { t: number; hz: number }[] = []
+  const STAIR_LOW = [20000, 9000, 6000, 4200, 3000, 2200]
   let prevStep = 0
   let endAt = 0
   let xpWindow = 0
@@ -700,13 +703,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   horde.bossHit = (x, z, radius, base, source, might, stamp) => {
     if (activeMap === 'lattice' && lattice) return lattice.hitBoss(x, z, radius, base, source, might, stamp)
     if (activeMap === 'cloister' && cloister) return cloister.soak(x, z, radius, base, source, might, stamp)
+    if (activeMap === 'stair' && stair) {
+      const boss = stair.soak(x, z, radius, base, source, might, stamp)
+      const crowd = stair.crowdHit(x, z, radius, base, source, might, stamp)
+      return boss || crowd
+    }
     return false
   }
 
   function clearedNow(): boolean {
     if (activeMap === 'lattice') return !!lattice?.cleared()
     if (activeMap === 'cloister') return !!cloister?.cleared()
-    if (activeMap === 'stair') return time >= TUNING.runLength
+    if (activeMap === 'stair') return !!stair?.cleared()
     return time >= TUNING.runLength
   }
 
@@ -741,6 +749,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
             expose: (x, z, half, freeze) => horde.exposeBox(x, z, half, freeze),
             track: (at) => {
               horde.bossAt = at
+              horde.bossLock = false
             },
             sfx: {
               shutterOpen: () => audio.shutterOpen(),
@@ -802,6 +811,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
               cull: (n) => horde.cullTo(n, player.x, player.z),
               track: (at) => {
                 horde.bossAt = at
+                horde.bossLock = false
               },
               sfx: (name) => audio.cue(name),
             },
@@ -828,6 +838,28 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
             darter: horde.darterMesh,
             hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay, scatter],
             restore: [floorMesh, shell, pillars, inlay, scatter],
+            preload: (names) => audio.preload(names),
+            cue: (name) => audio.cue(name),
+            bed: (name, gain) => audio.bed(name, gain),
+            hurt: (amount, floorHp) => {
+              if (floorHp) {
+                if (player.hp <= 1) return
+                player.hp = Math.max(1, player.hp - amount)
+                return
+              }
+              ctx.onHurt(amount)
+            },
+            vulnerable: () => player.iframe <= 0 && player.invuln <= 0 && !cut.active,
+            cutting: () => cut.active,
+            hint: (text) => {
+              if (stairBits & 4) return
+              stairBits |= 4
+              storageSet('noonsworn.stair.hints', String(stairBits))
+              showToast(text, 4.2)
+            },
+            xp: (x, z, value) => pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z),
+            kill: () => audio.kill(),
+            camera: () => follow.camera,
           })
           stair = handle
           await handle.load()
@@ -870,6 +902,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       showToast(text, 4.2)
     }
     if (t >= 3 && prev < 3) sayStair(1, 'Kills in sunlight seal the stone.')
+    if (t >= 45 && prev < 45) sayStair(4, 'Ink is seeping at the parapet foot. Step off it.')
     if (t >= 56 && prev < 56) sayStair(2, 'The sun is sinking. The shadows will reach further.')
   }
 
@@ -970,6 +1003,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       stair.warm(gpu.renderer, follow.camera)
       prewarmDraw()
+      stairLow = 0
+      stairGlides.length = 0
+      audio.lowpass(STAIR_LOW[0] ?? 20000)
+      stairGlides.push({ t: 0, hz: STAIR_LOW[0] ?? 20000 })
     } else if (activeMap === 'lattice' && lattice) {
       stair?.clear(false)
       cloister?.clear(false)
@@ -1630,7 +1667,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         state.cutDirZ = previewSweepZ
       }
       if (washSlow > 0) washSlow = Math.max(0, washSlow - dt)
-      const speed = TUNING.player.speed * (1 + TUNING.passive.swift * build.swift) * (washSlow > 0 ? 1 - TUNING.cloister.wash.selaSlow : 1)
+      const pitchSlow = activeMap === 'stair' && stair ? stair.drag().slow : 1
+      const speed = TUNING.player.speed * (1 + TUNING.passive.swift * build.swift) * (washSlow > 0 ? 1 - TUNING.cloister.wash.selaSlow : 1) * pitchSlow
       const slipped = traps.begin(dt, player)
       if (traps.blocksCut()) {
         cut.active = false
@@ -1773,7 +1811,27 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       fillCtx(dt)
       const cam = follow.camera.position
-      if (activeMap === 'stair' && stair) stair.tick(dt, time, build.wide, build.longday, player.x, player.z, cam.x, cam.z)
+      if (activeMap === 'stair' && stair) {
+        stair.tick(dt, time, build.wide, build.longday, player.x, player.z, cam.x, cam.z)
+        horde.bossAt = stair.boss()
+        horde.bossLock = horde.bossAt != null
+        horde.annexNear = stair.crowdNear
+        if (stair.takeCull()) horde.cullTo(40, player.x, player.z)
+        const sunI = stair.sunInfo()
+        if (sunI.glide) {
+          const to = Math.min(5, sunI.k + 1)
+          if (to !== stairLow) {
+            stairLow = to
+            const hz = STAIR_LOW[to] ?? 2200
+            audio.lowpass(hz)
+            audio.cue('sun_glide')
+            stairGlides.push({ t: time, hz })
+          }
+        }
+      } else if (horde.annexNear || horde.bossLock) {
+        horde.annexNear = null
+        horde.bossLock = false
+      }
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
       if (!horde.frozen && !turnWho) {
         const poured = temple.takeSpawns()
@@ -2337,14 +2395,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       storageSet('noonsworn.cloister.hints', '3')
     },
     muteStair: () => {
-      stairBits = 3
-      storageSet('noonsworn.stair.hints', '3')
+      stairBits = 7
+      storageSet('noonsworn.stair.hints', '7')
     },
     stairSun: () => (activeMap === 'stair' && stair ? stair.sunInfo() : null),
     stairPlan: (t: number) => {
       if (activeMap !== 'stair' || !stair) return null
       const p = stair.plan(t)
-      return { darter: p.darter, boss: p.boss, rateMul: p.rateMul, houndFrom: p.houndFrom }
+      return { darter: p.darter, boss: p.boss, rateMul: p.rateMul, houndFrom: p.houndFrom, courser: p.courser, hushmaw: p.hushmaw }
     },
     stairAgree: (points: { x: number; z: number }[]) => {
       if (activeMap !== 'stair' || !stair) return { tested: 0, agree: 0 }
@@ -2370,6 +2428,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
     stairMark: (x: number, z: number, on: boolean) => {
       stair?.mark(x, z, on)
+    },
+    stairPose: (which: string) => stair?.pose(which),
+    stairPlace: (x: number, z: number) => stair?.placeBoss(x, z),
+    fightInfo: () => (activeMap === 'stair' && stair ? stair.fightInfo() : null),
+    stairCrowd: () => (activeMap === 'stair' && stair ? stair.crowd() : []),
+    stairDisc: () => (activeMap === 'stair' && stair ? stair.disc(follow.camera) : null),
+    stairRead: (x: number, z: number) => (activeMap === 'stair' && stair ? stair.read(x, z) : null),
+    stairPitch: () => (stair ? stair.pitchLog() : []),
+    stairGlides: () => stairGlides.slice(),
+    shadeSpawn: (kind: number, x: number, z: number) => {
+      if (kind !== 3 && kind !== 4) return false
+      return stair?.shadeSpawn(kind, x, z) ?? false
     },
     sealBlock: (tile: number, seconds: number) => {
       stair?.sealBlock(tile, seconds)

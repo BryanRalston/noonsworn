@@ -36,6 +36,9 @@ export interface Director {
       onVotary?: (x: number, z: number) => void
       relocate?: (x: number, z: number, rng: Rng) => { x: number; z: number }
       houndFrom?: number
+      courser?: number
+      hushmaw?: number
+      onShade?: (kind: 3 | 4, x: number, z: number) => boolean
     },
   ) => void
 }
@@ -149,6 +152,17 @@ export function createDirector(): Director {
           const share = boss ? 0.35 : (lattice.votary ?? 0)
           if (share > 0 && rng() < share) {
             lattice.onVotary(spotX, spotZ)
+            spawned++
+            if (horde.count() >= minCount && director.acc < 1) break
+            continue
+          }
+        }
+        const courserP = lattice?.courser ?? 0
+        const hushP = lattice?.hushmaw ?? 0
+        if (lattice?.onShade && courserP + hushP > 0) {
+          const roll = rng()
+          const shadeKind: 3 | 4 | 0 = roll < courserP ? 3 : roll < courserP + hushP ? 4 : 0
+          if (shadeKind !== 0 && lattice.onShade(shadeKind, spotX, spotZ)) {
             spawned++
             if (horde.count() >= minCount && director.acc < 1) break
             continue

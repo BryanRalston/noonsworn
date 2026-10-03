@@ -100,6 +100,7 @@ export function createSunspear(fx: WeaponFx): Sunspear {
   const hits = new Int16Array(MAX * 4)
   const trailAt = new Float32Array(MAX)
   const serial = new Int32Array(MAX)
+  const bossed = new Uint8Array(MAX)
   let nextSerial = 100000
   const free = new FreeList(MAX)
 
@@ -122,6 +123,7 @@ export function createSunspear(fx: WeaponFx): Sunspear {
     alive[i] = 1
     trailAt[i] = 0
     serial[i] = nextSerial++
+    bossed[i] = 0
     const base = i * 4
     hits[base] = -1
     hits[base + 1] = -1
@@ -182,15 +184,31 @@ export function createSunspear(fx: WeaponFx): Sunspear {
             aimed = true
           }
         }
-        const target = horde.nearest(px, pz, TUNING.spear.range)
-        if (target >= 0) {
-          const dx = (horde.x[target] ?? 0) - px
-          const dz = (horde.z[target] ?? 0) - pz
-          const d = Math.hypot(dx, dz)
-          if (d < aimD) {
-            aimX = dx
-            aimZ = dz
-            aimed = true
+        // The Newel bow has to land while a courser stands at Sela's heel.
+        // Other temples still let a nearer body take the shot.
+        if (!(aimed && horde.bossLock)) {
+          const annex = horde.annexNear?.(px, pz, TUNING.spear.range)
+          if (annex) {
+            const dx = annex.x - px
+            const dz = annex.z - pz
+            const d = Math.hypot(dx, dz)
+            if (d < aimD) {
+              aimX = dx
+              aimZ = dz
+              aimD = d
+              aimed = true
+            }
+          }
+          const target = horde.nearest(px, pz, TUNING.spear.range)
+          if (target >= 0) {
+            const dx = (horde.x[target] ?? 0) - px
+            const dz = (horde.z[target] ?? 0) - pz
+            const d = Math.hypot(dx, dz)
+            if (d < aimD) {
+              aimX = dx
+              aimZ = dz
+              aimed = true
+            }
           }
         }
         if (aimed) arm(Math.atan2(aimZ, aimX), level, haste, cap)
@@ -201,6 +219,13 @@ export function createSunspear(fx: WeaponFx): Sunspear {
         const nz = (z[i] ?? 0) + (vz[i] ?? 0) * dt
         const slid = resolveCircle(nx, nz, TUNING.spear.radius)
         if (slid.x !== nx || slid.z !== nz) {
+          // The plinth is solid. A locked shot that reaches the statue on the
+          // frame the stone stops it still counts, once, then the spear is gone.
+          if (!bossed[i] && horde.bossLock && horde.bossHit?.(nx, nz, TUNING.spear.hit, dmg[i] ?? 0, 'weapon', might, serial[i] ?? 0)) {
+            bossed[i] = 1
+            spear.onImpact?.(nx, nz, true)
+            fx.hit(nx, nz, true)
+          }
           alive[i] = 0
           life[i] = 0
           free.release(i)
@@ -249,7 +274,9 @@ export function createSunspear(fx: WeaponFx): Sunspear {
           fx.hit(hx, hz, ctx.isLit(hx, hz))
           if (hit === 2) horde.slay(slot, ctx)
           pierce[i] = (pierce[i] ?? 1) - 1
-          if ((pierce[i] ?? 0) <= 0) {
+          // A locked Newel shot keeps flying until it reaches the statue.
+          // Pierce still spends on the crowd, but the crowd cannot delete it first.
+          if ((pierce[i] ?? 0) <= 0 && (!horde.bossLock || bossed[i])) {
             alive[i] = 0
             life[i] = 0
             free.release(i)
@@ -257,10 +284,13 @@ export function createSunspear(fx: WeaponFx): Sunspear {
           }
         }
         if (alive[i] && horde.bossHit?.(nx, nz, TUNING.spear.hit, dmg[i] ?? 0, 'weapon', might, serial[i] ?? 0)) {
+          bossed[i] = 1
           spear.onImpact?.(nx, nz, true)
           fx.hit(nx, nz, true)
           pierce[i] = (pierce[i] ?? 1) - 1
-          if ((pierce[i] ?? 0) <= 0) {
+          // One connection per throw. A second spear in the fan must not
+          // re-open the stamp and strike again every frame.
+          if (horde.bossLock || (pierce[i] ?? 0) <= 0) {
             alive[i] = 0
             life[i] = 0
             free.release(i)

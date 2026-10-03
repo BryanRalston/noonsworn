@@ -95,3 +95,24 @@ These twelve cues are original tones generated for this milestone (sine and a lo
 | compline_pour | ewer pour | 0.7 s |
 | compline_drink | drink | 1.1 s |
 | compline_slam | slam | 0.45 s |
+
+## M6b Stair cues
+
+These fourteen cues are original synthesis for the Westering Stair (sines, a short noise crack, and a descending glide). They are not copied from a sample library. Each file is 22,050 Hz mono, Vorbis `.ogg` plus an AAC `.m4a` twin, in `public/assets/audio/` and copied here. `ffmpeg volumedetect` after the Vorbis encode put every peak at or below −1.5 dBFS. Combined Ogg size is 62,263 bytes. `newel_disc` is not a file: it is the same kind of short synthesized clank as `compline_halo`, played from `audio.ts`.
+
+| File | Cue | Duration |
+|---|---|---|
+| westering_bell | stair bell | 1.5 s |
+| sun_glide | sun step | 2.0 s |
+| seal_set | seal stamp | 0.12 s |
+| seal_fade | seal fade | 0.22 s |
+| pitch_bubble | ink bubble loop | 1.2 s |
+| courser_pounce | pounce | 0.18 s |
+| hushmaw_feed | feed | 0.45 s |
+| hushmaw_burst | feeding kill | 0.28 s |
+| newel_wake | statue wakes | 0.9 s |
+| newel_cast | long shadow whoosh | 0.4 s |
+| newel_sweep | staff sweep | 0.42 s |
+| newel_bow | bow drone loop | 1.6 s |
+| newel_break | bow break | 0.32 s |
+| newel_fall | collapse | 0.95 s |

@@ -1,5 +1,7 @@
 import {
   AnimationMixer,
+  Bone,
+  FloatType,
   LoopOnce,
   BufferAttribute,
   BufferGeometry,
@@ -34,8 +36,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { COLOR } from '../data/palette'
+import type { DamageSource } from '../data/tuning'
 import type { Rng } from '../core/rng'
 import { setStairCourt, type StairBody } from './collision'
+import { createStairFight, type FightHandle, type FightInfo, type FightUniforms } from './stairFight'
 
 const EDGES = [14, 4, -6, -16]
 const LO = [0, 0.4, 0.8, 1.2]
@@ -98,6 +102,8 @@ export interface StairHandle {
     boss: boolean
     rateMul: number
     houndFrom: number
+    courser: number
+    hushmaw: number
     relocate: (x: number, z: number, rng: Rng) => { x: number; z: number }
   }
   sealAt: (x: number, z: number) => void
@@ -111,7 +117,22 @@ export interface StairHandle {
   sunInfo: () => { e: number; a: number; L: number; glide: boolean; forecast: boolean; k: number; countdown: number; reach: number; stripe: number }
   mixerTicks: () => number
   tris: () => { floor: number; arch: number }
-  cpu: () => { tick: number; decay: number; frames: number }
+  cpu: () => { tick: number; decay: number; frames: number; steer: number; hush: number; fight: number }
+  cleared: () => boolean
+  drag: () => { slow: number }
+  soak: (x: number, z: number, radius: number, base: number, source: DamageSource, might: number, stamp: number) => boolean
+  crowdHit: (x: number, z: number, radius: number, base: number, source: DamageSource, might: number, stamp: number) => boolean
+  crowdNear: (x: number, z: number, range: number) => { x: number; z: number } | null
+  boss: () => { x: number; z: number; r: number } | null
+  takeCull: () => boolean
+  pose: (which: string) => void
+  placeBoss: (x: number, z: number) => void
+  fightInfo: () => FightInfo
+  crowd: () => { k: number; x: number; z: number; st: number; hp: number; tm: number; yaw: number }[]
+  disc: (camera: Camera) => { x: number; y: number; z: number; wx: number; wy: number; wz: number; inFrame: boolean } | null
+  read: (x: number, z: number) => { lit: boolean; direct: boolean; pitch: 0 | 1 | 2; pitchAt: number | null; sealed: boolean; parapet: boolean }
+  shadeSpawn: (kind: 3 | 4, x: number, z: number) => boolean
+  pitchLog: () => readonly string[]
   benchLit: () => { ms: number; lit: number }
   benchDecay: () => { ms: number; n: number }
   seals: () => { n: number; uploadMax: number; decayHz: number; shadeGlideOnly: boolean; bytes: Uint8Array }
@@ -166,6 +187,15 @@ if (import.meta.env.DEV) {
   }
 }
 
+function spanSolid(edge: number, z: number): boolean {
+  const spans = solidSpans(edge)
+  for (let i = 0; i < spans.length; i++) {
+    const span = spans[i]
+    if (span && z >= span[0] && z <= span[1]) return true
+  }
+  return false
+}
+
 function solidSpans(edge: number): ReadonlyArray<readonly [number, number]> {
   // Center gaps stay inset 0.55 m. Wide side gaps add 0.2 m past the 3.6 m half
   // so a 0.5 m body clears the square jamb instead of parking on it.
@@ -194,6 +224,16 @@ export function createStair(opts: {
   darter: InstancedMesh
   hide: Object3D[]
   restore: Object3D[]
+  preload?: (names: readonly string[]) => void
+  cue?: (name: string) => void
+  bed?: (name: string, gain: number) => void
+  hurt?: (amount: number, floorHp: boolean) => void
+  vulnerable?: () => boolean
+  cutting?: () => boolean
+  hint?: (text: string) => void
+  xp?: (x: number, z: number, value: number) => void
+  kill?: () => void
+  camera?: () => Camera | null
 }): StairHandle {
   const boxes: { minX: number; maxX: number; minZ: number; maxZ: number }[] = []
   const circles: { x: number; z: number; r: number }[] = []
@@ -796,6 +836,18 @@ export function createStair(opts: {
   sealTex.generateMipmaps = false
   sealTex.needsUpdate = true
 
+  const pitchData = new Float32Array(576)
+  pitchData.fill(9999)
+  const pitchTex = new DataTexture(pitchData, 24, 24, RedFormat, FloatType)
+  pitchTex.magFilter = NearestFilter
+  pitchTex.minFilter = NearestFilter
+  pitchTex.wrapS = ClampToEdgeWrapping
+  pitchTex.wrapT = ClampToEdgeWrapping
+  pitchTex.colorSpace = NoColorSpace
+  pitchTex.flipY = false
+  pitchTex.generateMipmaps = false
+  pitchTex.needsUpdate = true
+
   const uLit = { value: new Color(LIT_HEX[0]) }
   const uShade = { value: new Color(SHADE_HEX[0]) }
   const uGrout = { value: new Color('#D2C0A4') }
@@ -833,6 +885,19 @@ export function createStair(opts: {
   const uTime = { value: 0 }
   const uProbe = { value: 0 }
   const uMark = { value: new Vector3(0, 0, 0) }
+  const uNow = { value: 0 }
+  const uLane = { value: new Vector4() }
+  const uLaneOn = { value: 0 }
+  const uSweep = { value: 0 }
+  const uArc = { value: new Vector4() }
+  const uRing = { value: new Vector4() }
+  const uPounce = { value: [new Vector4(), new Vector4(), new Vector4(), new Vector4()] }
+  const uBub = { value: [new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3()] }
+  const uTel = { value: new Color('#E0552B') }
+  const uRim = { value: new Color('#141225') }
+  const uPitchInk = { value: new Color('#15121A') }
+  const uPlum = { value: new Color('#6B3058') }
+  const fightU: FightUniforms = { now: uNow, lane: uLane, laneOn: uLaneOn, sweep: uSweep, arc: uArc, ring: uRing, pounce: uPounce }
   const uCaps = { value: CAPS.map((c) => new Vector4(c[0], c[1], c[2], c[3])) }
   const floorMat = new ShaderMaterial({
     uniforms: {
@@ -860,6 +925,19 @@ export function createStair(opts: {
       uMark,
       uCaps,
       uSeal: { value: sealTex },
+      uPitch: { value: pitchTex },
+      uNow,
+      uLane,
+      uLaneOn,
+      uSweep,
+      uArc,
+      uRing,
+      uPounce,
+      uBub,
+      uTel,
+      uRim,
+      uPitchInk,
+      uPlum,
       uFogColor: opts.fog.uFogColor,
       uFog: opts.fog.uFog,
       uFogNear: opts.fog.uFogNear,
@@ -903,6 +981,19 @@ export function createStair(opts: {
       uniform vec3 uMark;
       uniform vec4 uCaps[6];
       uniform sampler2D uSeal;
+      uniform sampler2D uPitch;
+      uniform float uNow;
+      uniform vec4 uLane;
+      uniform float uLaneOn;
+      uniform float uSweep;
+      uniform vec4 uArc;
+      uniform vec4 uRing;
+      uniform vec4 uPounce[4];
+      uniform vec3 uBub[8];
+      uniform vec3 uTel;
+      uniform vec3 uRim;
+      uniform vec3 uPitchInk;
+      uniform vec3 uPlum;
       uniform vec3 uFogColor;
       uniform float uFog;
       uniform float uFogNear;
@@ -985,6 +1076,17 @@ export function createStair(opts: {
       float hash2(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
       }
+      float pitchWhen(vec2 p) {
+        vec2 tile = floor((p + 24.0) / 2.0);
+        if (tile.x < 0.0 || tile.y < 0.0 || tile.x > 23.0 || tile.y > 23.0) return 9999.0;
+        return texture2D(uPitch, (tile + 0.5) / 24.0).r;
+      }
+      bool bubHere(vec2 tile) {
+        for (int i = 0; i < 8; i++) {
+          if (uBub[i].z > uNow && abs(tile.x - uBub[i].x) < 0.5 && abs(tile.y - uBub[i].y) < 0.5) return true;
+        }
+        return false;
+      }
       void main() {
         vec2 p = vWorld;
         bool shade = stairShade(p);
@@ -1062,6 +1164,64 @@ export function createStair(opts: {
             else col = uWarn;
           }
         }
+        vec2 pitchTile = floor((p + 24.0) / 2.0);
+        float pWhen = pitchWhen(p);
+        bool pitchSeal = seal > 0.004;
+        bool bubbling = !pitchSeal && (bubHere(pitchTile) || (pWhen < 900.0 && uNow < pWhen && uNow >= pWhen - 8.0));
+        bool solidPitch = !pitchSeal && pWhen < 900.0 && uNow >= pWhen;
+        if (solidPitch) {
+          float stripe = smoothstep(0.08, 0.0, abs(fract(p.x * 0.35 + p.y * 0.15 - uNow * 0.12) - 0.5) - 0.42);
+          col = mix(uPitchInk, uPlum, stripe);
+        } else if (bubbling) {
+          vec2 cell = fract((p + 24.0) / 2.0) - 0.5;
+          float blob = smoothstep(0.16, 0.05, length(cell));
+          float pulse = 0.5 + 0.5 * sin(uNow * 6.0);
+          col = mix(col, uPitchInk, blob * (0.35 + 0.25 * pulse));
+        }
+        if (uLaneOn > 0.5) {
+          vec2 origin = uLane.xy;
+          vec2 span = uLane.zw;
+          float span2 = dot(span, span);
+          if (span2 > 1e-4) {
+            float along = clamp(dot(p - origin, span) / span2, 0.0, 1.0);
+            float dist = length(p - (origin + span * along));
+            if (dist < 1.2 && along <= uSweep + 0.02) {
+              float rim = smoothstep(1.12, 1.2, dist);
+              float lead = smoothstep(0.06, 0.0, abs(along - uSweep));
+              col = mix(col, uTel, 0.40 * (1.0 - rim));
+              col = mix(col, uRim, 0.70 * max(rim, lead));
+            }
+          }
+        }
+        if (uArc.w > 0.5) {
+          vec2 delta = p - uArc.xy;
+          float rad = length(delta);
+          if (rad < uArc.w && rad > 0.4) {
+            float ang = atan(delta.x, delta.y);
+            float turn = ang - uArc.z;
+            turn = turn - 6.2831853 * floor((turn + 3.14159265) / 6.2831853);
+            if (abs(turn) < 1.309) {
+              float rim = smoothstep(uArc.w - 0.08, uArc.w, rad);
+              float lead = smoothstep(0.08, 0.0, abs(abs(turn) - 1.309 * uSweep));
+              col = mix(col, uTel, 0.40 * (1.0 - rim));
+              col = mix(col, uRim, 0.70 * max(rim, lead));
+            }
+          }
+        }
+        if (uRing.w > 0.01) {
+          float ringD = abs(length(p - uRing.xy) - uRing.z);
+          if (ringD < 0.12) col = mix(col, uGold, 0.85 * uRing.w);
+        }
+        for (int i = 0; i < 4; i++) {
+          vec4 seg = uPounce[i];
+          vec2 segA = seg.xy;
+          vec2 segB = seg.zw;
+          vec2 segD = segB - segA;
+          float seg2 = dot(segD, segD);
+          if (seg2 < 1e-4) continue;
+          float segT = clamp(dot(p - segA, segD) / seg2, 0.0, 1.0);
+          if (length(p - (segA + segD * segT)) < 0.08) col = mix(col, uTel, 0.42);
+        }
         if (uFog > 0.5) {
           float fogT = clamp((vView - uFogNear) / max(1.0, uFogFar - uFogNear), 0.0, 1.0);
           col = mix(col, uFogColor, fogT);
@@ -1113,6 +1273,7 @@ export function createStair(opts: {
   let newelRoot: Group | null = null
   let mixerTicks = 0
   let posed = false
+  let fight: FightHandle | null = null
 
   function dormancy(mat: MeshStandardMaterial) {
     const src = mat.emissiveMap
@@ -1154,12 +1315,15 @@ export function createStair(opts: {
     const clip = gltf.animations.find((a) => a.name === 'dormant')
     if (!clip) throw new Error('newel dormant clip missing')
     let skin: SkinnedMesh | null = null
+    let discBone: Bone | null = null
     gltf.scene.traverse((obj) => {
       obj.frustumCulled = false
       obj.castShadow = false
       obj.receiveShadow = false
       const mesh = obj as SkinnedMesh
       if (mesh.isSkinnedMesh) skin = mesh
+      const bone = obj as Bone
+      if (bone.isBone && bone.name === 'disc') discBone = bone
     })
     if (!skin) throw new Error('newel mesh missing')
     const mesh: SkinnedMesh = skin
@@ -1167,6 +1331,7 @@ export function createStair(opts: {
     const mat0 = mesh.material
     const srcMat = (Array.isArray(mat0) ? mat0[0] : mat0) as MeshStandardMaterial
     const mat = srcMat.clone()
+    const eyes = srcMat.emissiveMap ?? null
     dormancy(mat)
     // Colour is on TEXCOORD_1. vertexColors would sample a missing COLOR_0 as black.
     mat.vertexColors = false
@@ -1194,6 +1359,7 @@ export function createStair(opts: {
     opts.scene.add(root)
     newelRoot = root
     posed = true
+    fight?.bind({ root, mesh, mat, eyes, mixer, clips: gltf.animations, disc: discBone })
   }
 
   const litColors = LIT_HEX.map((hex) => new Color(hex))
@@ -1225,8 +1391,21 @@ export function createStair(opts: {
   let curCount = 60
   let pin = -1
   let wantFill = false
-  let forceE: number | null = null
-  let forceUntil = 0
+  let pinE: number | null = null
+  let pinFromE = 38
+  let pinT0 = 0
+  let pinDur = 1
+  let wideNow = 0
+  let longNow = 0
+  let pitchReady = false
+  const pitchResume = new Float32Array(576)
+  const pitchLog: string[] = []
+  const bubIx = new Int16Array(8)
+  const bubIz = new Int16Array(8)
+  const bubUntil = new Float32Array(8)
+  let flared = false
+  let goldLeft = 0
+  const goldBase = COLOR.gold.clone()
   let runT = 0
   let tickMs = 0
   let tickN = 0
@@ -1356,6 +1535,7 @@ export function createStair(opts: {
       capMinZ[i] = (c[1] < z1 ? c[1] : z1) - r
       capMaxZ[i] = (c[1] > z1 ? c[1] : z1) + r
     }
+    if (capHold) moveCap(capHold.x, capHold.z, capHold.h, capHold.r)
     uFore.value = fore ? 1 : 0
     const fPhi = ((foreA - 270) * Math.PI) / 180
     const fCos = Math.cos(fPhi)
@@ -1403,12 +1583,12 @@ export function createStair(opts: {
       const u = glide ? (t - glide.t0) / (glide.t1 - glide.t0) : 0
       paint(glide?.from ?? 0, glide?.to ?? 0, u)
     } else paint(curK, curK, 0)
-    if (forceE != null && t >= forceUntil) forceE = null
     let L = base * wideMul
     curE = (Math.atan(1 / Math.max(0.05, L)) * 180) / Math.PI
-    if (forceE != null) {
-      curE = forceE
-      L = 1 / Math.tan((forceE * Math.PI) / 180)
+    if (pinE != null) {
+      const glideU = Math.min(1, Math.max(0, (t - pinT0) / Math.max(0.05, pinDur)))
+      curE = pinFromE + (pinE - pinFromE) * glideU
+      L = 1 / Math.tan((Math.max(0.35, curE) * Math.PI) / 180)
     }
     let foreL = L
     let foreA = a
@@ -1495,6 +1675,7 @@ export function createStair(opts: {
       s.strength = 255
       s.shade = shade
       writeByte(ix, iz, 255)
+      opts.cue?.('seal_set')
       return
     }
     if (seals.length >= 64) {
@@ -1522,6 +1703,7 @@ export function createStair(opts: {
     }
     seals.push({ ix, iz, strength: 255, shade, born: born++ })
     writeByte(ix, iz, 255)
+    opts.cue?.('seal_set')
   }
   function decay(dt: number) {
     decayAcc += dt
@@ -1540,7 +1722,11 @@ export function createStair(opts: {
           const next = s.strength - 2.125
           s.strength = next > 0 ? next : 0
           writeByte(s.ix, s.iz, s.strength)
-          if (s.strength <= 0) seals.splice(i, 1)
+          if (s.strength <= 0) {
+            noteSealEnd(s.ix, s.iz)
+            opts.cue?.('seal_fade')
+            seals.splice(i, 1)
+          }
         } else if (s.strength !== 255) {
           s.strength = 255
           writeByte(s.ix, s.iz, 255)
@@ -1593,11 +1779,256 @@ export function createStair(opts: {
     upWindow = sim
   }
 
+  let capHold: { x: number; z: number; h: number; r: number } | null = null
+  function moveCap(x: number, z: number, height: number, radius: number) {
+    capHold = { x, z, h: height, r: radius }
+    const v = uCaps.value[5]
+    if (v) v.set(x, z, height, radius)
+    const len = height * curL
+    const abx = uCos.value * len
+    const abz = uSin.value * len
+    const i = 5
+    capX[i] = x
+    capZ[i] = z
+    capAx[i] = abx
+    capAz[i] = abz
+    capA2[i] = abx * abx + abz * abz
+    capR2[i] = radius * radius
+    const x1 = x + abx
+    const z1 = z + abz
+    capMinX[i] = Math.min(x, x1) - radius
+    capMaxX[i] = Math.max(x, x1) + radius
+    capMinZ[i] = Math.min(z, z1) - radius
+    capMaxZ[i] = Math.max(z, z1) + radius
+  }
+
+  function pushBub(ix: number, iz: number, until: number) {
+    let slot = 0
+    for (let i = 0; i < 8; i++) {
+      if ((bubUntil[i] ?? 0) <= sim) {
+        slot = i
+        break
+      }
+    }
+    bubIx[slot] = ix
+    bubIz[slot] = iz
+    bubUntil[slot] = until
+    uBub.value[slot]?.set(ix, iz, until)
+  }
+
+  function noteSealEnd(ix: number, iz: number) {
+    const id = iz * 24 + ix
+    const at = pitchData[id] ?? 9999
+    if (at > 900 || sim + 0.05 < at) return
+    pitchResume[id] = sim + 8
+    pushBub(ix, iz, sim + 8)
+  }
+
+  function sunSample(t: number, wide: number, longday: number): { reach: number; tan: number; cos: number } {
+    let held = STEPS[0]?.L ?? 1.28
+    let glideFromL = held
+    let key = -1
+    const end = Math.max(0, t)
+    for (let cursor = 0; cursor <= end + 1e-4; cursor += 0.5) {
+      const at = Math.min(cursor, end)
+      const g = glideAt(at)
+      if (g >= 0) {
+        const glide = GLIDES[g]
+        if (!glide) continue
+        if (key !== g) {
+          key = g
+          glideFromL = held
+        }
+        const u = (at - glide.t0) / (glide.t1 - glide.t0)
+        const L0 = STEPS[glide.from]?.L ?? held
+        const L1 = STEPS[glide.to]?.L ?? L0
+        held = glideFromL + (L1 - L0) * Math.pow(0.75, longday) * Math.min(1, Math.max(0, u))
+      } else if (key >= 0) {
+        const glide = GLIDES[key]
+        if (glide) {
+          const L0 = STEPS[glide.from]?.L ?? held
+          const L1 = STEPS[glide.to]?.L ?? L0
+          held = glideFromL + (L1 - L0) * Math.pow(0.75, longday)
+        }
+        key = -1
+      }
+    }
+    const a = azimuth(end)
+    const phi = ((a - 270) * Math.PI) / 180
+    const cosP = Math.cos(phi)
+    const sinP = Math.sin(phi)
+    const len = held * Math.pow(0.92, wide)
+    const reach = cosP > 0 ? Math.min(REACH_CAP, OCC * len * cosP) : 0
+    const tan = Math.abs(cosP) > 1e-4 ? sinP / cosP : 0
+    return { reach, tan, cos: cosP }
+  }
+
+  function parapetShades(x: number, z: number, band: number, sample: { reach: number; tan: number; cos: number }): boolean {
+    if (sample.cos <= 0 || sample.reach <= 0) return false
+    for (let i = 0; i < 4; i++) {
+      const edge = EDGES[i] ?? 0
+      const dx = x - edge
+      if (dx <= 0 || dx > band || dx > sample.reach) continue
+      // Gap lanes stay bare. A raking shadow may cross the opening; the pitch does not.
+      if (!spanSolid(i, z)) continue
+      if (onSolid(i, z - dx * sample.tan)) return true
+    }
+    return false
+  }
+
+  function rebuildPitch(band: number, onset: number, why: string) {
+    const samples: { reach: number; tan: number; cos: number }[] = []
+    for (let t = 0; t <= 400; t += 1) samples.push(sunSample(t, wideNow, longNow))
+    for (let iz = 0; iz < 24; iz++) {
+      for (let ix = 0; ix < 24; ix++) {
+        const x = -24 + ix * 2 + 1
+        const z = -24 + iz * 2 + 1
+        let start = -1
+        for (let i = 0; i < samples.length; i++) {
+          const sample = samples[i]
+          if (!sample) continue
+          if (parapetShades(x, z, band, sample)) {
+            if (start < 0) start = i
+          } else start = -1
+        }
+        const id = iz * 24 + ix
+        pitchData[id] = start < 0 ? 9999 : start + onset
+        pitchResume[id] = 0
+      }
+    }
+    pitchTex.needsUpdate = true
+    pitchLog.push(why)
+  }
+
+  function pitchState(x: number, z: number): 0 | 1 | 2 {
+    const tile = tileIndex(x, z)
+    if (!tile) return 0
+    const id = tile.iz * 24 + tile.ix
+    if ((bytes[id] ?? 0) > 0) return 0
+    const at = pitchData[id] ?? 9999
+    if (at > 900) return 0
+    const solidAt = Math.max(at, pitchResume[id] ?? 0)
+    if (sim >= solidAt) return 2
+    if (sim >= solidAt - 8) return 1
+    return 0
+  }
+
+  function pinSun(e: number, seconds: number) {
+    pinFromE = curE
+    pinE = e
+    pinT0 = runT
+    pinDur = Math.max(0.05, seconds)
+  }
+
+  function ensurePitch(wide: number, longday: number) {
+    wideNow = wide
+    longNow = longday
+    if (pitchReady) return
+    rebuildPitch(4, 45, 'load')
+    pitchReady = true
+  }
+
+  function flareSeals() {
+    for (let i = 0; i < seals.length; i++) {
+      const s = seals[i]
+      if (!s) continue
+      s.strength = 255
+      writeByte(s.ix, s.iz, 255)
+      holdUntil[s.iz * 24 + s.ix] = sim + 3
+    }
+  }
+
+  function blockedParapet(x: number, z: number): boolean {
+    for (let i = 0; i < parapetN; i++) {
+      const b = boxes[i]
+      if (!b) continue
+      if (x >= b.minX - 0.45 && x <= b.maxX + 0.45 && z >= b.minZ - 0.45 && z <= b.maxZ + 0.45) return true
+    }
+    return false
+  }
+
+  const stairFight = createStairFight(opts.scene, fightU, {
+    lit(x, z) {
+      const ix = Math.floor((x + 24) / 2)
+      const iz = Math.floor((z + 24) / 2)
+      if (ix >= 0 && iz >= 0 && ix <= 23 && iz <= 23 && (bytes[iz * 24 + ix] ?? 0) > 0) return true
+      return !shadowed(x, z)
+    },
+    direct: (x, z) => !shadowed(x, z),
+    sealed(x, z) {
+      const tile = tileIndex(x, z)
+      if (!tile) return false
+      return (bytes[tile.iz * 24 + tile.ix] ?? 0) > 0
+    },
+    nearestSeal(x, z, range) {
+      let best: { ix: number; iz: number; x: number; z: number; d: number } | null = null
+      for (let i = 0; i < seals.length; i++) {
+        const s = seals[i]
+        if (!s || s.strength <= 0) continue
+        const cx = -24 + s.ix * 2 + 1
+        const cz = -24 + s.iz * 2 + 1
+        const d = Math.hypot(cx - x, cz - z)
+        if (d > range) continue
+        if (!best || d < best.d) best = { ix: s.ix, iz: s.iz, x: cx, z: cz, d }
+      }
+      return best
+    },
+    drainSeal(ix, iz, amount) {
+      const at = findSeal(ix, iz)
+      if (at < 0) return
+      const s = seals[at]
+      if (!s) return
+      s.strength -= amount
+      if (s.strength <= 0) {
+        noteSealEnd(ix, iz)
+        opts.cue?.('seal_fade')
+        seals.splice(at, 1)
+        writeByte(ix, iz, 0)
+        return
+      }
+      writeByte(ix, iz, s.strength)
+    },
+    stamp(ix, iz, hold) {
+      if (ix < 0 || iz < 0 || ix > 23 || iz > 23) return
+      addSeal(ix, iz)
+      holdUntil[iz * 24 + ix] = sim + hold
+    },
+    snuffAt(x, z) {
+      const tile = tileIndex(x, z)
+      if (!tile) return
+      const at = findSeal(tile.ix, tile.iz)
+      if (at >= 0) seals.splice(at, 1)
+      writeByte(tile.ix, tile.iz, 0)
+      noteSealEnd(tile.ix, tile.iz)
+    },
+    sun: () => ({ e: curE, L: curL, cos: uCos.value, sin: uSin.value }),
+    pinSun,
+    moveCap,
+    rebuildPitch,
+    pitch: pitchState,
+    hurt: (amount, floorHp) => opts.hurt?.(amount, floorHp),
+    vulnerable: () => opts.vulnerable?.() ?? false,
+    cutting: () => opts.cutting?.() ?? false,
+    cue: (name) => opts.cue?.(name),
+    bed: (name, gain) => opts.bed?.(name, gain),
+    hint: (text) => opts.hint?.(text),
+    xp: (x, z, value) => opts.xp?.(x, z, value),
+    kill: () => opts.kill?.(),
+    parapet: blockedParapet,
+    tile: tileIndex,
+  })
+  fight = stairFight
+
   const planOut = {
     darter: 0,
     boss: false,
     rateMul: 1,
     houndFrom: 30,
+    courser: 0,
+    hushmaw: 0,
+    onShade(kind: 3 | 4, x: number, z: number) {
+      return stairFight.spawn(kind, x, z)
+    },
     relocate(x: number, z: number, rng: Rng) {
       // Rings and packs inside the spear's 14 m reach get stepped out to 15.5 m.
       // A body dropped in her face is thrown away before it connects, and that
@@ -1690,11 +2121,24 @@ export function createStair(opts: {
     ready: false,
     async load() {
       if (handle.ready) return
+      opts.preload?.([
+        'westering_bell', 'sun_glide', 'seal_set', 'seal_fade', 'pitch_bubble',
+        'courser_pounce', 'hushmaw_feed', 'hushmaw_burst',
+        'newel_wake', 'newel_cast', 'newel_sweep', 'newel_bow', 'newel_break', 'newel_fall',
+      ])
       await loadNewel()
       handle.ready = true
     },
     apply() {
       pin = -1
+      pinE = null
+      pitchReady = false
+      flared = false
+      goldLeft = 0
+      uGold.value.copy(goldBase)
+      pitchLog.length = 0
+      bubUntil.fill(0)
+      stairFight.reset()
       wantFill = false
       if (import.meta.env.DEV) {
         const q = new URLSearchParams(location.search)
@@ -1735,10 +2179,12 @@ export function createStair(opts: {
       syncVisual(0, 0, 0)
       if (wantFill) fillSeals()
       else sealTex.needsUpdate = true
+      opts.cue?.('westering_bell')
     },
     clear(restore) {
       floor.visible = false
       arch.visible = false
+      stairFight.clear()
       if (newelRoot) newelRoot.visible = false
       opts.darter.material = opts.enemyMat
       setStairCourt(false, null)
@@ -1759,6 +2205,7 @@ export function createStair(opts: {
       renderer.compile(floor, camera)
       renderer.compile(arch, camera)
       if (newelRoot) renderer.compile(newelRoot, camera)
+      stairFight.warm((obj) => renderer.compile(obj, camera))
       uProbe.value = 1
       renderer.compile(floor, camera)
       uProbe.value = prev
@@ -1777,12 +2224,25 @@ export function createStair(opts: {
       uTime.value += dt
       syncVisual(time, wide, longday)
       decay(dt)
+      ensurePitch(wide, longday)
+      stairFight.tick(dt, time, ppx, ppz, opts.camera?.() ?? null)
+      if (stairFight.cleared() && !flared) {
+        flared = true
+        goldLeft = 3
+        flareSeals()
+      }
+      if (goldLeft > 0) {
+        goldLeft -= dt
+        uGold.value.copy(goldBase).multiplyScalar(goldLeft > 0 ? 1.65 : 1)
+        if (goldLeft <= 0) uGold.value.copy(goldBase)
+      }
       tickMs += performance.now() - t0
       tickN++
     },
     place(time, wide, longday) {
       runT = time
       syncVisual(time, wide, longday)
+      ensurePitch(wide, longday)
     },
     floorY,
     isLit(x, z) {
@@ -1861,9 +2321,14 @@ export function createStair(opts: {
       return steer
     },
     plan(time) {
-      planOut.darter = time < 90 ? 0 : 0.1 * Math.min(1, (time - 90) / 60)
-      planOut.rateMul = time < 126 ? 1 : time < 186 ? 1.05 : time < 246 ? 1.05 ** 2 : time < 276 ? 1.05 ** 3 : 1.05 ** 4
-      planOut.boss = false
+      const share = stairFight.plan(time)
+      planOut.darter = share.boss ? 0 : time < 150 ? 0 : 0.1 * Math.min(1, (time - 150) / 60)
+      // Light adds. The minute-5 wave refills the culled horde to the cap and the
+      // spear never reaches the Newel. 0.05 of that wave is a trickle under one a second.
+      planOut.rateMul = share.boss ? 0.05 : time < 126 ? 1 : time < 186 ? 1.05 : time < 246 ? 1.05 ** 2 : time < 276 ? 1.05 ** 3 : 1.05 ** 4
+      planOut.boss = share.boss
+      planOut.courser = share.courser
+      planOut.hushmaw = share.hushmaw
       planOut.houndFrom = 30
       return planOut
     },
@@ -1877,6 +2342,9 @@ export function createStair(opts: {
     },
     sealBlock(tile, seconds) {
       if (tile < 0 || tile > 575) return
+      const ix = tile % 24
+      const iz = (tile / 24) | 0
+      addSeal(ix, iz)
       holdUntil[tile] = sim + seconds
     },
     snuffSeal(tile) {
@@ -1886,10 +2354,10 @@ export function createStair(opts: {
       const at = findSeal(ix, iz)
       if (at >= 0) seals.splice(at, 1)
       writeByte(ix, iz, 0)
+      noteSealEnd(ix, iz)
     },
     setSunElevation(e, glideSeconds) {
-      forceE = e
-      forceUntil = runT + glideSeconds
+      pinSun(e, glideSeconds)
     },
     hud() {
       hudOut.elev = curE
@@ -1988,7 +2456,42 @@ export function createStair(opts: {
     },
     mixerTicks: () => mixerTicks,
     tris: () => ({ floor: triCount(floorGeo), arch: triCount(archGeo) }),
-    cpu: () => ({ tick: tickN ? tickMs / tickN : 0, decay: decayPasses ? decayMs / decayPasses : 0, frames: tickN }),
+    cpu: () => {
+      const part = stairFight.cpu()
+      return {
+        tick: tickN ? tickMs / tickN : 0,
+        decay: decayPasses ? decayMs / decayPasses : 0,
+        frames: tickN,
+        steer: part.steer,
+        hush: part.hush,
+        fight: part.fight,
+      }
+    },
+    cleared: () => stairFight.cleared(),
+    drag: () => stairFight.drag(),
+    soak: (x, z, radius, base, source, might, stamp) => stairFight.soak(x, z, radius, base, source, might, stamp),
+    crowdHit: (x, z, radius, base, source, might, stamp) => stairFight.hit(x, z, radius, base, source, might, stamp),
+    crowdNear: (x, z, range) => stairFight.near(x, z, range),
+    boss: () => stairFight.boss(),
+    takeCull: () => stairFight.cull(),
+    pose: (which) => stairFight.pose(which),
+    placeBoss: (x, z) => stairFight.placeBoss(x, z),
+    fightInfo: () => stairFight.info(),
+    crowd: () => stairFight.crowd(),
+    disc: (camera) => stairFight.disc(camera),
+    read(x, z) {
+      const tile = tileIndex(x, z)
+      return {
+        lit: handle.isLit(x, z),
+        direct: !shadowed(x, z),
+        pitch: pitchState(x, z),
+        pitchAt: tile ? ((pitchData[tile.iz * 24 + tile.ix] ?? 9999) > 900 ? null : (pitchData[tile.iz * 24 + tile.ix] ?? null)) : null,
+        sealed: tile ? (bytes[tile.iz * 24 + tile.ix] ?? 0) > 0 : false,
+        parapet: blockedParapet(x, z),
+      }
+    },
+    shadeSpawn: (kind, x, z) => stairFight.spawn(kind, x, z),
+    pitchLog: () => pitchLog,
     benchLit() {
       const t0 = performance.now()
       let n = 0
