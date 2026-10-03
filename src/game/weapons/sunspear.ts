@@ -309,7 +309,12 @@ export function createSunspear(fx: WeaponFx): Sunspear {
       }
       mesh.count = n
       mesh.visible = n > 0
-      if (n > 0) mesh.instanceMatrix.needsUpdate = true
+      const matrices = mesh.instanceMatrix
+      matrices.clearUpdateRanges()
+      if (n > 0) {
+        matrices.addUpdateRange(0, n * 16)
+        matrices.needsUpdate = true
+      }
     },
   }
   return spear
