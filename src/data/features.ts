@@ -110,4 +110,5 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Dormant Newel', status: 'shipped', since: 'M6a' },
   { area: 'Maps', feature: 'Stair unlock', status: 'shipped', since: 'M6a' },
   { area: 'Combat & Weapons', feature: 'Dormant Newel is the h3d statue on warm sandstone', status: 'shipped', since: 'M6a.1' },
+  { area: 'Maps', feature: 'Stair stone matches the Sundial, shade tints the tiles, and a live fight stays within 20 draws', status: 'shipped', since: 'M6A.2' },
 ]

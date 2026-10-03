@@ -949,7 +949,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     activeMap = wantMap
     resetHomePillars()
     setBeds([])
-    temple.setRouting(activeMap === 'lattice' || activeMap === 'cloister')
+    // The stair keeps its own sun. Shut the sundial gate clock so those floors and pillars are not drawn.
+    temple.setRouting(activeMap !== 'sundial')
     temple.reset(rng)
     traps.reset(temple)
     if (activeMap === 'stair' && stair) {

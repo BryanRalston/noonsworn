@@ -71,7 +71,7 @@ const GLIDES = [
 ]
 // k0 is warm sandstone. k4 is a dusty amber-rose, dark enough that a light
 // ink fill clears 3:1, and not the old neon #F58A4E.
-const LIT_HEX = ['#E4C9A4', '#D4B494', '#C4A084', '#B48C78', '#A67C70', '#9A7068']
+const LIT_HEX = ['#DBAE6E', '#CCA56A', '#B8946A', '#B48C78', '#A67C70', '#9A7068']
 const SHADE_HEX = ['#5A4C60', '#524658', '#4A3E50', '#443848', '#3E323C', '#382C36']
 const NICHES = [
   { x: 18, z: -21.6 },
@@ -804,9 +804,10 @@ export function createStair(opts: {
   const uTerr = { value: COLOR.stairTerracotta.clone() }
   const uRose = { value: COLOR.rose.clone() }
   // Stair telegraph only. Global ink and warn still tint enemies and the other maps.
-  // A light fill clears k4 sandstone and the dusk plum; the 70% rim is the same ink.
+  // Fill stays the light warn. The outer ring is dark on lit stone and the 70% ink mix on shade.
   const uInk = { value: new Color('#FBF3E8') }
   const uWarn = { value: new Color('#FFF6EC') }
+  const uEdge = { value: new Color('#1A1014') }
   const uL = { value: 1.28 }
   const uCos = { value: Math.cos((-18 * Math.PI) / 180) }
   const uSin = { value: Math.sin((-18 * Math.PI) / 180) }
@@ -844,6 +845,7 @@ export function createStair(opts: {
       uRose,
       uInk,
       uWarn,
+      uEdge,
       uL,
       uCos,
       uSin,
@@ -886,6 +888,7 @@ export function createStair(opts: {
       uniform vec3 uRose;
       uniform vec3 uInk;
       uniform vec3 uWarn;
+      uniform vec3 uEdge;
       uniform float uL;
       uniform float uCos;
       uniform float uSin;
@@ -945,6 +948,40 @@ export function createStair(opts: {
         }
         return false;
       }
+      float stairCover(vec2 p) {
+        float cover = 0.0;
+        float pen = 0.15;
+        if (uCos > 0.0 && uReach > 0.0) {
+          for (int i = 0; i < 4; i++) {
+            float dx = p.x - edgeAt(i);
+            float along = smoothstep(0.0, pen, dx) * (1.0 - smoothstep(uReach - pen, uReach, dx));
+            if (along <= 0.0) continue;
+            float z0 = p.y - dx * uTan;
+            if (z0 < -24.0 || z0 > 24.0) continue;
+            float side = (i == 0 || i == 2) ? 15.0 : 9.0;
+            float gapH = (i == 0 || i == 2) ? 3.6 : 2.0;
+            float openC = 1.0 - smoothstep(3.0 - pen, 3.0 + pen, abs(z0));
+            float dGap = min(abs(z0 - side), abs(z0 + side));
+            float openS = 1.0 - smoothstep(gapH - pen, gapH + pen, dGap);
+            float solid = 1.0 - max(openC, openS);
+            cover = max(cover, along * solid);
+          }
+        }
+        for (int i = 0; i < 6; i++) {
+          vec4 c = uCaps[i];
+          vec2 a = c.xy;
+          vec2 d = vec2(uCos, uSin) * (c.z * uL);
+          float ab2 = dot(d, d);
+          if (ab2 < 1e-6) continue;
+          float t = dot(p - a, d) / ab2;
+          if (t < 0.0) continue;
+          if (t > 1.0) t = 1.0;
+          vec2 q = a + d * t;
+          float dist = length(p - q) - c.w;
+          cover = max(cover, 1.0 - smoothstep(-pen, pen, dist));
+        }
+        return clamp(cover, 0.0, 1.0);
+      }
       float hash2(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
       }
@@ -962,8 +999,8 @@ export function createStair(opts: {
         vec2 f = fract((p + 24.0) / 2.0);
         float grout = smoothstep(0.0, 0.045, f.x) * smoothstep(1.0, 0.955, f.x)
           * smoothstep(0.0, 0.045, f.y) * smoothstep(1.0, 0.955, f.y);
-        float jitter = (hash2(tile) * 2.0 - 1.0) * 0.08 + (hash2(floor(tile * 0.5)) * 2.0 - 1.0) * 0.04;
-        vec3 stone = (shade ? uShade : uLit) * (1.0 + jitter);
+        float jitter = (hash2(tile) * 2.0 - 1.0) * 0.18 + (hash2(floor(tile * 0.5)) * 2.0 - 1.0) * 0.09;
+        vec3 stone = uLit * (1.0 + jitter);
         if (f.x < 0.06) stone += vec3(0.025) * smoothstep(0.0, 0.06, grout);
         vec2 q = f - 0.5;
         float ang = atan(q.y, q.x);
@@ -973,8 +1010,10 @@ export function createStair(opts: {
           if (seal > 0.004) {
             float pulse = seal < 0.085 ? 0.65 + 0.35 * sin(uTime * 8.0) : 1.0;
             stone = mix(stone, uHot, pulse);
-          } else stone *= 0.75;
+          } else stone *= 0.48;
         }
+        float lip = step(0.20, length(q)) * step(length(q), 0.31) * step(rays, 0.24);
+        if (lip > 0.5 && seal < 0.004) stone = mix(stone, uLit * (1.0 + jitter) * 1.15, 0.85);
         if (seal > 0.02 && abs(length(q) - 0.3) < 0.035) stone = mix(stone, uGold, 0.9);
         vec3 col = mix(uGrout, stone, grout);
         if (abs(p.y) < 3.0) {
@@ -1001,6 +1040,9 @@ export function createStair(opts: {
           float longWest = smoothstep(0.8, 0.0, abs(ca - 3.14159265));
           if (spoke < 0.06 && cr > 0.4 && cr < 3.2 + longWest * 0.15) col = uGold;
         }
+        float cover = stairCover(p);
+        if (seal > 0.004) cover = 0.0;
+        vec3 shadeGain = uShade / max(uLit, vec3(0.045));
         if (uFore > 0.5 && uForeCos > 0.0) {
           for (int i = 0; i < 4; i++) {
             float edge = edgeAt(i);
@@ -1008,12 +1050,17 @@ export function createStair(opts: {
             float z0 = p.y - dx * uForeTan;
             if (gapOpen(i, z0)) continue;
             if (abs(dx - uForeReach) < 0.14 && fract(p.y * 0.45) > 0.45) col = mix(col, uGold, 0.9);
-            if (dx > uReach && dx < uForeReach && dx > 0.0) col = mix(col, uShade, 0.6);
+            if (dx > uReach && dx < uForeReach && dx > 0.0) col = mix(col, col * shadeGain, 0.6);
           }
         }
+        col = mix(col, col * shadeGain, cover);
         if (uMark.z > 0.5) {
           float mr = length(p - uMark.xy);
-          if (mr < 0.72) col = mr > 0.64 ? mix(col, uInk, 0.7) : uWarn;
+          if (mr < 0.80) {
+            if (mr > 0.66) col = cover > 0.5 ? mix(col, uInk, 0.7) : uEdge;
+            else if (mr > 0.58) col = mix(col, uInk, 0.7);
+            else col = uWarn;
+          }
         }
         if (uFog > 0.5) {
           float fogT = clamp((vView - uFogNear) / max(1.0, uFogFar - uFogNear), 0.0, 1.0);
