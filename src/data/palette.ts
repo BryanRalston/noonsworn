@@ -41,10 +41,10 @@ export const HEX = {
   horizon: '#E4C7A2',
   stairStone: '#E2C79A',
   stairStoneDeep: '#B8956A',
-  stairTerracotta: '#B5583A',
-  stairTerracottaDeep: '#8E432C',
+  stairTerracotta: '#7A5648',
+  stairTerracottaDeep: '#5C4036',
   rose: '#E8B49A',
-  duskPlum: '#4A3A78',
+  duskPlum: '#382C36',
   stairCypress: '#2E4A32',
 } as const
 

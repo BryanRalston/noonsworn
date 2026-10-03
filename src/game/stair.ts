@@ -1,5 +1,6 @@
 import {
   AnimationMixer,
+  LoopOnce,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
@@ -68,8 +69,10 @@ const GLIDES = [
   { t0: 240, t1: 246, from: 3, to: 4 },
   { t0: 270, t1: 276, from: 4, to: 5 },
 ]
-const LIT_HEX = ['#FFD66B', '#FFC85E', '#FFB653', '#FCA04E', '#F58A4E', '#EE7A52']
-const SHADE_HEX = ['#3C4F9A', '#3E4C96', '#414892', '#44438A', '#473E80', '#4A3A78']
+// k0 is warm sandstone. k4 is a dusty amber-rose, dark enough that a light
+// ink fill clears 3:1, and not the old neon #F58A4E.
+const LIT_HEX = ['#E4C9A4', '#D4B494', '#C4A084', '#B48C78', '#A67C70', '#9A7068']
+const SHADE_HEX = ['#5A4C60', '#524658', '#4A3E50', '#443848', '#3E323C', '#382C36']
 const NICHES = [
   { x: 18, z: -21.6 },
   { x: 12, z: -21.6 },
@@ -116,20 +119,26 @@ export interface StairHandle {
   maskBuilds: () => number
 }
 
+// Wide parapets (edges 0 and 2) use a 3.6 m side half. The design half is 2 m;
+// the extra 1.6 m is jamb clearance so a pack can leave the square corner.
+const WIDE_SIDE_HALF = 3.6
+
 function gapOf(edge: number, g: number): { z: number; half: number } {
   if (g === 0) return { z: 0, half: 3 }
   const side = edge === 0 || edge === 2
   const mag = side ? 15 : 9
-  return { z: g === 1 ? mag : -mag, half: 2 }
+  return { z: g === 1 ? mag : -mag, half: side ? WIDE_SIDE_HALF : 2 }
 }
 
 function onSolid(edge: number, z0: number): boolean {
   if (z0 < -24 || z0 > 24) return false
   // Same gaps as gapOf, without allocating a record on the lit-test path.
   if (z0 > -3 && z0 < 3) return false
-  const mag = edge === 0 || edge === 2 ? 15 : 9
-  if (z0 > mag - 2 && z0 < mag + 2) return false
-  if (z0 > -mag - 2 && z0 < -mag + 2) return false
+  const wide = edge === 0 || edge === 2
+  const mag = wide ? 15 : 9
+  const half = wide ? WIDE_SIDE_HALF : 2
+  if (z0 > mag - half && z0 < mag + half) return false
+  if (z0 > -mag - half && z0 < -mag + half) return false
   return true
 }
 
@@ -158,12 +167,13 @@ if (import.meta.env.DEV) {
 }
 
 function solidSpans(edge: number): ReadonlyArray<readonly [number, number]> {
-  // Gap ends are inset 0.55 m so a 0.5 m body does not catch the square jamb.
+  // Center gaps stay inset 0.55 m. Wide side gaps add 0.2 m past the 3.6 m half
+  // so a 0.5 m body clears the square jamb instead of parking on it.
   if (edge === 0 || edge === 2) return [
-    [-24, -17.55],
-    [-12.45, -3.55],
-    [3.55, 12.45],
-    [17.55, 24],
+    [-24, -18.8],
+    [-11.2, -3.55],
+    [3.55, 11.2],
+    [18.8, 24],
   ]
   return [
     [-24, -11.55],
@@ -237,11 +247,13 @@ export function createStair(opts: {
       if (edgeI < 0) continue
       let inGap = false
       let gapZ = 0
+      let gapHalf = 0
       for (let g = 0; g < 3; g++) {
         const gap = gapOf(edgeI, g)
         if (Math.abs(z0 - gap.z) <= gap.half - 0.15) {
           inGap = true
           gapZ = gap.z
+          gapHalf = gap.half
         }
       }
       if (inGap) {
@@ -250,27 +262,36 @@ export function createStair(opts: {
         const nearE = Math.abs(x0 - eastSkin)
         const nearW = Math.abs(x0 - westSkin)
         const dirZ = z0 >= gapZ ? -1 : 1
-        if (nearE < 0.7 && dx < 0.02 && nearE < best) {
+        const sideGap = Math.abs(gapZ) > 5
+        const toLip = gapHalf - Math.abs(z0 - gapZ)
+        // Side openings stall on the jamb, a metre off the wall, where the
+        // east-lip peel never fires. Step into the lane before the skin tests.
+        if (sideGap && toLip < 1.15 && (nearE < 2.2 || nearW < 2.2) && toLip < best) {
+          best = toLip
+          jambOut.x = x0 + (nearE <= nearW ? 0.6 : -0.6)
+          jambOut.z = z0 + dirZ * 0.8
+          found = true
+        } else if (nearE < 0.7 && dx < 0.02 && nearE < best) {
           // On the east lip and not stepping out. Step off the stone and
           // toward the middle of the opening so the pack cannot lock there.
           best = nearE
           jambOut.x = eastSkin + 0.35
-          jambOut.z = z0 + dirZ * 0.45
+          jambOut.z = z0 + dirZ * (sideGap ? 0.8 : 0.45)
           found = true
         } else if (nearW < 0.7 && dx > -0.02 && dx < 0.02 && nearW < best) {
           best = nearW
           jambOut.x = westSkin - 0.35
-          jambOut.z = z0 + dirZ * 0.45
+          jambOut.z = z0 + dirZ * (sideGap ? 0.8 : 0.45)
           found = true
         } else if (nearW < 1.8 && dx > 0.04 && nearW < best) {
           best = nearW
           jambOut.x = x0 + 0.24
-          jambOut.z = z0
+          jambOut.z = sideGap ? z0 + dirZ * 0.55 : z0
           found = true
         } else if (nearE < 1.8 && dx < -0.04 && nearE < best) {
           best = nearE
           jambOut.x = x0 - 0.24
-          jambOut.z = z0
+          jambOut.z = sideGap ? z0 + dirZ * 0.55 : z0
           found = true
         }
         continue
@@ -329,6 +350,65 @@ export function createStair(opts: {
       found = true
     }
     return found ? jambOut : null
+  }
+
+  // After the slide resolves, a body still sitting on a gap lip is pushed into
+  // the lane. lipOut is not jambOut: slide copies these fields before resolveAt.
+  const lipOut = { x: 0, z: 0 }
+  function clearJamb(x: number, z: number, rad: number): { x: number; z: number } | null {
+    if (rad > 0.36 && Math.abs(rad - 0.5) > 0.02) return null
+    for (let i = 0; i < 4; i++) {
+      const edge = EDGES[i] ?? 0
+      if (Math.abs(x - edge) > 1.7 + rad) continue
+      const spans = solidSpans(i)
+      let best = 0.9
+      let nz = z
+      let hit = false
+      for (let s = 0; s < spans.length; s++) {
+        const span = spans[s]
+        if (!span) continue
+        for (let k = 0; k < 2; k++) {
+          const lip = k === 0 ? span[0] : span[1]
+          if (Math.abs(lip) > 22) continue
+          const d = Math.abs(z - lip)
+          if (d >= best) continue
+          let gz = 0
+          let gd = 1e9
+          for (let g = 0; g < 3; g++) {
+            const gap = gapOf(i, g)
+            const dd = Math.abs(z - gap.z)
+            if (dd < gd) {
+              gd = dd
+              gz = gap.z
+            }
+          }
+          best = d
+          nz = z + (Math.sign(gz - z) || 1) * 0.75
+          hit = true
+        }
+      }
+      if (!hit) continue
+      const outward = x >= edge ? 1 : -1
+      lipOut.x = edge + outward * (rad + 0.55)
+      lipOut.z = nz
+      return lipOut
+    }
+    return null
+  }
+
+  function park(x: number, z: number, rad: number): { x: number; z: number } {
+    const cleared = clearJamb(x, z, rad)
+    if (!cleared) {
+      moved.x = x
+      moved.z = z
+      return moved
+    }
+    const cx = cleared.x
+    const cz = cleared.z
+    resolveAt(cx, cz, rad, slideB)
+    moved.x = slideB.x
+    moved.z = slideB.z
+    return moved
   }
 
   function resolveAt(x0: number, z0: number, rad: number, dest: { x: number; z: number }) {
@@ -489,25 +569,15 @@ export function createStair(opts: {
       const fz = slideA.z
       const want = Math.hypot(x1 - x0, z1 - z0)
       const got = Math.hypot(fx - x0, fz - z0)
-      if (want < 1e-5 || got > want * 0.45) {
-        moved.x = fx
-        moved.z = fz
-        return moved
-      }
+      if (want < 1e-5 || got > want * 0.45) return park(fx, fz, rad)
       resolveAt(x1, z0, rad, slideA)
       const ax = slideA.x
       const az = slideA.z
       resolveAt(x0, z1, rad, slideB)
       const bx = slideB.x
       const bz = slideB.z
-      if (Math.hypot(ax - x0, az - z0) >= Math.hypot(bx - x0, bz - z0)) {
-        moved.x = ax
-        moved.z = az
-      } else {
-        moved.x = bx
-        moved.z = bz
-      }
-      return moved
+      if (Math.hypot(ax - x0, az - z0) >= Math.hypot(bx - x0, bz - z0)) return park(ax, az, rad)
+      return park(bx, bz, rad)
     },
     inside,
     blocked(x0, z0, x1, z1) {
@@ -728,13 +798,15 @@ export function createStair(opts: {
 
   const uLit = { value: new Color(LIT_HEX[0]) }
   const uShade = { value: new Color(SHADE_HEX[0]) }
-  const uGrout = { value: COLOR.sandstoneDeep.clone() }
+  const uGrout = { value: new Color('#D2C0A4') }
   const uGold = { value: COLOR.gold.clone() }
   const uHot = { value: COLOR.goldHot.clone() }
   const uTerr = { value: COLOR.stairTerracotta.clone() }
   const uRose = { value: COLOR.rose.clone() }
-  const uInk = { value: COLOR.ink.clone() }
-  const uWarn = { value: COLOR.warn.clone() }
+  // Stair telegraph only. Global ink and warn still tint enemies and the other maps.
+  // A light fill clears k4 sandstone and the dusk plum; the 70% rim is the same ink.
+  const uInk = { value: new Color('#FBF3E8') }
+  const uWarn = { value: new Color('#FFF6EC') }
   const uL = { value: 1.28 }
   const uCos = { value: Math.cos((-18 * Math.PI) / 180) }
   const uSin = { value: Math.sin((-18 * Math.PI) / 180) }
@@ -840,7 +912,8 @@ export function createStair(opts: {
       bool gapOpen(int i, float z0) {
         if (abs(z0) < 3.0) return true;
         float side = (i == 0 || i == 2) ? 15.0 : 9.0;
-        return abs(z0 - side) < 2.0 || abs(z0 + side) < 2.0;
+        float gapHalf = (i == 0 || i == 2) ? 3.6 : 2.0;
+        return abs(z0 - side) < gapHalf || abs(z0 + side) < gapHalf;
       }
       float edgeAt(int i) {
         if (i == 1) return 4.0;
@@ -887,10 +960,11 @@ export function createStair(opts: {
         }
         vec2 tile = floor((p + 24.0) / 2.0);
         vec2 f = fract((p + 24.0) / 2.0);
-        float grout = step(0.02, f.x) * step(f.x, 0.98) * step(0.02, f.y) * step(f.y, 0.98);
-        float jitter = hash2(tile) * 0.12 - 0.06;
+        float grout = smoothstep(0.0, 0.045, f.x) * smoothstep(1.0, 0.955, f.x)
+          * smoothstep(0.0, 0.045, f.y) * smoothstep(1.0, 0.955, f.y);
+        float jitter = (hash2(tile) * 2.0 - 1.0) * 0.08 + (hash2(floor(tile * 0.5)) * 2.0 - 1.0) * 0.04;
         vec3 stone = (shade ? uShade : uLit) * (1.0 + jitter);
-        if (f.x < 0.025 && grout > 0.5) stone += vec3(0.06);
+        if (f.x < 0.06) stone += vec3(0.025) * smoothstep(0.0, 0.06, grout);
         vec2 q = f - 0.5;
         float ang = atan(q.y, q.x);
         float rays = abs(fract(ang * 1.2732395) - 0.5);
@@ -906,7 +980,7 @@ export function createStair(opts: {
         if (abs(p.y) < 3.0) {
           float along = abs(fract((p.x * 0.85 + p.y * 1.7)) - 0.5);
           vec3 brick = mix(uTerr, uTerr * 0.82, step(0.18, along));
-          col = mix(col, brick, 0.92);
+          col = mix(col, brick, 0.78);
           if (abs(abs(p.y) - 2.9) < 0.12) col = uGold;
         }
         if (p.x > 15.5 && p.x < 22.5) {
@@ -965,7 +1039,7 @@ export function createStair(opts: {
     float dx = x - edge;
     if (dx > 0.6 || dx < -0.6) return y;
     bool gap = abs(z) < 3.0;
-    if (side > 0.5) gap = gap || abs(z - 15.0) < 2.0 || abs(z + 15.0) < 2.0;
+    if (side > 0.5) gap = gap || abs(z - 15.0) < 3.6 || abs(z + 15.0) < 3.6;
     else gap = gap || abs(z - 9.0) < 2.0 || abs(z + 9.0) < 2.0;
     if (!gap) return y;
     float t = clamp((0.6 - dx) / 1.2, 0.0, 1.0);
@@ -1020,39 +1094,12 @@ export function createStair(opts: {
     mat.needsUpdate = true
   }
 
-  // Authored sandstone is already hue 33–36° / sat 30–42°. The Stair sun and the
-  // grade push the sunlit pixels to ~75% sat. Pull only that stone back.
-  function sandstoneFix(mat: MeshStandardMaterial) {
-    mat.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-{
-  vec3 stoneC = diffuseColor.rgb;
-  float stoneL = dot(stoneC, vec3(0.2126, 0.7152, 0.0722));
-  bool stoneSkip = stoneL < 0.10;
-  #ifdef USE_EMISSIVEMAP
-    if (vEmissiveMapUv.x > 0.25) stoneSkip = true;
-  #endif
-  if (stoneC.r > stoneC.g * 1.9 && stoneC.r > stoneC.b * 1.5) stoneSkip = true;
-  if (stoneC.b < stoneC.g * 0.30 && stoneC.r > stoneC.b * 1.8) stoneSkip = true;
-  if (!stoneSkip) {
-    stoneC = vec3(stoneL * 0.90, stoneL * 0.87, stoneL * 1.16);
-    diffuseColor.rgb = stoneC;
-  }
-}
-`,
-      )
-    }
-    mat.customProgramCacheKey = () => 'newel-stone-m6a'
-  }
-
   async function loadNewel() {
     if (posed) return
     await MeshoptDecoder.ready
     const loader = new GLTFLoader()
     loader.setMeshoptDecoder(MeshoptDecoder)
-    const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}assets/chars/newel_v1_meshopt.glb`)
+    const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}assets/chars/newel_h3d_meshopt.glb`)
     const clip = gltf.animations.find((a) => a.name === 'dormant')
     if (!clip) throw new Error('newel dormant clip missing')
     let skin: SkinnedMesh | null = null
@@ -1070,12 +1117,16 @@ export function createStair(opts: {
     const srcMat = (Array.isArray(mat0) ? mat0[0] : mat0) as MeshStandardMaterial
     const mat = srcMat.clone()
     dormancy(mat)
-    sandstoneFix(mat)
+    // Colour is on TEXCOORD_1. vertexColors would sample a missing COLOR_0 as black.
+    mat.vertexColors = false
+    mat.flatShading = false
+    mat.color.set(0xffffff)
+    if (mat.map) mat.map.channel = 1
     mesh.material = mat
     const root = new Group()
     root.name = 'stair-newel-root'
     root.add(gltf.scene)
-    // Authored front is +z (newel_v1.json). rotation.y = +π/2 sends local +z to world +x, east toward the forecourt.
+    // Authored front is +z (newel_h3d.json). rotation.y = +π/2 sends local +z to world +x, east toward the forecourt.
     root.position.set(-1, 1.4, 0)
     root.rotation.y = Math.PI / 2
     root.scale.setScalar(1)
@@ -1083,9 +1134,11 @@ export function createStair(opts: {
     root.visible = false
     const mixer = new AnimationMixer(gltf.scene)
     const action = mixer.clipAction(clip)
+    action.setLoop(LoopOnce, 1)
+    action.clampWhenFinished = true
     action.play()
-    mixer.update(0)
-    mixer.stopAllAction()
+    mixer.update(clip.duration)
+    action.paused = true
     mixerTicks = 0
     opts.scene.add(root)
     newelRoot = root
@@ -1705,20 +1758,22 @@ export function createStair(opts: {
           const ex = EDGES[i] ?? 0
           // Far side is the crossing. Own side is the approach, so a body on the
           // jamb walks along the face into the opening instead of into the corner.
-          const throughX = x >= ex ? ex - 1.25 : ex + 0.95
-          const ownX = x >= ex ? ex + 0.95 : ex - 1.25
-          const nearWall = Math.abs(x - ex) < 1.8
+          // Lane sits inside the opening. gap.half - 0.55 parked the pack on the jamb.
+          const throughX = x >= ex ? ex - 1.85 : ex + 1.5
+          const ownX = x >= ex ? ex + 1.5 : ex - 1.85
+          const nearWall = Math.abs(x - ex) < 2.3
           for (let g = 0; g < 3; g++) {
             const gap = gapOf(i, g)
             const toGoal = Math.hypot(tx - throughX, tz - gap.z)
             if (toGoal > goal - 0.4) continue
-            const aligned = Math.abs(z - gap.z) <= gap.half - 0.5
+            const lane = Math.max(0.7, gap.half - 1.2)
+            const aligned = Math.abs(z - gap.z) <= lane
             let destX = throughX
             let destZ = gap.z
             if (!aligned && nearWall) {
               const sign = z >= gap.z ? 1 : -1
               destX = ownX
-              destZ = gap.z + sign * (gap.half - 0.55)
+              destZ = gap.z + sign * lane
             }
             const toMe = Math.hypot(destX - x, destZ - z)
             if (toMe < 0.2 || toMe >= best) continue

@@ -2017,30 +2017,35 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       const fxT = performance.now()
       fx.update(frameSec)
       profFx = performance.now() - fxT
-      shadows.begin()
-      shadows.put(x, z, 1.5 * 1.3)
-      const marks = traps.blobs
-      for (let i = 0; i < marks.length; i++) {
-        const blob = marks[i]
-        if (blob) shadows.put(blob.x, blob.z, blob.scale)
-      }
-      const blobReach = activeMap === 'lattice' ? 15 * 15 : 1e12
-      horde.visit((ex, ez, kind) => {
-        if (activeMap === 'lattice') {
-          const dx = ex - x
-          const dz = ez - z
-          if (dx * dx + dz * dz > blobReach) return
+      // Stair drops the blob-shadow draw and the sun pip. The other maps keep both.
+      if (activeMap === 'stair') shadows.mesh.visible = false
+      else {
+        shadows.mesh.visible = true
+        shadows.begin()
+        shadows.put(x, z, 1.5 * 1.3)
+        const marks = traps.blobs
+        for (let i = 0; i < marks.length; i++) {
+          const blob = marks[i]
+          if (blob) shadows.put(blob.x, blob.z, blob.scale)
         }
-        shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3)
-      })
-      pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
-      shadows.end()
+        const blobReach = activeMap === 'lattice' ? 15 * 15 : 1e12
+        horde.visit((ex, ez, kind) => {
+          if (activeMap === 'lattice') {
+            const dx = ex - x
+            const dz = ez - z
+            if (dx * dx + dz * dz > blobReach) return
+          }
+          shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3)
+        })
+        pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
+        shadows.end()
+      }
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
       const bloomT = performance.now()
       if (quality.tier === 'high') bloom.render(gpu.renderer, gpu.scene, follow.camera)
       else gpu.renderer.render(gpu.scene, follow.camera)
       profBloom = performance.now() - bloomT
-      sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)
+      if (activeMap !== 'stair') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)
       stats = gpu.readStats()
       pushFrameSample(frameMs)
       xpWindowT += frameSec

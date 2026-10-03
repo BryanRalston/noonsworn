@@ -109,4 +109,5 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Maps', feature: 'Sealed stone', status: 'shipped', since: 'M6a' },
   { area: 'Combat & Weapons', feature: 'Dormant Newel', status: 'shipped', since: 'M6a' },
   { area: 'Maps', feature: 'Stair unlock', status: 'shipped', since: 'M6a' },
+  { area: 'Combat & Weapons', feature: 'Dormant Newel is the h3d statue on warm sandstone', status: 'shipped', since: 'M6a.1' },
 ]
