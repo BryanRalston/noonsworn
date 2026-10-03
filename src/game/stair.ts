@@ -11,6 +11,7 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DataTexture,
+  WebGLRenderTarget,
   BoxGeometry,
   Group,
   Mesh,
@@ -76,7 +77,8 @@ const GLIDES = [
 // k0 is warm sandstone. k4 is a dusk terracotta so the light ink fill
 // clears 3:1 on the canvas, and not the old neon #F58A4E.
 const LIT_HEX = ['#DBAE6E', '#CCA56A', '#B8946A', '#B48C78', '#8A564C', '#7E5248']
-const SHADE_HEX = ['#5A4C60', '#524658', '#4A3E50', '#443848', '#3E323C', '#382C36']
+// k4–k5 stay dusk plum (red at least blue). The earlier steps are the M6A.3 violets.
+const SHADE_HEX = ['#5A4C60', '#524658', '#4A3E50', '#443848', '#3B2B38', '#22161C']
 const NICHES = [
   { x: 18, z: -21.6 },
   { x: 12, z: -21.6 },
@@ -144,11 +146,22 @@ export interface StairHandle {
 // the extra 1.6 m is jamb clearance so a pack can leave the square corner.
 const WIDE_SIDE_HALF = 3.6
 
+// Twelve constant openings. Callers on the mite path used to allocate one per gap.
+const GAP_TABLE: { z: number; half: number }[] = []
+for (let edge = 0; edge < 4; edge++) {
+  for (let g = 0; g < 3; g++) {
+    if (g === 0) {
+      GAP_TABLE.push({ z: 0, half: 3 })
+      continue
+    }
+    const side = edge === 0 || edge === 2
+    const mag = side ? 15 : 9
+    GAP_TABLE.push({ z: g === 1 ? mag : -mag, half: side ? WIDE_SIDE_HALF : 2 })
+  }
+}
+
 function gapOf(edge: number, g: number): { z: number; half: number } {
-  if (g === 0) return { z: 0, half: 3 }
-  const side = edge === 0 || edge === 2
-  const mag = side ? 15 : 9
-  return { z: g === 1 ? mag : -mag, half: side ? WIDE_SIDE_HALF : 2 }
+  return GAP_TABLE[edge * 3 + g] ?? GAP_TABLE[0]!
 }
 
 function onSolid(edge: number, z0: number): boolean {
@@ -452,6 +465,11 @@ export function createStair(opts: {
   }
 
   function resolveAt(x0: number, z0: number, rad: number, dest: { x: number; z: number }) {
+    if (rad <= 0.55 && segmentOpen(x0, z0, x0, z0)) {
+      dest.x = x0
+      dest.z = z0
+      return
+    }
     let x = x0
     let z = z0
     for (let pass = 0; pass < 2; pass++) {
@@ -579,7 +597,36 @@ export function createStair(opts: {
     return (tA >= 0 && tA <= 1) || (tB >= 0 && tB <= 1) || (tA < 0 && tB > 1)
   }
 
+  // Bodies of radius ≤0.55. Bounds are each obstacle expanded by 0.55, which
+  // matches resolveAt's touch test, so a clear segment is a clear move.
+  // A crossing that stays inside a parapet opening is clear too.
+  function segmentOpen(x0: number, z0: number, x1: number, z1: number): boolean {
+    const minX = x0 < x1 ? x0 : x1
+    const maxX = x0 > x1 ? x0 : x1
+    const minZ = z0 < z1 ? z0 : z1
+    const maxZ = z0 > z1 ? z0 : z1
+    if (minX < -23.15 || maxX > 23.45 || minZ < -22.65 || maxZ > 22.45) return false
+    if (maxX > 22.65 && (minZ < -2.45 || maxZ > 2.45)) return false
+    for (let i = 0; i < 4; i++) {
+      const e = EDGES[i] ?? 0
+      if (maxX <= e - 1.15 || minX >= e + 0.55) continue
+      const spans = solidSpans(i)
+      for (let s = 0; s < spans.length; s++) {
+        const span = spans[s]
+        if (span && maxZ > span[0] - 0.55 && minZ < span[1] + 0.55) return false
+      }
+    }
+    for (let i = 0; i < circles.length; i++) {
+      const c = circles[i]
+      if (!c) continue
+      const reach = c.r + 0.55
+      if (maxX > c.x - reach && minX < c.x + reach && maxZ > c.z - reach && minZ < c.z + reach) return false
+    }
+    return true
+  }
+
   function lineBlocked(x0: number, z0: number, x1: number, z1: number, parapetOnly: boolean): boolean {
+    if (!parapetOnly && segmentOpen(x0, z0, x1, z1)) return false
     const n = parapetOnly ? parapetN : boxes.length
     for (let i = 0; i < n; i++) {
       const b = boxes[i]
@@ -599,6 +646,11 @@ export function createStair(opts: {
       return moved
     },
     slide(x0, z0, x1, z1, rad) {
+      if (rad <= 0.55 && segmentOpen(x0, z0, x1, z1)) {
+        moved.x = x1
+        moved.z = z1
+        return moved
+      }
       const nudge = facePeel(x0, z0, x1, z1, rad) ?? circleNudge(x0, z0, x1, z1, rad)
       if (nudge) {
         x1 = nudge.x
@@ -896,7 +948,7 @@ export function createStair(opts: {
   const uTel = { value: new Color('#E0552B') }
   const uRim = { value: new Color('#141225') }
   const uPitchInk = { value: new Color('#15121A') }
-  const uPlum = { value: new Color('#6B3058') }
+  const uPlum = { value: new Color('#4E3A46') }
   const fightU: FightUniforms = { now: uNow, lane: uLane, laneOn: uLaneOn, sweep: uSweep, arc: uArc, ring: uRing, pounce: uPounce }
   const uCaps = { value: CAPS.map((c) => new Vector4(c[0], c[1], c[2], c[3])) }
   const floorMat = new ShaderMaterial({
@@ -1156,6 +1208,8 @@ export function createStair(opts: {
           }
         }
         col = mix(col, col * shadeGain, cover);
+        float groutPx = 1.0 - grout;
+        bool goldPx = min(distance(col, uGold), distance(col, uGold * shadeGain)) < 0.14;
         if (uMark.z > 0.5) {
           float mr = length(p - uMark.xy);
           if (mr < 0.80) {
@@ -1169,15 +1223,18 @@ export function createStair(opts: {
         bool pitchSeal = seal > 0.004;
         bool bubbling = !pitchSeal && (bubHere(pitchTile) || (pWhen < 900.0 && uNow < pWhen && uNow >= pWhen - 8.0));
         bool solidPitch = !pitchSeal && pWhen < 900.0 && uNow >= pWhen;
-        if (solidPitch) {
+        if (solidPitch && !goldPx) {
           float stripe = smoothstep(0.08, 0.0, abs(fract(p.x * 0.35 + p.y * 0.15 - uNow * 0.12) - 0.5) - 0.42);
-          col = mix(uPitchInk, uPlum, stripe);
+          vec3 dusk = mix(uPitchInk, uPlum, 0.42);
+          col = mix(col, dusk, 0.72);
+          col = mix(col, uPlum, stripe * 0.16);
         } else if (bubbling) {
           vec2 cell = fract((p + 24.0) / 2.0) - 0.5;
           float blob = smoothstep(0.16, 0.05, length(cell));
           float pulse = 0.5 + 0.5 * sin(uNow * 6.0);
           col = mix(col, uPitchInk, blob * (0.35 + 0.25 * pulse));
         }
+        if (cover > 0.45 && groutPx > 0.35 && !goldPx) col = mix(col, stone * shadeGain * 0.62, groutPx);
         if (uLaneOn > 0.5) {
           vec2 origin = uLane.xy;
           vec2 span = uLane.zw;
@@ -1365,6 +1422,7 @@ export function createStair(opts: {
   const litColors = LIT_HEX.map((hex) => new Color(hex))
   const shadeColors = SHADE_HEX.map((hex) => new Color(hex))
   const seals: { ix: number; iz: number; strength: number; shade: number; born: number }[] = []
+  const sealSpot = { ix: 0, iz: 0, x: 0, z: 0, d: 0 }
   const holdUntil = new Float32Array(576)
   let born = 1
   let sim = 0
@@ -1779,9 +1837,14 @@ export function createStair(opts: {
     upWindow = sim
   }
 
+  const capSlot = { x: 0, z: 0, h: 0, r: 0 }
   let capHold: { x: number; z: number; h: number; r: number } | null = null
   function moveCap(x: number, z: number, height: number, radius: number) {
-    capHold = { x, z, h: height, r: radius }
+    capSlot.x = x
+    capSlot.z = z
+    capSlot.h = height
+    capSlot.r = radius
+    capHold = capSlot
     const v = uCaps.value[5]
     if (v) v.set(x, z, height, radius)
     const len = height * curL
@@ -1824,43 +1887,20 @@ export function createStair(opts: {
     pushBub(ix, iz, sim + 8)
   }
 
-  function sunSample(t: number, wide: number, longday: number): { reach: number; tan: number; cos: number } {
-    let held = STEPS[0]?.L ?? 1.28
-    let glideFromL = held
-    let key = -1
-    const end = Math.max(0, t)
-    for (let cursor = 0; cursor <= end + 1e-4; cursor += 0.5) {
-      const at = Math.min(cursor, end)
-      const g = glideAt(at)
-      if (g >= 0) {
-        const glide = GLIDES[g]
-        if (!glide) continue
-        if (key !== g) {
-          key = g
-          glideFromL = held
-        }
-        const u = (at - glide.t0) / (glide.t1 - glide.t0)
-        const L0 = STEPS[glide.from]?.L ?? held
-        const L1 = STEPS[glide.to]?.L ?? L0
-        held = glideFromL + (L1 - L0) * Math.pow(0.75, longday) * Math.min(1, Math.max(0, u))
-      } else if (key >= 0) {
-        const glide = GLIDES[key]
-        if (glide) {
-          const L0 = STEPS[glide.from]?.L ?? held
-          const L1 = STEPS[glide.to]?.L ?? L0
-          held = glideFromL + (L1 - L0) * Math.pow(0.75, longday)
-        }
-        key = -1
-      }
-    }
-    const a = azimuth(end)
+  const pitchReach = new Float64Array(401)
+  const pitchTan = new Float64Array(401)
+  const pitchCos = new Float64Array(401)
+  const pitchSample = { reach: 0, tan: 0, cos: 0 }
+
+  function recordSun(at: number, held: number, widePow: number) {
+    const a = azimuth(at)
     const phi = ((a - 270) * Math.PI) / 180
     const cosP = Math.cos(phi)
     const sinP = Math.sin(phi)
-    const len = held * Math.pow(0.92, wide)
-    const reach = cosP > 0 ? Math.min(REACH_CAP, OCC * len * cosP) : 0
-    const tan = Math.abs(cosP) > 1e-4 ? sinP / cosP : 0
-    return { reach, tan, cos: cosP }
+    const len = held * widePow
+    pitchReach[at] = cosP > 0 ? Math.min(REACH_CAP, OCC * len * cosP) : 0
+    pitchTan[at] = Math.abs(cosP) > 1e-4 ? sinP / cosP : 0
+    pitchCos[at] = cosP
   }
 
   function parapetShades(x: number, z: number, band: number, sample: { reach: number; tan: number; cos: number }): boolean {
@@ -1877,19 +1917,59 @@ export function createStair(opts: {
   }
 
   function rebuildPitch(band: number, onset: number, why: string) {
-    const samples: { reach: number; tan: number; cos: number }[] = []
-    for (let t = 0; t <= 400; t += 1) samples.push(sunSample(t, wideNow, longNow))
+    let held = STEPS[0]?.L ?? 1.28
+    let glideFromL = held
+    let key = -1
+    let sampleAt = 0
+    const widePow = Math.pow(0.92, wideNow)
+    const longPow = Math.pow(0.75, longNow)
+    for (let cursor = 0; cursor <= 400 + 1e-4; cursor += 0.5) {
+      const at = cursor > 400 ? 400 : cursor
+      const g = glideAt(at)
+      if (g >= 0) {
+        const glide = GLIDES[g]
+        if (glide) {
+          if (key !== g) {
+            key = g
+            glideFromL = held
+          }
+          const u = (at - glide.t0) / (glide.t1 - glide.t0)
+          const L0 = STEPS[glide.from]?.L ?? held
+          const L1 = STEPS[glide.to]?.L ?? L0
+          held = glideFromL + (L1 - L0) * longPow * Math.min(1, Math.max(0, u))
+        }
+      } else if (key >= 0) {
+        const glide = GLIDES[key]
+        if (glide) {
+          const L0 = STEPS[glide.from]?.L ?? held
+          const L1 = STEPS[glide.to]?.L ?? L0
+          held = glideFromL + (L1 - L0) * longPow
+        }
+        key = -1
+      }
+      const rounded = Math.round(at)
+      if (Math.abs(at - rounded) < 1e-4 && rounded === sampleAt && sampleAt <= 400) {
+        recordSun(sampleAt, held, widePow)
+        sampleAt++
+      }
+    }
     for (let iz = 0; iz < 24; iz++) {
       for (let ix = 0; ix < 24; ix++) {
         const x = -24 + ix * 2 + 1
         const z = -24 + iz * 2 + 1
         let start = -1
-        for (let i = 0; i < samples.length; i++) {
-          const sample = samples[i]
-          if (!sample) continue
-          if (parapetShades(x, z, band, sample)) {
-            if (start < 0) start = i
-          } else start = -1
+        pitchSample.reach = pitchReach[400] ?? 0
+        pitchSample.tan = pitchTan[400] ?? 0
+        pitchSample.cos = pitchCos[400] ?? 0
+        if (parapetShades(x, z, band, pitchSample)) {
+          start = 400
+          for (let i = 399; i >= 0; i--) {
+            pitchSample.reach = pitchReach[i] ?? 0
+            pitchSample.tan = pitchTan[i] ?? 0
+            pitchSample.cos = pitchCos[i] ?? 0
+            if (!parapetShades(x, z, band, pitchSample)) break
+            start = i
+          }
         }
         const id = iz * 24 + ix
         pitchData[id] = start < 0 ? 9999 : start + onset
@@ -1956,12 +2036,13 @@ export function createStair(opts: {
     },
     direct: (x, z) => !shadowed(x, z),
     sealed(x, z) {
-      const tile = tileIndex(x, z)
-      if (!tile) return false
-      return (bytes[tile.iz * 24 + tile.ix] ?? 0) > 0
+      const ix = Math.floor((x + 24) / 2)
+      const iz = Math.floor((z + 24) / 2)
+      if (ix < 0 || iz < 0 || ix > 23 || iz > 23) return false
+      return (bytes[iz * 24 + ix] ?? 0) > 0
     },
     nearestSeal(x, z, range) {
-      let best: { ix: number; iz: number; x: number; z: number; d: number } | null = null
+      let found = false
       for (let i = 0; i < seals.length; i++) {
         const s = seals[i]
         if (!s || s.strength <= 0) continue
@@ -1969,9 +2050,16 @@ export function createStair(opts: {
         const cz = -24 + s.iz * 2 + 1
         const d = Math.hypot(cx - x, cz - z)
         if (d > range) continue
-        if (!best || d < best.d) best = { ix: s.ix, iz: s.iz, x: cx, z: cz, d }
+        if (!found || d < sealSpot.d) {
+          found = true
+          sealSpot.ix = s.ix
+          sealSpot.iz = s.iz
+          sealSpot.x = cx
+          sealSpot.z = cz
+          sealSpot.d = d
+        }
       }
-      return best
+      return found ? sealSpot : null
     },
     drainSeal(ix, iz, amount) {
       const at = findSeal(ix, iz)
@@ -2204,7 +2292,18 @@ export function createStair(opts: {
       uProbe.value = 0
       renderer.compile(floor, camera)
       renderer.compile(arch, camera)
-      if (newelRoot) renderer.compile(newelRoot, camera)
+      if (newelRoot) {
+        renderer.compile(newelRoot, camera)
+        const rt = new WebGLRenderTarget(4, 4)
+        const prevTarget = renderer.getRenderTarget()
+        const prevClear = renderer.autoClear
+        renderer.autoClear = true
+        renderer.setRenderTarget(rt)
+        renderer.render(newelRoot, camera)
+        renderer.setRenderTarget(prevTarget)
+        renderer.autoClear = prevClear
+        rt.dispose()
+      }
       stairFight.warm((obj) => renderer.compile(obj, camera))
       uProbe.value = 1
       renderer.compile(floor, camera)

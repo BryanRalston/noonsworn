@@ -872,6 +872,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   const stairLift = (x: number, z: number) => (stair ? stair.floorY(x, z) + 0.35 : 0.35)
+  // One function for the whole stair run. A fresh closure every frame deopts the mite sync.
+  const stairGround = (z: number, x = 0) => (stair ? stair.floorY(x, z) : 0)
 
   function waterCode(name: string | null): number | null {
     if (name === 'fill') return 4
@@ -2045,8 +2047,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       fx.setFocus(x, z)
       const syncT = performance.now()
       if (activeMap === 'stair' && stair) {
-        const court = stair
-        horde.ground = (z, x = 0) => court.floorY(x, z)
+        if (horde.ground !== stairGround) horde.ground = stairGround
       } else if (activeMap === 'cloister' && cloister) {
         const court = cloister
         horde.ground = (z, x = 0) => court.floorY(x, z)

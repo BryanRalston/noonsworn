@@ -117,4 +117,8 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Shadow-Clock', feature: 'Duskpitch', status: 'shipped', since: 'M6b' },
   { area: 'Combat & Weapons', feature: 'The Newel', status: 'shipped', since: 'M6b' },
   { area: 'Maps', feature: 'Four temples clear', status: 'shipped', since: 'M6b' },
+  { area: 'Graphics/Performance', feature: 'Stair pitch rebuild is one sun pass, and the Newel texture warms with the stair chunk', status: 'shipped', since: 'M6b.1' },
+  { area: 'Combat & Weapons', feature: 'Newel and Compline framing pulls keep the footprint in frame', status: 'shipped', since: 'M6b.1' },
+  { area: 'Maps', feature: 'Sundown stair shade is dusk plum, and the grout stays darker than the tile', status: 'shipped', since: 'M6b.1' },
+  { area: 'Combat & Weapons', feature: 'The Newel death plinth is hidden under the ink puddle', status: 'shipped', since: 'M6b.1' },
 ]

@@ -1,6 +1,6 @@
 import {
   AnimationMixer,
-  CircleGeometry,
+  CylinderGeometry,
   LoopOnce,
   LoopRepeat,
   Mesh,
@@ -188,6 +188,9 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
   const extra = new InstancedBufferAttribute(new Float32Array(MAX * 4), 4)
   pose.setUsage(DynamicDrawUsage)
   extra.setUsage(DynamicDrawUsage)
+  const poseRange = { start: 0, count: 0 }
+  const extraRange = { start: 0, count: 0 }
+  const headings = [0, 0, 0]
   const geo = shadeGeometry()
   geo.setAttribute('iPose', pose)
   geo.setAttribute('iExtra', extra)
@@ -201,16 +204,17 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
   mesh.visible = false
   scene.add(mesh)
 
+  // The tan plinth is a box in the arch mesh (1.7 × 0.6 at y 1.1). This volume covers it.
+  const PUDDLE_H = 0.7
   const puddle = new Mesh(
-    new CircleGeometry(1, 18),
-    new MeshBasicMaterial({ color: 0x15121a, transparent: true, opacity: 0.94, depthWrite: true }),
+    new CylinderGeometry(1, 1, PUDDLE_H, 18),
+    new MeshBasicMaterial({ color: 0x15121a, transparent: true, opacity: 1, depthWrite: true }),
   )
   puddle.name = 'stair-newel-puddle'
-  puddle.rotation.x = -Math.PI / 2
   puddle.position.y = 0.83
   puddle.visible = false
   puddle.frustumCulled = false
-  puddle.scale.setScalar(2.6)
+  puddle.scale.set(2.6, 1, 2.6)
   scene.add(puddle)
 
   let root: Group | null = null
@@ -269,12 +273,12 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
   let hushN = 0
   let fightMs = 0
   let fightN = 0
+  const planShare = { courser: 0, hushmaw: 0, boss: false }
   let laneOn = false
   let laneOx = 0
   let laneOz = 0
   let laneDx = 0
   let laneDz = 0
-  const ndc = new Vector3()
   const framePt = new Vector3()
   const frameNdc = new Vector3()
 
@@ -305,8 +309,12 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
   function showPuddle(on: boolean) {
     deathPuddle = on
     puddle.visible = on
-    puddle.position.set(bossX, floorAt(bossX) + 0.04, bossZ)
+    puddle.position.set(bossX, floorAt(bossX) + 0.04 + PUDDLE_H * 0.5, bossZ)
     if (skin) skin.visible = !on
+    if (root) {
+      root.visible = !on
+      if (on) root.position.y = footY(bossX) - 0.95
+    }
   }
 
   function writeCrowd() {
@@ -327,10 +335,12 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
       n++
     }
     if (n > 0) {
-      pose.updateRanges[0] = { start: 0, count: n * 4 }
+      poseRange.count = n * 4
+      extraRange.count = n * 4
+      pose.updateRanges[0] = poseRange
       pose.updateRanges.length = 1
       pose.needsUpdate = true
-      extra.updateRanges[0] = { start: 0, count: n * 4 }
+      extra.updateRanges[0] = extraRange
       extra.updateRanges.length = 1
       extra.needsUpdate = true
     }
@@ -342,7 +352,9 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     const sun = host.sun()
     const stripe = Math.atan2(sun.cos, sun.sin)
     // Sun axis follows a pylon stripe. ±z follows a parapet band. Three headings.
-    const headings = [stripe, 0, Math.PI]
+    headings[0] = stripe
+    headings[1] = 0
+    headings[2] = Math.PI
     let best = yaw
     let bestS = -99
     for (let h = 0; h < 3; h++) {
@@ -634,19 +646,52 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     return center >= 0 ? center : best
   }
 
-  function steerDisc(camera: Camera | null) {
-    if (!camera || !disc) return
+  function frameBoss(camera: Camera | null, px: number, pz: number) {
+    if (!awake || deathPuddle || !camera || !disc || !root) return
     disc.updateWorldMatrix(true, false)
-    ndc.copy(DISC_LOCAL).applyMatrix4(disc.matrixWorld)
-    ndc.project(camera)
-    if (ndc.y <= 0.92) return
-    const dx = -1 - targetX
-    const dz = 0 - targetZ
-    const dist = Math.hypot(dx, dz)
-    const step = Math.min(0.22, dist)
-    if (dist < 1e-4) return
-    targetX += (dx / dist) * step
-    targetZ += (dz / dist) * step
+    framePt.copy(DISC_LOCAL).applyMatrix4(disc.matrixWorld)
+    frameNdc.copy(framePt).project(camera)
+    const topX = frameNdc.x
+    const topY = frameNdc.y
+    framePt.set(bossX, footY(bossX), bossZ)
+    frameNdc.copy(framePt).project(camera)
+    const footX = frameNdc.x
+    const footYn = frameNdc.y
+    const overTop = topY - 0.82
+    const overBot = -0.86 - footYn
+    const overX = Math.max(Math.abs(topX), Math.abs(footX)) - 0.88
+    if (overTop <= 0 && overBot <= 0 && overX <= 0) return
+    if (overTop > 0 && overBot > 0) return
+    const e = camera.matrixWorld.elements
+    const camX = e[12] ?? 0
+    const camZ = e[14] ?? 0
+    let dx = 0
+    let dz = 0
+    if (overTop >= overBot && overTop >= overX && overTop > 0) {
+      dx = camX - bossX
+      dz = camZ - bossZ
+    } else if (overBot > 0 && overBot >= overX) {
+      dx = bossX - camX
+      dz = bossZ - camZ
+    } else {
+      dx = px - bossX
+      dz = pz - bossZ
+    }
+    const dist = Math.hypot(dx, dz) || 1
+    const step = Math.min(0.45, dist)
+    const nx = bossX + (dx / dist) * step
+    const nz = bossZ + (dz / dist) * step
+    if (!host.parapet(nx, nz) && nx > -23 && nx < 23 && nz > -23 && nz < 23) {
+      bossX = nx
+      bossZ = nz
+    } else if (!host.parapet(nx, bossZ) && nx > -23 && nx < 23) {
+      bossX = nx
+    } else if (!host.parapet(bossX, nz) && nz > -23 && nz < 23) {
+      bossZ = nz
+    } else return
+    const sunk = deathPuddle || clip === 'death'
+    root.position.set(bossX, footY(bossX) - (sunk ? 0.95 : 0), bossZ)
+    if (sunk) puddle.position.set(bossX, floorAt(bossX) + 0.04, bossZ)
   }
 
   function setLane(on: boolean, sweep: number) {
@@ -679,7 +724,7 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     return from < at && to >= at
   }
 
-  function tickBoss(dt: number, time: number, px: number, pz: number, camera: Camera | null) {
+  function tickBoss(dt: number, time: number, px: number, pz: number) {
     if (!root || !mixer || !current) return
     if (!awake && time >= 270) {
       awake = true
@@ -743,6 +788,10 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     if (clip === 'death') {
       if (cross(t0, t1, 0.9)) host.cue('newel_fall')
       if (cross(t0, t1, 2.093)) host.cue('newel_disc')
+      if (t1 >= 1.85) {
+        const sink = Math.min(1, (t1 - 1.85) / 0.45)
+        root.position.y = footY(bossX) - 0.95 * sink
+      }
       if (t1 >= 2.5) {
         showPuddle(true)
         if (!cleared) {
@@ -869,7 +918,6 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
         host.bed('newel_bow', 0)
       }
     }
-    steerDisc(camera)
     if (speed > 0) {
       const dx = targetX - bossX
       const dz = targetZ - bossZ
@@ -1011,6 +1059,8 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     clear() {
       mesh.visible = false
       puddle.visible = false
+      deathPuddle = false
+      if (root) root.visible = true
       if (skin) skin.visible = true
       host.bed('newel_bow', 0)
       host.bed('pitch_bubble', 0)
@@ -1025,21 +1075,23 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
       if (!hold) {
         pack(time)
         stepEnemies(dt, px, pz)
-        tickBoss(dt, time, px, pz, camera)
+        tickBoss(dt, time, px, pz)
         playerDrag(px, pz)
       }
+      frameBoss(camera, px, pz)
       writeCrowd()
       fightMs += performance.now() - t0
       fightN++
     },
     plan(time) {
       const boss = time >= 270 && !cleared
-      let courser = 0
-      let hush = 0
-      if (boss) courser = 0.25
-      else if (time >= 60) courser = Math.min(0.15, 0.15 * ((time - 60) / 150))
-      if (!boss && time >= 120) hush = Math.min(0.08, 0.08 * ((time - 120) / 120))
-      return { courser, hushmaw: hush, boss }
+      planShare.boss = boss
+      if (boss) planShare.courser = 0.25
+      else if (time >= 60) planShare.courser = Math.min(0.15, 0.15 * ((time - 60) / 150))
+      else planShare.courser = 0
+      if (!boss && time >= 120) planShare.hushmaw = Math.min(0.08, 0.08 * ((time - 120) / 120))
+      else planShare.hushmaw = 0
+      return planShare
     },
     spawn,
     pack,
@@ -1125,7 +1177,7 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
       else u.arc.value.set(0, 0, 0, 0)
       if (which === 'bow') u.ring.value.set(bossX, bossZ, 3.4, 0.45)
       else u.ring.value.set(0, 0, 0, 0)
-      showPuddle(which === 'puddle')
+      showPuddle(which === 'puddle' || which === 'death')
       if (which === 'p3') phase = 3
     },
     placeBoss(x: number, z: number) {

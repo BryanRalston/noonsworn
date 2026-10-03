@@ -569,6 +569,7 @@ function buildBoss(): BossView {
 const loopPt = { x: 0, z: 0 }
 const easePt = { x: 0, z: 0 }
 const haloNdc = new Vector3()
+const footNdc = new Vector3()
 const outPt = { x: 0, z: 0 }
 const steerScan = new Uint8Array(V_MAX)
 const steerBest = new Float32Array(V_MAX)
@@ -632,6 +633,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   const rig = attachCompline(bossParts.root, bossParts.mesh)
   let viewCam: Camera | null = null
   let haloOver = 0
+  let frameTop = 0
+  let frameBot = 0
+  let frameSide = 0
   let haloHold = false
   let wantX = 0
   let wantZ = 0
@@ -1143,7 +1147,14 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       if (!rig.haloTop(haloNdc)) return null
       haloNdc.project(camera)
       const inFrame = haloNdc.z >= -1 && haloNdc.z <= 1 && haloNdc.x >= -1 && haloNdc.x <= 1 && haloNdc.y >= -1 && haloNdc.y <= 1
-      return { x: haloNdc.x, y: haloNdc.y, z: haloNdc.z, inFrame }
+      footNdc.set(bossX, -0.2, bossZ)
+      footNdc.project(camera)
+      const footIn = footNdc.z >= -1 && footNdc.z <= 1 && Math.abs(footNdc.x) <= 1 && Math.abs(footNdc.y) <= 1
+      return {
+        x: haloNdc.x, y: haloNdc.y, z: haloNdc.z, inFrame,
+        footX: footNdc.x, footY: footNdc.y, footIn,
+        body: inFrame && footIn,
+      }
     },
     warm(renderer, camera) {
       viewCam = camera
@@ -1622,12 +1633,20 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         if (bossOn && haloOver > 0) {
           let tx = wantX
           let tz = wantZ
-          if (viewCam && haloNdc.y > 0.74) {
+          if (viewCam && frameTop > 0 && frameTop >= frameBot && frameTop >= frameSide) {
             const e = viewCam.matrixWorld.elements
             const dx = (e[12] ?? 0) - bossX
             const dz = (e[14] ?? 0) - bossZ
             const dist = Math.hypot(dx, dz) || 1
-            const step = Math.min(3.2, 0.55 + (haloNdc.y - 0.74) * 9)
+            const step = Math.min(3.2, 0.55 + frameTop * 9)
+            tx = bossX + (dx / dist) * step
+            tz = bossZ + (dz / dist) * step
+          } else if (viewCam && frameBot > 0 && frameBot >= frameSide) {
+            const e = viewCam.matrixWorld.elements
+            const dx = bossX - (e[12] ?? 0)
+            const dz = bossZ - (e[14] ?? 0)
+            const dist = Math.hypot(dx, dz) || 1
+            const step = Math.min(3.2, 0.55 + frameBot * 9)
             tx = bossX + (dx / dist) * step
             tz = bossZ + (dz / dist) * step
           }
@@ -1779,10 +1798,12 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       return
     }
     haloNdc.project(viewCam)
-    const overTop = haloNdc.y - 0.74
-    const overBot = -0.88 - haloNdc.y
-    const overX = Math.abs(haloNdc.x) - 0.86
-    haloOver = Math.max(0, overTop, overBot, overX)
+    footNdc.set(bossX, -0.2, bossZ)
+    footNdc.project(viewCam)
+    frameTop = haloNdc.y - 0.74
+    frameBot = Math.max(-0.88 - haloNdc.y, -0.82 - footNdc.y)
+    frameSide = Math.max(Math.abs(haloNdc.x), Math.abs(footNdc.x)) - 0.86
+    haloOver = Math.max(0, frameTop, frameBot, frameSide)
   }
 
   function easeCentre(tx: number, tz: number, px: number, pz: number): { x: number; z: number } {
@@ -1791,10 +1812,10 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     wantX = tx
     wantZ = tz
     if (haloOver <= 0 || !viewCam) return easePt
-    const overTop = haloNdc.y - 0.74
-    const overBot = -0.88 - haloNdc.y
-    const overX = Math.abs(haloNdc.x) - 0.86
-    // Crown in the timer band: she is too far from the camera, so step the target toward the camera. Bottom and sides step toward court centre.
+    const overTop = frameTop
+    const overBot = frameBot
+    const overX = frameSide
+    // Crown in the timer band: she is too far from the camera, so step the target toward the camera. A cropped hem or rope, or a side miss, steps toward court centre.
     if (overTop >= overBot && overTop >= overX && overTop > 0) {
       const e = viewCam.matrixWorld.elements
       const dx = (e[12] ?? 0) - tx
