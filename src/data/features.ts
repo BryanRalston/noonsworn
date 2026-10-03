@@ -121,4 +121,9 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Newel and Compline framing pulls keep the footprint in frame', status: 'shipped', since: 'M6b.1' },
   { area: 'Maps', feature: 'Sundown stair shade is dusk plum, and the grout stays darker than the tile', status: 'shipped', since: 'M6b.1' },
   { area: 'Combat & Weapons', feature: 'The Newel death plinth is hidden under the ink puddle', status: 'shipped', since: 'M6b.1' },
+  { area: 'Maps', feature: 'k5 stair shade is dusk plum, and the grout is darker than the tile from k0 through k5', status: 'shipped', since: 'M6b.2' },
+  { area: 'Combat & Weapons', feature: 'The Newel home pedestal stays put as coursed stair stone, and the ink is left where the statue falls', status: 'shipped', since: 'M6b.2' },
+  { area: 'Combat & Weapons', feature: 'Newel and Compline framing uses the projected body box', status: 'shipped', since: 'M6b.2' },
+  { area: 'Combat & Weapons', feature: 'The Newel disc is inside the frame on the first wake frame', status: 'shipped', since: 'M6b.2' },
+  { area: 'Combat & Weapons', feature: 'Newel unassisted time-to-kill is about 1.37× the Compline', status: 'shipped', since: 'M6b.2' },
 ]

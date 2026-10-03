@@ -570,6 +570,12 @@ const loopPt = { x: 0, z: 0 }
 const easePt = { x: 0, z: 0 }
 const haloNdc = new Vector3()
 const footNdc = new Vector3()
+const boxNdc = new Vector3()
+const SAFE_X = 0.97
+const SAFE_TOP = 0.9
+const SAFE_BOT = -0.97
+const markPts: Vector3[] = []
+for (let i = 0; i < 9; i++) markPts.push(new Vector3())
 const outPt = { x: 0, z: 0 }
 const steerScan = new Uint8Array(V_MAX)
 const steerBest = new Float32Array(V_MAX)
@@ -636,9 +642,9 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   let frameTop = 0
   let frameBot = 0
   let frameSide = 0
+  let frameLeft = 0
+  let frameRight = 0
   let haloHold = false
-  let wantX = 0
-  let wantZ = 0
   bossParts.root.visible = false
   parent.add(vMesh, bMesh, bossParts.root)
   const trackPt = { x: 0, z: 0, r: 0 }
@@ -1144,16 +1150,16 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       return occOut
     },
     haloScreen(camera) {
-      if (!rig.haloTop(haloNdc)) return null
-      haloNdc.project(camera)
-      const inFrame = haloNdc.z >= -1 && haloNdc.z <= 1 && haloNdc.x >= -1 && haloNdc.x <= 1 && haloNdc.y >= -1 && haloNdc.y <= 1
+      const span = projectCompline(camera)
+      if (!span) return null
       footNdc.set(bossX, -0.2, bossZ)
       footNdc.project(camera)
       const footIn = footNdc.z >= -1 && footNdc.z <= 1 && Math.abs(footNdc.x) <= 1 && Math.abs(footNdc.y) <= 1
       return {
-        x: haloNdc.x, y: haloNdc.y, z: haloNdc.z, inFrame,
+        x: span.hx, y: span.hy, z: span.hz, inFrame: span.frac >= 0.95,
         footX: footNdc.x, footY: footNdc.y, footIn,
-        body: inFrame && footIn,
+        body: span.frac >= 0.95,
+        minX: span.minX, maxX: span.maxX, minY: span.minY, maxY: span.maxY, frac: span.frac,
       }
     },
     warm(renderer, camera) {
@@ -1630,37 +1636,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
             }
           }
         }
-        if (bossOn && haloOver > 0) {
-          let tx = wantX
-          let tz = wantZ
-          if (viewCam && frameTop > 0 && frameTop >= frameBot && frameTop >= frameSide) {
-            const e = viewCam.matrixWorld.elements
-            const dx = (e[12] ?? 0) - bossX
-            const dz = (e[14] ?? 0) - bossZ
-            const dist = Math.hypot(dx, dz) || 1
-            const step = Math.min(3.2, 0.55 + frameTop * 9)
-            tx = bossX + (dx / dist) * step
-            tz = bossZ + (dz / dist) * step
-          } else if (viewCam && frameBot > 0 && frameBot >= frameSide) {
-            const e = viewCam.matrixWorld.elements
-            const dx = bossX - (e[12] ?? 0)
-            const dz = bossZ - (e[14] ?? 0)
-            const dist = Math.hypot(dx, dz) || 1
-            const step = Math.min(3.2, 0.55 + frameBot * 9)
-            tx = bossX + (dx / dist) * step
-            tz = bossZ + (dz / dist) * step
-          }
-          const pull = Math.min(0.85, 0.35 + haloOver * 1.4)
-          let sx = (tx - bossX) * pull
-          let sz = (tz - bossZ) * pull
-          const sm = Math.hypot(sx, sz)
-          if (sm > 0.42) {
-            sx *= 0.42 / sm
-            sz *= 0.42 / sm
-          }
-          bossX += sx
-          bossZ += sz
-        }
+        nudgeBox()
         const rigOn = rig.ready()
         if (rigOn) {
           const ev = rig.step(dt)
@@ -1786,6 +1762,106 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     },
   }
 
+  function spanFrac(minX: number, maxX: number, minY: number, maxY: number): number {
+    const w = Math.max(1e-4, maxX - minX)
+    const h = Math.max(1e-4, maxY - minY)
+    const iw = Math.max(0, Math.min(maxX, SAFE_X) - Math.max(minX, -SAFE_X))
+    const ih = Math.max(0, Math.min(maxY, SAFE_TOP) - Math.max(minY, SAFE_BOT))
+    return (iw * ih) / (w * h)
+  }
+
+  function projectCompline(camera: Camera): { minX: number; maxX: number; minY: number; maxY: number; frac: number; hx: number; hy: number; hz: number } | null {
+    if (!bossOn && !bossDead) return null
+    bossParts.root.position.set(bossX, bossY, bossZ)
+    bossParts.root.updateWorldMatrix(true, true)
+    let n = rig.mark(markPts)
+    if (n <= 0) {
+      const crown = markPts[0]
+      const hem = markPts[1]
+      if (!crown || !hem || !rig.haloSample(crown)) return null
+      hem.set(bossX, -0.2, bossZ)
+      n = 2
+    }
+    let minX = 1e9
+    let maxX = -1e9
+    let minY = 1e9
+    let maxY = -1e9
+    for (let i = 0; i < n; i++) {
+      const p = markPts[i]
+      if (!p) continue
+      boxNdc.copy(p).project(camera)
+      if (boxNdc.z < -1 || boxNdc.z > 1) {
+        minX = -1.5
+        maxX = 1.5
+        minY = -1.5
+        maxY = 1.5
+        break
+      }
+      minX = Math.min(minX, boxNdc.x)
+      maxX = Math.max(maxX, boxNdc.x)
+      minY = Math.min(minY, boxNdc.y)
+      maxY = Math.max(maxY, boxNdc.y)
+    }
+    footNdc.set(bossX, -0.2, bossZ).project(camera)
+    if (footNdc.z >= -1 && footNdc.z <= 1) {
+      minX = Math.min(minX, footNdc.x)
+      maxX = Math.max(maxX, footNdc.x)
+      minY = Math.min(minY, footNdc.y)
+      maxY = Math.max(maxY, footNdc.y)
+    }
+    if (!rig.haloTop(haloNdc)) haloNdc.set(bossX, bossY + 4, bossZ)
+    haloNdc.project(camera)
+    return {
+      minX, maxX, minY, maxY,
+      frac: spanFrac(minX, maxX, minY, maxY),
+      hx: haloNdc.x, hy: haloNdc.y, hz: haloNdc.z,
+    }
+  }
+
+  function nudgeBox() {
+    if (!bossOn || !viewCam) return
+    const span = projectCompline(viewCam)
+    if (!span) return
+    const overL = Math.max(0, -SAFE_X - span.minX)
+    const overR = Math.max(0, span.maxX - SAFE_X)
+    const overT = Math.max(0, span.maxY - SAFE_TOP)
+    const overB = Math.max(0, SAFE_BOT - span.minY)
+    frameLeft = overL
+    frameRight = overR
+    frameTop = overT
+    frameBot = overB
+    frameSide = Math.max(overL, overR)
+    haloOver = Math.max(0, overT, overB, frameSide)
+    if (haloOver <= 0) return
+    const e = viewCam.matrixWorld.elements
+    let rx = e[0] ?? 0
+    let rz = e[2] ?? 0
+    const rl = Math.hypot(rx, rz) || 1
+    rx /= rl
+    rz /= rl
+    const camX = e[12] ?? 0
+    const camZ = e[14] ?? 0
+    let fx = camX - bossX
+    let fz = camZ - bossZ
+    const fl = Math.hypot(fx, fz) || 1
+    fx /= fl
+    fz /= fl
+    let mx = (overL - overR) * rx
+    let mz = (overL - overR) * rz
+    if (overT >= overB && overT > 0) {
+      mx += fx * overT
+      mz += fz * overT
+    } else if (overB > 0) {
+      mx -= fx * overB
+      mz -= fz * overB
+    }
+    const ml = Math.hypot(mx, mz)
+    if (ml < 1e-4) return
+    const step = Math.min(0.55, ml * 6)
+    bossX += (mx / ml) * step
+    bossZ += (mz / ml) * step
+  }
+
   function sampleHalo(lite: boolean) {
     if (!bossOn || !viewCam) {
       haloOver = 0
@@ -1793,29 +1869,27 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
     }
     if (lite && (steerTick & 1) === 1 && haloHold) return
     haloHold = true
-    if (!rig.haloSample(haloNdc)) {
+    const span = projectCompline(viewCam)
+    if (!span) {
       haloOver = 0
       return
     }
-    haloNdc.project(viewCam)
-    footNdc.set(bossX, -0.2, bossZ)
-    footNdc.project(viewCam)
-    frameTop = haloNdc.y - 0.74
-    frameBot = Math.max(-0.88 - haloNdc.y, -0.82 - footNdc.y)
-    frameSide = Math.max(Math.abs(haloNdc.x), Math.abs(footNdc.x)) - 0.86
+    frameLeft = Math.max(0, -SAFE_X - span.minX)
+    frameRight = Math.max(0, span.maxX - SAFE_X)
+    frameTop = Math.max(0, span.maxY - SAFE_TOP)
+    frameBot = Math.max(0, SAFE_BOT - span.minY)
+    frameSide = Math.max(frameLeft, frameRight)
     haloOver = Math.max(0, frameTop, frameBot, frameSide)
   }
 
   function easeCentre(tx: number, tz: number, px: number, pz: number): { x: number; z: number } {
     easePt.x = tx
     easePt.z = tz
-    wantX = tx
-    wantZ = tz
     if (haloOver <= 0 || !viewCam) return easePt
     const overTop = frameTop
     const overBot = frameBot
     const overX = frameSide
-    // Crown in the timer band: she is too far from the camera, so step the target toward the camera. A cropped hem or rope, or a side miss, steps toward court centre.
+    // Crown past the safe top: step the target toward the camera. A cropped hem or a side miss steps in screen space.
     if (overTop >= overBot && overTop >= overX && overTop > 0) {
       const e = viewCam.matrixWorld.elements
       const dx = (e[12] ?? 0) - tx
@@ -1826,13 +1900,33 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
       easePt.z = tz + (dz / dist) * step
       easePt.x += (px - easePt.x) * 0.15
       easePt.z += (pz - easePt.z) * 0.15
-    } else {
-      const k = Math.min(0.6, Math.max(overBot, overX, 0) * 1.4)
-      easePt.x = tx * (1 - k)
-      easePt.z = tz * (1 - k)
+    } else if (viewCam) {
+      const e = viewCam.matrixWorld.elements
+      let rx = e[0] ?? 0
+      let rz = e[2] ?? 0
+      const rl = Math.hypot(rx, rz) || 1
+      rx /= rl
+      rz /= rl
+      const camX = e[12] ?? 0
+      const camZ = e[14] ?? 0
+      let fx = camX - tx
+      let fz = camZ - tz
+      const fl = Math.hypot(fx, fz) || 1
+      fx /= fl
+      fz /= fl
+      let mx = (frameLeft - frameRight) * rx
+      let mz = (frameLeft - frameRight) * rz
+      if (overBot > 0) {
+        mx -= fx * overBot
+        mz -= fz * overBot
+      }
+      const ml = Math.hypot(mx, mz)
+      if (ml > 1e-4) {
+        const step = Math.min(2.4, ml * 5)
+        easePt.x = tx + (mx / ml) * step
+        easePt.z = tz + (mz / ml) * step
+      }
     }
-    wantX = easePt.x
-    wantZ = easePt.z
     return easePt
   }
 

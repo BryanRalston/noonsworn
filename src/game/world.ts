@@ -2318,6 +2318,9 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       const pitch = (Math.atan2(-fy, Math.hypot(fx, fz)) * 180) / Math.PI
       return {
         fov: c.fov,
+        aspect: c.aspect,
+        world: Array.from(e),
+        proj: Array.from(c.projectionMatrix.elements),
         pitch,
         dist: follow.lookDistance(),
         calls: stats.calls,

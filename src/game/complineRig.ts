@@ -31,6 +31,17 @@ const SLAM_HIT = 0.56
 const COLLAPSE = 0.75
 const HALO_LAND = 1.622
 const PUDDLE_R = 2.7
+// Rest bounds of compline_h3d, mesh local, before the visual scale.
+const REST_BOX: ReadonlyArray<readonly [number, number, number]> = [
+  [-2.461, 0.009, -2.556],
+  [2.49, 0.009, -2.556],
+  [-2.461, 0.009, 2.737],
+  [2.49, 0.009, 2.737],
+  [-2.461, 6.475, -2.556],
+  [2.49, 6.475, -2.556],
+  [-2.461, 6.475, 2.737],
+  [2.49, 6.475, 2.737],
+]
 
 const CLIP_NAMES = ['idle', 'pour', 'slam', 'shudder', 'death'] as const
 type ClipName = (typeof CLIP_NAMES)[number]
@@ -78,6 +89,8 @@ export interface ComplineRig {
   haloTop: (out: Vector3) => boolean
   /** Halo crown in the bone matrix from the last render. Does not update matrices. */
   haloSample: (out: Vector3) => boolean
+  /** World points around the cloak: rest-bound corners plus the halo crown. */
+  mark: (out: Vector3[]) => number
   /** Visual mesh scale only. Desktop stays at COMPLINE_SCALE. Portrait may use 1.3. Hitbox is unchanged. */
   fit: (portrait: boolean) => void
   dispose: () => void
@@ -439,6 +452,21 @@ export function attachCompline(parent: Object3D, fallback: Mesh): ComplineRig {
     haloSample(out) {
       if (!haloBone) return false
       return sampleHalo(out)
+    },
+    mark(out) {
+      if (!shown) return 0
+      shown.updateWorldMatrix(true, true)
+      let n = 0
+      for (let i = 0; i < REST_BOX.length; i++) {
+        const p = REST_BOX[i]
+        const slot = out[n]
+        if (!p || !slot) break
+        slot.set(p[0], p[1], p[2]).applyMatrix4(shown.matrixWorld)
+        n++
+      }
+      const crown = out[n]
+      if (crown && sampleHalo(crown)) n++
+      return n
     },
     dispose() {
       mixer?.stopAllAction()

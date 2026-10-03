@@ -32,8 +32,13 @@ import { COLOR } from '../data/palette'
 
 const MAX = 40
 const HUSH_CAP = 10
-const BOSS_HP = 7000
+const BOSS_HP = 14000
+const PHASE2_AT = 0.80
+const PHASE3_AT = 0.155
 const DISC_LOCAL = new Vector3(0, 0, -0.9999)
+const SAFE_X = 0.97
+const SAFE_TOP = 0.9
+const SAFE_BOT = -0.97
 
 export interface FightUniforms {
   now: { value: number }
@@ -97,7 +102,20 @@ export interface FightHandle {
   placeBoss: (x: number, z: number) => void
   info: () => FightInfo
   crowd: () => { k: number; x: number; z: number; st: number; hp: number; tm: number; yaw: number }[]
-  disc: (camera: Camera | null) => { x: number; y: number; z: number; wx: number; wy: number; wz: number; inFrame: boolean } | null
+  disc: (camera: Camera | null) => {
+    x: number
+    y: number
+    z: number
+    wx: number
+    wy: number
+    wz: number
+    inFrame: boolean
+    minX: number
+    maxX: number
+    minY: number
+    maxY: number
+    frac: number
+  } | null
   cpu: () => { steer: number; hush: number; fight: number }
   warm: (compile: (obj: Object3D) => void) => void
 }
@@ -237,6 +255,9 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
   let bossX = -1
   let bossZ = 0
   let bossYaw = Math.PI / 2
+  let wakeCarry = -1
+  const boxMin = new Vector3(-0.9, 0, -0.9)
+  const boxMax = new Vector3(0.9, 5.4, 0.9)
   let castCd = 5
   let sweepCd = 3
   let bowT = 0
@@ -646,52 +667,114 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     return center >= 0 ? center : best
   }
 
-  function frameBoss(camera: Camera | null, px: number, pz: number) {
-    if (!awake || deathPuddle || !camera || !disc || !root) return
-    disc.updateWorldMatrix(true, false)
-    framePt.copy(DISC_LOCAL).applyMatrix4(disc.matrixWorld)
+  function spanFrac(minX: number, maxX: number, minY: number, maxY: number): number {
+    const w = Math.max(1e-4, maxX - minX)
+    const h = Math.max(1e-4, maxY - minY)
+    const iw = Math.max(0, Math.min(maxX, SAFE_X) - Math.max(minX, -SAFE_X))
+    const ih = Math.max(0, Math.min(maxY, SAFE_TOP) - Math.max(minY, SAFE_BOT))
+    return (iw * ih) / (w * h)
+  }
+
+  function takeNdc(camera: Camera, x: number, y: number, z: number, span: { minX: number; maxX: number; minY: number; maxY: number }) {
+    framePt.set(x, y, z)
     frameNdc.copy(framePt).project(camera)
-    const topX = frameNdc.x
-    const topY = frameNdc.y
-    framePt.set(bossX, footY(bossX), bossZ)
-    frameNdc.copy(framePt).project(camera)
-    const footX = frameNdc.x
-    const footYn = frameNdc.y
-    const overTop = topY - 0.82
-    const overBot = -0.86 - footYn
-    const overX = Math.max(Math.abs(topX), Math.abs(footX)) - 0.88
-    if (overTop <= 0 && overBot <= 0 && overX <= 0) return
-    if (overTop > 0 && overBot > 0) return
-    const e = camera.matrixWorld.elements
-    const camX = e[12] ?? 0
-    const camZ = e[14] ?? 0
-    let dx = 0
-    let dz = 0
-    if (overTop >= overBot && overTop >= overX && overTop > 0) {
-      dx = camX - bossX
-      dz = camZ - bossZ
-    } else if (overBot > 0 && overBot >= overX) {
-      dx = bossX - camX
-      dz = bossZ - camZ
-    } else {
-      dx = px - bossX
-      dz = pz - bossZ
+    if (frameNdc.z < -1 || frameNdc.z > 1) {
+      span.minX = Math.min(span.minX, -1.5)
+      span.maxX = Math.max(span.maxX, 1.5)
+      span.minY = Math.min(span.minY, -1.5)
+      span.maxY = Math.max(span.maxY, 1.5)
+      return
     }
-    const dist = Math.hypot(dx, dz) || 1
-    const step = Math.min(0.45, dist)
-    const nx = bossX + (dx / dist) * step
-    const nz = bossZ + (dz / dist) * step
-    if (!host.parapet(nx, nz) && nx > -23 && nx < 23 && nz > -23 && nz < 23) {
-      bossX = nx
-      bossZ = nz
-    } else if (!host.parapet(nx, bossZ) && nx > -23 && nx < 23) {
-      bossX = nx
-    } else if (!host.parapet(bossX, nz) && nz > -23 && nz < 23) {
-      bossZ = nz
-    } else return
-    const sunk = deathPuddle || clip === 'death'
-    root.position.set(bossX, footY(bossX) - (sunk ? 0.95 : 0), bossZ)
-    if (sunk) puddle.position.set(bossX, floorAt(bossX) + 0.04, bossZ)
+    span.minX = Math.min(span.minX, frameNdc.x)
+    span.maxX = Math.max(span.maxX, frameNdc.x)
+    span.minY = Math.min(span.minY, frameNdc.y)
+    span.maxY = Math.max(span.maxY, frameNdc.y)
+  }
+
+  function projectNewel(camera: Camera): { minX: number; maxX: number; minY: number; maxY: number; frac: number; x: number; y: number; z: number; wx: number; wy: number; wz: number } | null {
+    if (!root || !skin || !disc) return null
+    if (clip !== 'death') {
+      root.position.set(bossX, footY(bossX), bossZ)
+      root.rotation.y = bossYaw
+    }
+    root.updateWorldMatrix(true, true)
+    const span = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 }
+    const xs = [boxMin.x, boxMax.x]
+    const ys = [boxMin.y, boxMax.y]
+    const zs = [boxMin.z, boxMax.z]
+    for (let xi = 0; xi < 2; xi++) {
+      for (let yi = 0; yi < 2; yi++) {
+        for (let zi = 0; zi < 2; zi++) {
+          framePt.set(xs[xi] ?? 0, ys[yi] ?? 0, zs[zi] ?? 0).applyMatrix4(skin.matrixWorld)
+          takeNdc(camera, framePt.x, framePt.y, framePt.z, span)
+        }
+      }
+    }
+    framePt.copy(DISC_LOCAL).applyMatrix4(disc.matrixWorld)
+    const wx = framePt.x
+    const wy = framePt.y
+    const wz = framePt.z
+    takeNdc(camera, wx, wy, wz, span)
+    takeNdc(camera, bossX, footY(bossX), bossZ, span)
+    frameNdc.set(wx, wy, wz).project(camera)
+    return {
+      minX: span.minX, maxX: span.maxX, minY: span.minY, maxY: span.maxY,
+      frac: spanFrac(span.minX, span.maxX, span.minY, span.maxY),
+      x: frameNdc.x, y: frameNdc.y, z: frameNdc.z, wx, wy, wz,
+    }
+  }
+
+  function frameBoss(camera: Camera | null) {
+    if (!awake || deathPuddle || !camera || !disc || !root || !skin) return
+    const passes = clip === 'wake' && (current?.time ?? 1) < 0.12 ? 8 : 1
+    for (let pass = 0; pass < passes; pass++) {
+      const span = projectNewel(camera)
+      if (!span) return
+      const overL = Math.max(0, -SAFE_X - span.minX)
+      const overR = Math.max(0, span.maxX - SAFE_X)
+      const overT = Math.max(0, span.maxY - SAFE_TOP)
+      const overB = Math.max(0, SAFE_BOT - span.minY)
+      if (overL + overR + overT + overB <= 0) return
+      const e = camera.matrixWorld.elements
+      let rx = e[0] ?? 0
+      let rz = e[2] ?? 0
+      const rl = Math.hypot(rx, rz) || 1
+      rx /= rl
+      rz /= rl
+      const camX = e[12] ?? 0
+      const camZ = e[14] ?? 0
+      let fx = camX - bossX
+      let fz = camZ - bossZ
+      const fl = Math.hypot(fx, fz) || 1
+      fx /= fl
+      fz /= fl
+      let mx = (overL - overR) * rx
+      let mz = (overL - overR) * rz
+      if (overT >= overB && overT > 0) {
+        mx += fx * overT
+        mz += fz * overT
+      } else if (overB > 0) {
+        mx -= fx * overB
+        mz -= fz * overB
+      }
+      const ml = Math.hypot(mx, mz)
+      if (ml < 1e-4) return
+      const cap = passes > 1 ? 0.7 : 0.5
+      const step = Math.min(cap, ml * 6)
+      mx = (mx / ml) * step
+      mz = (mz / ml) * step
+      const nx = bossX + mx
+      const nz = bossZ + mz
+      if (!host.parapet(nx, nz) && nx > -23 && nx < 23 && nz > -23 && nz < 23) {
+        bossX = nx
+        bossZ = nz
+      } else if (!host.parapet(nx, bossZ) && nx > -23 && nx < 23) {
+        bossX = nx
+      } else if (!host.parapet(bossX, nz) && nz > -23 && nz < 23) {
+        bossZ = nz
+      } else return
+    }
+    if (clip !== 'death') root.position.set(bossX, footY(bossX), bossZ)
   }
 
   function setLane(on: boolean, sweep: number) {
@@ -751,8 +834,11 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     const t1 = current.time
     prevT = t1
     if (clip === 'wake') {
+      // The clip has no root motion. Advance the authored 0.6 m without wiping a framing offset.
       const uWake = Math.min(1, Math.max(0, (t1 - 1.8) / 0.6))
-      bossX = -1 + 0.6 * uWake
+      const base = -1 + 0.6 * uWake
+      bossX += base - wakeCarry
+      wakeCarry = base
       root.position.x = bossX
       if (t1 >= 2.35 && current.paused === false && t1 > 2.3) play('idle', true)
     }
@@ -825,13 +911,13 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
       root.position.set(bossX, footY(bossX), bossZ)
       return
     }
-    if (phase === 1 && hp <= BOSS_HP * 0.6) {
+    if (phase === 1 && hp <= BOSS_HP * PHASE2_AT) {
       phase = 2
       phases.p2 = time
       play('shudder', false)
       approach = 0
       bowLane = -1
-    } else if (phase === 2 && hp <= BOSS_HP * 0.25) {
+    } else if (phase === 2 && hp <= BOSS_HP * PHASE3_AT) {
       phase = 3
       phases.p3 = time
       play('shudder', false)
@@ -986,6 +1072,7 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     bossX = -1
     bossZ = 0
     bossYaw = Math.PI / 2
+    wakeCarry = -1
     castCd = 4
     sweepCd = 3
     bowT = 0
@@ -1048,6 +1135,12 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
       eyes = parts.eyes
       mixer = parts.mixer
       disc = parts.disc
+      parts.mesh.geometry.computeBoundingBox()
+      const bb = parts.mesh.geometry.boundingBox
+      if (bb) {
+        boxMin.copy(bb.min)
+        boxMax.copy(bb.max)
+      }
       for (let i = 0; i < parts.clips.length; i++) {
         const c = parts.clips[i]
         if (!c) continue
@@ -1078,7 +1171,7 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
         tickBoss(dt, time, px, pz)
         playerDrag(px, pz)
       }
-      frameBoss(camera, px, pz)
+      frameBoss(camera)
       writeCrowd()
       fightMs += performance.now() - t0
       fightN++
@@ -1225,11 +1318,13 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     },
     disc(camera) {
       if (!camera || !disc) return null
-      disc.updateWorldMatrix(true, false)
-      framePt.copy(DISC_LOCAL).applyMatrix4(disc.matrixWorld)
-      frameNdc.copy(framePt).project(camera)
-      const inFrame = frameNdc.z >= -1 && frameNdc.z <= 1 && Math.abs(frameNdc.x) <= 1 && Math.abs(frameNdc.y) <= 1
-      return { x: frameNdc.x, y: frameNdc.y, z: frameNdc.z, wx: framePt.x, wy: framePt.y, wz: framePt.z, inFrame }
+      const span = projectNewel(camera)
+      if (!span) return null
+      const inFrame = span.frac >= 0.95
+      return {
+        x: span.x, y: span.y, z: span.z, wx: span.wx, wy: span.wy, wz: span.wz, inFrame,
+        minX: span.minX, maxX: span.maxX, minY: span.minY, maxY: span.maxY, frac: span.frac,
+      }
     },
     cpu() {
       return {

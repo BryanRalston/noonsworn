@@ -76,9 +76,9 @@ const GLIDES = [
 ]
 // k0 is warm sandstone. k4 is a dusk terracotta so the light ink fill
 // clears 3:1 on the canvas, and not the old neon #F58A4E.
-const LIT_HEX = ['#DBAE6E', '#CCA56A', '#B8946A', '#B48C78', '#8A564C', '#7E5248']
-// k4–k5 stay dusk plum (red at least blue). The earlier steps are the M6A.3 violets.
-const SHADE_HEX = ['#5A4C60', '#524658', '#4A3E50', '#443848', '#3B2B38', '#22161C']
+const LIT_HEX = ['#DBAE6E', '#CCA56A', '#B8946A', '#B48C78', '#8A564C', '#B07058']
+// k0–k4 are unchanged. k5 matches the k4 dusk plum; the old #22161C landed near black on the canvas.
+const SHADE_HEX = ['#5A4C60', '#524658', '#4A3E50', '#443848', '#3B2B38', '#45343F']
 const NICHES = [
   { x: 18, z: -21.6 },
   { x: 12, z: -21.6 },
@@ -131,7 +131,20 @@ export interface StairHandle {
   placeBoss: (x: number, z: number) => void
   fightInfo: () => FightInfo
   crowd: () => { k: number; x: number; z: number; st: number; hp: number; tm: number; yaw: number }[]
-  disc: (camera: Camera) => { x: number; y: number; z: number; wx: number; wy: number; wz: number; inFrame: boolean } | null
+  disc: (camera: Camera) => {
+    x: number
+    y: number
+    z: number
+    wx: number
+    wy: number
+    wz: number
+    inFrame: boolean
+    minX: number
+    maxX: number
+    minY: number
+    maxY: number
+    frac: number
+  } | null
   read: (x: number, z: number) => { lit: boolean; direct: boolean; pitch: 0 | 1 | 2; pitchAt: number | null; sealed: boolean; parapet: boolean }
   shadeSpawn: (kind: 3 | 4, x: number, z: number) => boolean
   pitchLog: () => readonly string[]
@@ -810,7 +823,16 @@ export function createStair(opts: {
   putBox(2, 0.28, 1, -22.2, 1.74, 0, COLOR.stairStone)
   putBox(1.45, 0.22, 0.7, -22.2, 1.98, 0, COLOR.stairStoneDeep)
   putBox(0.9, 0.16, 0.42, -22.2, 2.16, 0, COLOR.gold)
-  putBox(1.7, 0.6, 1.7, -1, 1.1, 0, COLOR.stairStone)
+  // Home pedestal. The Newel walks off it in the fight, so the block has to read as
+  // coursed parapet stone. It stays in the arch mesh: one draw, same collision circle.
+  putBox(2.15, 0.12, 2.15, -1, 0.86, 0, COLOR.stairStoneDeep)
+  putBox(1.82, 0.2, 1.82, -1, 1.02, 0, COLOR.stairStone)
+  putBox(1.9, 0.045, 1.9, -1, 1.142, 0, COLOR.linen)
+  putBox(1.48, 0.14, 1.48, -1, 1.232, 0, COLOR.stairStoneDeep)
+  putBox(1.72, 0.07, 1.72, -1, 1.337, 0, COLOR.stairStone)
+  putBox(1.2, 0.028, 1.2, -1, 1.386, 0, COLOR.stairTerracotta)
+  putBox(0.1, 0.16, 1.2, -1.72, 1.1, 0, COLOR.stairStoneDeep)
+  putBox(1.2, 0.16, 0.1, -1, 1.1, 0.72, COLOR.stairStoneDeep)
   const pylons = CAPS.slice(0, 5)
   for (let i = 0; i < pylons.length; i++) {
     const c = pylons[i]
@@ -935,7 +957,6 @@ export function createStair(opts: {
   const uForeTan = { value: 0 }
   const uForeCos = { value: 1 }
   const uTime = { value: 0 }
-  const uProbe = { value: 0 }
   const uMark = { value: new Vector3(0, 0, 0) }
   const uNow = { value: 0 }
   const uLane = { value: new Vector4() }
@@ -973,7 +994,6 @@ export function createStair(opts: {
       uForeTan,
       uForeCos,
       uTime,
-      uProbe,
       uMark,
       uCaps,
       uSeal: { value: sealTex },
@@ -1029,7 +1049,6 @@ export function createStair(opts: {
       uniform float uForeTan;
       uniform float uForeCos;
       uniform float uTime;
-      uniform float uProbe;
       uniform vec3 uMark;
       uniform vec4 uCaps[6];
       uniform sampler2D uSeal;
@@ -1066,30 +1085,6 @@ export function createStair(opts: {
         if (i == 2) return -6.0;
         if (i == 3) return -16.0;
         return 14.0;
-      }
-      bool stairShade(vec2 p) {
-        if (uCos > 0.0 && uReach > 0.0) {
-          for (int i = 0; i < 4; i++) {
-            float dx = p.x - edgeAt(i);
-            if (dx <= 0.0 || dx > uReach) continue;
-            float z0 = p.y - dx * uTan;
-            if (z0 < -24.0 || z0 > 24.0) continue;
-            if (!gapOpen(i, z0)) return true;
-          }
-        }
-        for (int i = 0; i < 6; i++) {
-          vec4 c = uCaps[i];
-          vec2 a = c.xy;
-          vec2 d = vec2(uCos, uSin) * (c.z * uL);
-          float ab2 = dot(d, d);
-          if (ab2 < 1e-6) continue;
-          float t = dot(p - a, d) / ab2;
-          if (t < 0.0) continue;
-          if (t > 1.0) t = 1.0;
-          vec2 q = a + d * t;
-          if (dot(p - q, p - q) <= c.w * c.w) return true;
-        }
-        return false;
       }
       float stairCover(vec2 p) {
         float cover = 0.0;
@@ -1141,14 +1136,7 @@ export function createStair(opts: {
       }
       void main() {
         vec2 p = vWorld;
-        bool shade = stairShade(p);
         float seal = sealAt(p);
-        bool lit = !shade || seal > 0.004;
-        if (uProbe > 0.5) {
-          float k = lit ? 1.0 : 0.0;
-          gl_FragColor = vec4(k, k, k, 1.0);
-          return;
-        }
         vec2 tile = floor((p + 24.0) / 2.0);
         vec2 f = fract((p + 24.0) / 2.0);
         float grout = smoothstep(0.0, 0.045, f.x) * smoothstep(1.0, 0.955, f.x)
@@ -1207,9 +1195,11 @@ export function createStair(opts: {
             if (dx > uReach && dx < uForeReach && dx > 0.0) col = mix(col, col * shadeGain, 0.6);
           }
         }
+        // Gold is still bright here. After the shade multiply every dark colour collapses
+        // toward black and the old distance test marked the grout as gold, so the grid stayed light.
+        bool gilt = distance(col, uGold) < 0.14;
         col = mix(col, col * shadeGain, cover);
         float groutPx = 1.0 - grout;
-        bool goldPx = min(distance(col, uGold), distance(col, uGold * shadeGain)) < 0.14;
         if (uMark.z > 0.5) {
           float mr = length(p - uMark.xy);
           if (mr < 0.80) {
@@ -1223,7 +1213,7 @@ export function createStair(opts: {
         bool pitchSeal = seal > 0.004;
         bool bubbling = !pitchSeal && (bubHere(pitchTile) || (pWhen < 900.0 && uNow < pWhen && uNow >= pWhen - 8.0));
         bool solidPitch = !pitchSeal && pWhen < 900.0 && uNow >= pWhen;
-        if (solidPitch && !goldPx) {
+        if (solidPitch && !gilt) {
           float stripe = smoothstep(0.08, 0.0, abs(fract(p.x * 0.35 + p.y * 0.15 - uNow * 0.12) - 0.5) - 0.42);
           vec3 dusk = mix(uPitchInk, uPlum, 0.42);
           col = mix(col, dusk, 0.72);
@@ -1234,7 +1224,21 @@ export function createStair(opts: {
           float pulse = 0.5 + 0.5 * sin(uNow * 6.0);
           col = mix(col, uPitchInk, blob * (0.35 + 0.25 * pulse));
         }
-        if (cover > 0.45 && groutPx > 0.35 && !goldPx) col = mix(col, stone * shadeGain * 0.62, groutPx);
+        if (cover > 0.45 && groutPx > 0.35 && !gilt) {
+          vec3 tileRef = mix(stone, stone * shadeGain, cover);
+          if (solidPitch) {
+            float stripe = smoothstep(0.08, 0.0, abs(fract(p.x * 0.35 + p.y * 0.15 - uNow * 0.12) - 0.5) - 0.42);
+            vec3 dusk = mix(uPitchInk, uPlum, 0.42);
+            tileRef = mix(tileRef, dusk, 0.72);
+            tileRef = mix(tileRef, uPlum, stripe * 0.16);
+          } else if (bubbling) {
+            vec2 cell = fract((p + 24.0) / 2.0) - 0.5;
+            float blob = smoothstep(0.16, 0.05, length(cell));
+            float pulse = 0.5 + 0.5 * sin(uNow * 6.0);
+            tileRef = mix(tileRef, uPitchInk, blob * (0.35 + 0.25 * pulse));
+          }
+          col = mix(col, tileRef * 0.78, groutPx);
+        }
         if (uLaneOn > 0.5) {
           vec2 origin = uLane.xy;
           vec2 span = uLane.zw;
@@ -1288,6 +1292,72 @@ export function createStair(opts: {
         // On the canvas the same pair encodes a single time, matching the other floors.
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+      }
+    `,
+  })
+  const probeMat = new ShaderMaterial({
+    uniforms: { uL, uCos, uSin, uTan, uReach, uCaps, uSeal: { value: sealTex } },
+    vertexShader: /* glsl */ `
+      varying vec2 vWorld;
+      void main() {
+        vWorld = position.xz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+      varying vec2 vWorld;
+      uniform float uL;
+      uniform float uCos;
+      uniform float uSin;
+      uniform float uTan;
+      uniform float uReach;
+      uniform vec4 uCaps[6];
+      uniform sampler2D uSeal;
+      float sealAt(vec2 p) {
+        vec2 tile = floor((p + 24.0) / 2.0);
+        if (tile.x < 0.0 || tile.y < 0.0 || tile.x > 23.0 || tile.y > 23.0) return 0.0;
+        return texture2D(uSeal, (tile + 0.5) / 24.0).r;
+      }
+      bool gapOpen(int i, float z0) {
+        if (abs(z0) < 3.0) return true;
+        float side = (i == 0 || i == 2) ? 15.0 : 9.0;
+        float gapHalf = (i == 0 || i == 2) ? 3.6 : 2.0;
+        return abs(z0 - side) < gapHalf || abs(z0 + side) < gapHalf;
+      }
+      float edgeAt(int i) {
+        if (i == 1) return 4.0;
+        if (i == 2) return -6.0;
+        if (i == 3) return -16.0;
+        return 14.0;
+      }
+      bool stairShade(vec2 p) {
+        if (uCos > 0.0 && uReach > 0.0) {
+          for (int i = 0; i < 4; i++) {
+            float dx = p.x - edgeAt(i);
+            if (dx <= 0.0 || dx > uReach) continue;
+            float z0 = p.y - dx * uTan;
+            if (z0 < -24.0 || z0 > 24.0) continue;
+            if (!gapOpen(i, z0)) return true;
+          }
+        }
+        for (int i = 0; i < 6; i++) {
+          vec4 c = uCaps[i];
+          vec2 d = vec2(uCos, uSin) * (c.z * uL);
+          float ab2 = dot(d, d);
+          if (ab2 < 1e-6) continue;
+          float t = dot(p - c.xy, d) / ab2;
+          if (t < 0.0) continue;
+          if (t > 1.0) t = 1.0;
+          vec2 q = c.xy + d * t;
+          if (dot(p - q, p - q) <= c.w * c.w) return true;
+        }
+        return false;
+      }
+      void main() {
+        float seal = sealAt(vWorld);
+        float k = (!stairShade(vWorld) || seal > 0.004) ? 1.0 : 0.0;
+        gl_FragColor = vec4(k, k, k, 1.0);
       }
     `,
   })
@@ -2288,8 +2358,6 @@ export function createStair(opts: {
       floor.visible = true
       arch.visible = true
       if (newelRoot) newelRoot.visible = true
-      const prev = uProbe.value
-      uProbe.value = 0
       renderer.compile(floor, camera)
       renderer.compile(arch, camera)
       if (newelRoot) {
@@ -2305,9 +2373,9 @@ export function createStair(opts: {
         rt.dispose()
       }
       stairFight.warm((obj) => renderer.compile(obj, camera))
-      uProbe.value = 1
+      floor.material = probeMat
       renderer.compile(floor, camera)
-      uProbe.value = prev
+      floor.material = floorMat
       floor.visible = show[0] ?? false
       arch.visible = show[1] ?? false
       if (newelRoot) newelRoot.visible = show[2] ?? false
@@ -2484,7 +2552,7 @@ export function createStair(opts: {
         const mesh = hide[i]
         if (mesh) mesh.visible = false
       }
-      uProbe.value = 1
+      floor.material = probeMat
       camera.updateMatrixWorld()
       renderer.render(opts.scene as Scene, camera)
       const gl = renderer.getContext() as WebGL2RenderingContext
@@ -2509,7 +2577,7 @@ export function createStair(opts: {
         tested++
         if (handle.isLit(point.x, point.z) === bright) agreed++
       }
-      uProbe.value = 0
+      floor.material = floorMat
       floor.visible = prevFloor
       arch.visible = prevArch
       if (newelRoot) newelRoot.visible = prevNewel
