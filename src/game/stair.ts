@@ -19,8 +19,10 @@ import {
   MeshStandardMaterial,
   NearestFilter,
   NoColorSpace,
+  OrthographicCamera,
   PlaneGeometry,
   RedFormat,
+  Scene,
   ShaderMaterial,
   UnsignedByteType,
   Vector2,
@@ -29,7 +31,6 @@ import {
   type Camera,
   type InstancedMesh,
   type Object3D,
-  type Scene,
   type SkinnedMesh,
   type WebGLRenderer,
 } from 'three'
@@ -899,6 +900,40 @@ export function createStair(opts: {
       floorGeo.computeVertexNormals()
     }
   }
+  const floorIdx = floorGeo.getIndex()
+  if (!floorIdx) throw new Error('stair floor index')
+  const srcPos = floorGeo.getAttribute('position')
+  const floorTris = floorIdx.count / 3
+  const triTile = new Uint16Array(floorTris)
+  const unweldPos = new Float32Array(floorIdx.count * 3)
+  const unweldJit = new Float32Array(floorIdx.count)
+  for (let t = 0; t < floorTris; t++) {
+    let cx = 0
+    let cz = 0
+    for (let k = 0; k < 3; k++) {
+      const vi = floorIdx.getX(t * 3 + k)
+      const x = srcPos.getX(vi)
+      const z = srcPos.getZ(vi)
+      unweldPos[(t * 3 + k) * 3] = x
+      unweldPos[(t * 3 + k) * 3 + 1] = srcPos.getY(vi)
+      unweldPos[(t * 3 + k) * 3 + 2] = z
+      cx += x
+      cz += z
+    }
+    cx /= 3
+    cz /= 3
+    let ix = Math.floor((cx + 24) / 2)
+    let iz = Math.floor((cz + 24) / 2)
+    if (ix < 0) ix = 0
+    else if (ix > 23) ix = 23
+    if (iz < 0) iz = 0
+    else if (iz > 23) iz = 23
+    triTile[t] = iz * 24 + ix
+  }
+  floorGeo.setIndex(null)
+  floorGeo.setAttribute('position', new BufferAttribute(unweldPos, 3))
+  floorGeo.setAttribute('aJitter', new BufferAttribute(unweldJit, 1))
+  floorGeo.computeBoundingSphere()
   const bytes = new Uint8Array(576)
   const sealTex = new DataTexture(bytes, 24, 24, RedFormat, UnsignedByteType)
   sealTex.magFilter = NearestFilter
@@ -921,6 +956,67 @@ export function createStair(opts: {
   pitchTex.flipY = false
   pitchTex.generateMipmaps = false
   pitchTex.needsUpdate = true
+
+  const jitterRT = new WebGLRenderTarget(24, 24, {
+    magFilter: NearestFilter,
+    minFilter: NearestFilter,
+    type: FloatType,
+    depthBuffer: false,
+    stencilBuffer: false,
+  })
+  jitterRT.texture.generateMipmaps = false
+  let jitterReady = false
+  function bakeJitter(renderer: WebGLRenderer) {
+    if (jitterReady) return
+    const scene = new Scene()
+    const cam = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
+    const mat = new ShaderMaterial({
+      depthTest: false,
+      depthWrite: false,
+      vertexShader: `void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader: `
+        precision highp float;
+        float hash2(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        void main() {
+          vec2 tile = floor(gl_FragCoord.xy);
+          float h0 = hash2(tile);
+          float h1 = hash2(floor(tile * 0.5));
+          gl_FragColor = vec4((h0 * 2.0 - 1.0) * 0.18 + (h1 * 2.0 - 1.0) * 0.09, 0.0, 0.0, 1.0);
+        }
+      `,
+    })
+    const quad = new Mesh(new PlaneGeometry(2, 2), mat)
+    scene.add(quad)
+    const prevTarget = renderer.getRenderTarget()
+    const prevClear = renderer.autoClear
+    renderer.autoClear = true
+    renderer.setRenderTarget(jitterRT)
+    renderer.render(scene, cam)
+    renderer.setRenderTarget(prevTarget)
+    renderer.autoClear = prevClear
+    quad.geometry.dispose()
+    mat.dispose()
+    const buf = new Float32Array(24 * 24 * 4)
+    renderer.readRenderTargetPixels(jitterRT, 0, 0, 24, 24, buf)
+    const attr = floorGeo.getAttribute('aJitter')
+    if (!attr) throw new Error('jitter attribute')
+    const arr = attr.array as Float32Array
+    let spread = 0
+    for (let i = 0; i < 576; i++) spread += Math.abs(buf[i * 4] ?? 0)
+    if (spread < 10) throw new Error('jitter readback ' + spread.toFixed(3))
+    for (let t = 0; t < triTile.length; t++) {
+      const j = buf[(triTile[t] ?? 0) * 4] ?? 0
+      const o = t * 3
+      arr[o] = j
+      arr[o + 1] = j
+      arr[o + 2] = j
+    }
+    attr.needsUpdate = true
+    jitterRT.dispose()
+    jitterReady = true
+  }
 
   const uLit = { value: new Color(LIT_HEX[0]) }
   const uShade = { value: new Color(SHADE_HEX[0]) }
@@ -966,6 +1062,7 @@ export function createStair(opts: {
   const uRing = { value: new Vector4() }
   const uPounce = { value: [new Vector4(), new Vector4(), new Vector4(), new Vector4()] }
   const uBub = { value: [new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3()] }
+  const uBubLive = { value: 0 }
   const uTel = { value: new Color('#E0552B') }
   const uRim = { value: new Color('#141225') }
   const uPitchInk = { value: new Color('#15121A') }
@@ -1006,6 +1103,7 @@ export function createStair(opts: {
       uRing,
       uPounce,
       uBub,
+      uBubLive,
       uTel,
       uRim,
       uPitchInk,
@@ -1016,10 +1114,13 @@ export function createStair(opts: {
       uFogFar: opts.fog.uFogFar,
     },
     vertexShader: /* glsl */ `
+      attribute float aJitter;
       varying vec2 vWorld;
       varying float vView;
+      varying float vJitter;
       void main() {
         vWorld = position.xz;
+        vJitter = aJitter;
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         vView = -mv.z;
         gl_Position = projectionMatrix * mv;
@@ -1029,6 +1130,7 @@ export function createStair(opts: {
       precision highp float;
       varying vec2 vWorld;
       varying float vView;
+      varying float vJitter;
       uniform vec3 uLit;
       uniform vec3 uShade;
       uniform vec3 uGrout;
@@ -1061,6 +1163,7 @@ export function createStair(opts: {
       uniform vec4 uRing;
       uniform vec4 uPounce[4];
       uniform vec3 uBub[8];
+      uniform float uBubLive;
       uniform vec3 uTel;
       uniform vec3 uRim;
       uniform vec3 uPitchInk;
@@ -1120,9 +1223,6 @@ export function createStair(opts: {
         }
         return clamp(cover, 0.0, 1.0);
       }
-      float hash2(vec2 p) {
-        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-      }
       float pitchWhen(vec2 p) {
         vec2 tile = floor((p + 24.0) / 2.0);
         if (tile.x < 0.0 || tile.y < 0.0 || tile.x > 23.0 || tile.y > 23.0) return 9999.0;
@@ -1141,22 +1241,13 @@ export function createStair(opts: {
         vec2 f = fract((p + 24.0) / 2.0);
         float grout = smoothstep(0.0, 0.045, f.x) * smoothstep(1.0, 0.955, f.x)
           * smoothstep(0.0, 0.045, f.y) * smoothstep(1.0, 0.955, f.y);
-        float jitter = (hash2(tile) * 2.0 - 1.0) * 0.18 + (hash2(floor(tile * 0.5)) * 2.0 - 1.0) * 0.09;
+        float jitter = vJitter;
         vec3 stone = uLit * (1.0 + jitter);
         if (f.x < 0.06) stone += vec3(0.025) * smoothstep(0.0, 0.06, grout);
-        vec2 q = f - 0.5;
-        float ang = atan(q.y, q.x);
-        float rays = abs(fract(ang * 1.2732395) - 0.5);
-        float burst = step(length(q), 0.225) * step(rays, 0.16);
-        if (burst > 0.5) {
-          if (seal > 0.004) {
-            float pulse = seal < 0.085 ? 0.65 + 0.35 * sin(uTime * 8.0) : 1.0;
-            stone = mix(stone, uHot, pulse);
-          } else stone *= 0.48;
+        if (seal > 0.02) {
+          float qlen = length(f - 0.5);
+          if (abs(qlen - 0.3) < 0.035) stone = mix(stone, uGold, 0.9);
         }
-        float lip = step(0.20, length(q)) * step(length(q), 0.31) * step(rays, 0.24);
-        if (lip > 0.5 && seal < 0.004) stone = mix(stone, uLit * (1.0 + jitter) * 1.15, 0.85);
-        if (seal > 0.02 && abs(length(q) - 0.3) < 0.035) stone = mix(stone, uGold, 0.9);
         vec3 col = mix(uGrout, stone, grout);
         if (abs(p.y) < 3.0) {
           float along = abs(fract((p.x * 0.85 + p.y * 1.7)) - 0.5);
@@ -1211,7 +1302,11 @@ export function createStair(opts: {
         vec2 pitchTile = floor((p + 24.0) / 2.0);
         float pWhen = pitchWhen(p);
         bool pitchSeal = seal > 0.004;
-        bool bubbling = !pitchSeal && (bubHere(pitchTile) || (pWhen < 900.0 && uNow < pWhen && uNow >= pWhen - 8.0));
+        bool bubbling = false;
+        if (!pitchSeal) {
+          if (pWhen < 900.0 && uNow < pWhen && uNow >= pWhen - 8.0) bubbling = true;
+          else if (uBubLive > 0.5) bubbling = bubHere(pitchTile);
+        }
         bool solidPitch = !pitchSeal && pWhen < 900.0 && uNow >= pWhen;
         if (solidPitch && !gilt) {
           float stripe = smoothstep(0.08, 0.0, abs(fract(p.x * 0.35 + p.y * 0.15 - uNow * 0.12) - 0.5) - 0.42);
@@ -1935,6 +2030,17 @@ export function createStair(opts: {
     capMaxZ[i] = Math.max(z, z1) + radius
   }
 
+  function syncBubLive(now: number) {
+    let live = 0
+    for (let i = 0; i < 8; i++) {
+      if ((bubUntil[i] ?? 0) > now) {
+        live = 1
+        break
+      }
+    }
+    uBubLive.value = live
+  }
+
   function pushBub(ix: number, iz: number, until: number) {
     let slot = 0
     for (let i = 0; i < 8; i++) {
@@ -2296,6 +2402,7 @@ export function createStair(opts: {
       uGold.value.copy(goldBase)
       pitchLog.length = 0
       bubUntil.fill(0)
+      uBubLive.value = 0
       stairFight.reset()
       wantFill = false
       if (import.meta.env.DEV) {
@@ -2354,6 +2461,7 @@ export function createStair(opts: {
       }
     },
     warm(renderer, camera) {
+      bakeJitter(renderer)
       const show = [floor.visible, arch.visible, newelRoot?.visible ?? false]
       floor.visible = true
       arch.visible = true
@@ -2403,6 +2511,7 @@ export function createStair(opts: {
         uGold.value.copy(goldBase).multiplyScalar(goldLeft > 0 ? 1.65 : 1)
         if (goldLeft <= 0) uGold.value.copy(goldBase)
       }
+      syncBubLive(time)
       tickMs += performance.now() - t0
       tickN++
     },
@@ -2410,6 +2519,7 @@ export function createStair(opts: {
       runT = time
       syncVisual(time, wide, longday)
       ensurePitch(wide, longday)
+      syncBubLive(time)
     },
     floorY,
     isLit(x, z) {

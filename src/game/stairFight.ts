@@ -5,6 +5,7 @@ import {
   LoopRepeat,
   Mesh,
   MeshBasicMaterial,
+  Matrix4,
   Vector3,
   Vector4,
   type AnimationAction,
@@ -675,9 +676,9 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     return (iw * ih) / (w * h)
   }
 
-  function takeNdc(camera: Camera, x: number, y: number, z: number, span: { minX: number; maxX: number; minY: number; maxY: number }) {
-    framePt.set(x, y, z)
-    frameNdc.copy(framePt).project(camera)
+  const viewProj = new Matrix4()
+  function takeNdc(x: number, y: number, z: number, span: { minX: number; maxX: number; minY: number; maxY: number }) {
+    frameNdc.set(x, y, z).applyMatrix4(viewProj)
     if (frameNdc.z < -1 || frameNdc.z > 1) {
       span.minX = Math.min(span.minX, -1.5)
       span.maxX = Math.max(span.maxX, 1.5)
@@ -691,22 +692,44 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     span.maxY = Math.max(span.maxY, frameNdc.y)
   }
 
+  const chain: Object3D[] = []
+  const spanBox = { minX: 0, maxX: 0, minY: 0, maxY: 0 }
+  function refreshWorld(node: Object3D) {
+    chain.length = 0
+    let cur: Object3D | null = node
+    while (cur) {
+      chain.push(cur)
+      cur = cur.parent
+    }
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const obj = chain[i]!
+      if (obj.matrixAutoUpdate) obj.updateMatrix()
+      const parent = obj.parent
+      if (parent) obj.matrixWorld.multiplyMatrices(parent.matrixWorld, obj.matrix)
+      else obj.matrixWorld.copy(obj.matrix)
+      obj.matrixWorldNeedsUpdate = false
+    }
+  }
+
   function projectNewel(camera: Camera): { minX: number; maxX: number; minY: number; maxY: number; frac: number; x: number; y: number; z: number; wx: number; wy: number; wz: number } | null {
     if (!root || !skin || !disc) return null
     if (clip !== 'death') {
       root.position.set(bossX, footY(bossX), bossZ)
       root.rotation.y = bossYaw
     }
-    root.updateWorldMatrix(true, true)
-    const span = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 }
-    const xs = [boxMin.x, boxMax.x]
-    const ys = [boxMin.y, boxMax.y]
-    const zs = [boxMin.z, boxMax.z]
+    refreshWorld(skin)
+    refreshWorld(disc)
+    viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    spanBox.minX = 1e9
+    spanBox.maxX = -1e9
+    spanBox.minY = 1e9
+    spanBox.maxY = -1e9
+    const span = spanBox
     for (let xi = 0; xi < 2; xi++) {
       for (let yi = 0; yi < 2; yi++) {
         for (let zi = 0; zi < 2; zi++) {
-          framePt.set(xs[xi] ?? 0, ys[yi] ?? 0, zs[zi] ?? 0).applyMatrix4(skin.matrixWorld)
-          takeNdc(camera, framePt.x, framePt.y, framePt.z, span)
+          framePt.set(xi ? boxMax.x : boxMin.x, yi ? boxMax.y : boxMin.y, zi ? boxMax.z : boxMin.z).applyMatrix4(skin.matrixWorld)
+          takeNdc(framePt.x, framePt.y, framePt.z, span)
         }
       }
     }
@@ -714,9 +737,9 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
     const wx = framePt.x
     const wy = framePt.y
     const wz = framePt.z
-    takeNdc(camera, wx, wy, wz, span)
-    takeNdc(camera, bossX, footY(bossX), bossZ, span)
-    frameNdc.set(wx, wy, wz).project(camera)
+    takeNdc(wx, wy, wz, span)
+    takeNdc(bossX, footY(bossX), bossZ, span)
+    frameNdc.set(wx, wy, wz).applyMatrix4(viewProj)
     return {
       minX: span.minX, maxX: span.maxX, minY: span.minY, maxY: span.maxY,
       frac: spanFrac(span.minX, span.maxX, span.minY, span.maxY),

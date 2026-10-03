@@ -126,4 +126,5 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Newel and Compline framing uses the projected body box', status: 'shipped', since: 'M6b.2' },
   { area: 'Combat & Weapons', feature: 'The Newel disc is inside the frame on the first wake frame', status: 'shipped', since: 'M6b.2' },
   { area: 'Combat & Weapons', feature: 'Newel unassisted time-to-kill is about 1.37× the Compline', status: 'shipped', since: 'M6b.2' },
+  { area: 'Maps', feature: 'Stair tile jitter is stored on the floor vertices, and the eight-ray tile star is gone', status: 'shipped', since: 'M6b.3' },
 ]
