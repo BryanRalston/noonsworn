@@ -7,6 +7,7 @@ interface Live {
   t: number
   text: string
   kind: 'hot' | 'spark' | 'pop' | 'arm' | 'crit'
+  width: number
 }
 
 const FONT = {
@@ -39,10 +40,29 @@ export function createFloats(parent: HTMLElement, _cap: number): Floats {
   let w = 0
   let h = 0
   let dpr = 1
+  let safeLeft = 8
+  let safeRight = 8
+  let safeTop = 8
+  let safeBottom = 8
+  let insetW = -1
+  let insetH = -1
   return {
     push(x, z, text, kind) {
+      if (kind === 'pop') {
+        for (let i = 0; i < live.length; i++) {
+          const row = live[i]
+          if (!row || row.kind !== 'pop') continue
+          row.x = x
+          row.z = z
+          row.y = 1.2
+          row.t = 0.7
+          if (row.text !== text) row.width = 0
+          row.text = text
+          return
+        }
+      }
       if (live.length >= 12) return
-      live.push({ x, y: 1.2, z, t: 0.7, text, kind })
+      live.push({ x, y: 1.2, z, t: 0.7, text, kind, width: 0 })
     },
     sync(camera, width, height, dt) {
       const pw = Math.max(1, width | 0)
@@ -63,15 +83,19 @@ export function createFloats(parent: HTMLElement, _cap: number): Floats {
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.lineWidth = 3
-      const box = getComputedStyle(canvas)
-      const insetOf = (name: string) => {
-        const n = parseFloat(box.getPropertyValue(name))
-        return Number.isFinite(n) ? n : 0
+      if (insetW !== pw || insetH !== ph) {
+        insetW = pw
+        insetH = ph
+        const box = getComputedStyle(canvas)
+        const insetOf = (name: string) => {
+          const n = parseFloat(box.getPropertyValue(name))
+          return Number.isFinite(n) ? n : 0
+        }
+        safeLeft = insetOf('--safe-left') + 8
+        safeRight = insetOf('--safe-right') + 8
+        safeTop = insetOf('--safe-top') + 8
+        safeBottom = insetOf('--safe-bottom') + 8
       }
-      const safeLeft = insetOf('--safe-left') + 8
-      const safeRight = insetOf('--safe-right') + 8
-      const safeTop = insetOf('--safe-top') + 8
-      const safeBottom = insetOf('--safe-bottom') + 8
       for (let i = live.length - 1; i >= 0; i--) {
         const row = live[i]
         if (!row) continue
@@ -95,7 +119,8 @@ export function createFloats(parent: HTMLElement, _cap: number): Floats {
         const born = 1 - Math.min(1, row.t / 0.7)
         const pop = 1.4 - 0.4 * Math.min(1, born / 0.22)
         ctx.font = FONT[row.kind]
-        const halfW = ctx.measureText(row.text).width * 0.5 * pop + 4 * pop
+        if (row.width === 0) row.width = ctx.measureText(row.text).width * 0.5
+        const halfW = row.width * pop + 4 * pop
         const halfH = (row.kind === 'pop' ? 16 : 12) * pop
         const minX = safeLeft + halfW
         const maxX = pw - safeRight - halfW
