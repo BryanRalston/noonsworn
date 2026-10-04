@@ -68,6 +68,7 @@ import { createFlare } from './weapons/flare'
 import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
+import { probeBodies, probeReset } from './weapons/probe'
 
 function paintCaster(geo: CylinderGeometry) {
   const pos = geo.getAttribute('position')
@@ -134,6 +135,7 @@ export async function boot(container: HTMLElement) {
   let previewFires = 0
   const arsenalParam = params.get('arsenal')
   const arsenalRank = (import.meta.env.DEV || params.get('dev') === '1') && (arsenalParam === 'l1' || arsenalParam === 'l5') ? (arsenalParam === 'l5' ? 5 : 1) : 0
+  let hideWeaponDraw = false
   let cutMark = -1
   let teleGate = 0
   let hitPreview = 0.2
@@ -2069,10 +2071,12 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           fx.tele(mark.x, mark.z, mark.yaw)
         }
       }
+      probeReset()
       arsenal.clear()
       spears.sync()
       halo.sync(x, z, build.halo)
       bell.sync()
+      flare.mark(build.flare)
       let gleamSlot = 0
       horde.gleamDraw((gx, gz) => {
         fx.gleamMark(gleamSlot, gx, gz)
@@ -2109,8 +2113,16 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
       const bloomT = performance.now()
+      if (hideWeaponDraw) {
+        arsenal.mesh.visible = false
+        fx.mesh.visible = false
+      }
       if (quality.tier === 'high') bloom.render(gpu.renderer, gpu.scene, follow.camera)
       else gpu.renderer.render(gpu.scene, follow.camera)
+      if (hideWeaponDraw) {
+        arsenal.mesh.visible = arsenal.mesh.count > 0
+        fx.mesh.visible = true
+      }
       profBloom = performance.now() - bloomT
       if (activeMap !== 'stair') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)
       stats = gpu.readStats()
@@ -2303,7 +2315,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     releaseCut: () => {
       frame.cutPressed = false
     },
-    renderNow: () => loop.render(1, 0.016, 16),
+    renderNow: (opts?: { hideWeapons?: boolean }) => {
+      hideWeaponDraw = !!opts?.hideWeapons
+      loop.render(1, 0, 0)
+      hideWeaponDraw = false
+    },
     pulseMirage: () => {
       frame.miragePressed = true
     },
@@ -2405,18 +2421,53 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       flare.clear()
       bell.clear()
     },
-    weaponProbe: () => ({
-      audit,
-      packHits,
-      spearCd: spears.cooldown,
-      spearN: spears.used(),
-      spearAim: { throws: spears.throws, connects: spears.connects },
-      halo: { orbit: halo.orbit, period: halo.period, sun: halo.sun, live: halo.live, angle: halo.angle },
-      flare: { cooldown: flare.cooldown, spots: flare.spots() },
-      bell: bell.pose(),
-      mesh: arsenal.mesh.count,
-      arsenalVisible: arsenal.mesh.visible,
-    }),
+    weaponProbe: () => {
+      const project = (wx: number, wy: number, wz: number) => {
+        aimPoint.set(wx, wy, wz)
+        aimPoint.project(follow.camera)
+        return {
+          x: (aimPoint.x * 0.5 + 0.5) * canvas.width,
+          y: (-aimPoint.y * 0.5 + 0.5) * canvas.height,
+        }
+      }
+      const bodies = probeBodies().map((b) => ({
+        kind: b.kind,
+        level: b.level,
+        x: b.x,
+        y: b.y,
+        z: b.z,
+        core: project(b.x, b.y, b.z),
+        rim: project(b.rimX, b.rimY, b.rimZ),
+        floor: project(b.floorX, b.floorY, b.floorZ),
+      }))
+      const fxRaw: { kind: string; x: number; y: number; z: number; w: number; h: number }[] = []
+      fx.cores(fxRaw)
+      const fxCores = fxRaw.map((c) => ({
+        kind: c.kind,
+        x: c.x,
+        y: c.y,
+        z: c.z,
+        w: c.w,
+        h: c.h,
+        core: project(c.x, c.y, c.z),
+        rim: project(c.x + c.w * 0.5, c.y, c.z),
+        floor: project(c.x + c.w * 0.5 + 0.25, 0.02, c.z),
+      }))
+      return {
+        audit,
+        packHits,
+        spearCd: spears.cooldown,
+        spearN: spears.used(),
+        spearAim: { throws: spears.throws, connects: spears.connects },
+        halo: { orbit: halo.orbit, period: halo.period, sun: halo.sun, live: halo.live, angle: halo.angle },
+        flare: { cooldown: flare.cooldown, spots: flare.spots() },
+        bell: bell.pose(),
+        mesh: arsenal.mesh.count,
+        arsenalVisible: arsenal.mesh.visible,
+        bodies,
+        fx: fxCores,
+      }
+    },
     lowpassHz: () => audio.lowpassHz(),
     pinWater: (which: number | string) => {
       if (!cloister) return
@@ -2525,4 +2576,5 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
   }
   window.__noonsworn = api
+  window.__nw = api
 }

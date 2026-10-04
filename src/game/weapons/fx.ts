@@ -126,6 +126,7 @@ export interface WeaponFx {
   mesh: InstancedMesh
   setTier: (tier: TierName) => void
   hit: (x: number, z: number, lit: boolean, scale?: number) => void
+  cores: (out: { kind: string; x: number; y: number; z: number; w: number; h: number }[]) => number
   streak: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number, rgb: readonly number[], upright?: boolean) => void
   ray: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number) => void
   blade: (slot: number, x: number, z: number, yaw: number, big: boolean) => void
@@ -392,6 +393,28 @@ export function createWeaponFx(): WeaponFx {
     mesh,
     setTier(next) {
       tier = next
+    },
+    cores(out) {
+      const name = [
+        'spearTrail', 'spearGlow', 'haloStreak', 'crescent', 'afterimage', 'inkA', 'inkB', 'inkC',
+        'goldSpark', 'ember', 'ringThin', 'ringThick', 'hitFlash', 'scorch', 'sunRing', 'puff',
+        'sunspot', 'flareBand', 'flareCore', 'shockRing', 'bellShadow', 'gleam', 'lanceRibbon', 'impactStar',
+        'ray', 'scarabDust', 'stakeBlade', 'prismStar', 'fence',
+      ]
+      out.length = 0
+      for (let n = 0; n < nOrder; n++) {
+        const i = order[n] ?? -1
+        if (i < 0 || (life[i] ?? 0) <= 0) continue
+        out.push({
+          kind: name[cell[i] ?? 0] ?? 'fx',
+          x: x[i] ?? 0,
+          y: y[i] ?? 0,
+          z: z[i] ?? 0,
+          w: sx[i] ?? 0,
+          h: sz[i] ?? 0,
+        })
+      }
+      return out.length
     },
     hit(px, pz, lit, scale = 1) {
       const at = toward(px, 0.85, pz, 0.6)

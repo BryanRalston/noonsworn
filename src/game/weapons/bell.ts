@@ -3,6 +3,7 @@ import { mulberry32 } from '../../core/rng'
 import { hasteMul } from '../sunClock'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
+import { probeAdd } from './probe'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 
@@ -144,6 +145,7 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
   let tollGap = 0
   let sun = true
   let height: number = TUNING.bell.height
+  let shownLevel = 1
   let tollDamage: number = TUNING.bell.tollDamage
   let tollRadius: number = TUNING.bell.tollRadius
   let y = 0
@@ -187,8 +189,23 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
         hot: 0,
         swing,
       })
+      const coreY = y + 0.55 * scale
+      probeAdd({
+        kind: 'bell',
+        level: shownLevel,
+        x: tx,
+        y: coreY,
+        z: tz + 0.22 * scale,
+        rimX: tx + 0.46 * scale,
+        rimY: y + 0.02 * scale,
+        rimZ: tz,
+        floorX: tx + 0.7 * scale,
+        floorY: 0.02,
+        floorZ: tz,
+      })
     },
     update(dt, px, pz, horde, level, haste, might, mapLit, ctx, onToll) {
+      shownLevel = level
       if (phase === 'fall') {
         phaseT += dt
         const u = Math.min(1, phaseT / TUNING.bell.fall)

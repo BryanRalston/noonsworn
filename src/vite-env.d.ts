@@ -10,4 +10,5 @@ declare module 'three/addons/utils/BufferGeometryUtils.js' {
 
 interface Window {
   __noonsworn?: unknown
+  __nw?: unknown
 }

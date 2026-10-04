@@ -4,6 +4,7 @@ import { hasteMul } from '../sunClock'
 import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
+import { probeAdd } from './probe'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 
@@ -197,15 +198,31 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
       }
       for (let d = 0; d < stats.count; d++) {
         const a = halo.angle + (d * Math.PI * 2) / stats.count
+        const dx = px + Math.cos(a) * halo.orbit
+        const dz = pz + Math.sin(a) * halo.orbit
         arsenal.add({
           kind: ARSENAL_PART.disc,
-          x: px + Math.cos(a) * halo.orbit,
+          x: dx,
           y: 1.05,
-          z: pz + Math.sin(a) * halo.orbit,
+          z: dz,
           yaw: a,
           scale: discScale,
           hot: 0,
           swing: 0,
+        })
+        const rim = 0.42 * discScale
+        probeAdd({
+          kind: 'halo',
+          level,
+          x: dx,
+          y: 1.08,
+          z: dz,
+          rimX: dx + Math.cos(a) * rim,
+          rimY: 1.05,
+          rimZ: dz + Math.sin(a) * rim,
+          floorX: dx + Math.cos(a) * (rim + 0.2),
+          floorY: 0.02,
+          floorZ: dz + Math.sin(a) * (rim + 0.2),
         })
       }
       halo.live = stats.count

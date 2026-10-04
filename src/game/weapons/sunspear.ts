@@ -6,6 +6,7 @@ import { resolveCircle, segmentBlocked } from '../collision'
 import { hasteMul } from '../sunClock'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
+import { probeAdd } from './probe'
 import { type WeaponFx } from './fx'
 
 const HITN = 16
@@ -471,15 +472,42 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
         if (!alive[i]) continue
         const big = spear.rank >= 5
         // Local +Z is the tip. yawFromDirection points local −Z along velocity, so add half a turn.
+        const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1) + Math.PI
+        const scale = big ? 1.23 : 1
+        const px = x[i] ?? 0
+        const pz = z[i] ?? 0
         arsenal.add({
           kind: ARSENAL_PART.lance,
-          x: x[i] ?? 0,
+          x: px,
           y: BODY_Y,
-          z: z[i] ?? 0,
-          yaw: yawFromDirection(vx[i] ?? 0, vz[i] ?? 1) + Math.PI,
-          scale: big ? 1.23 : 1,
+          z: pz,
+          yaw,
+          scale,
           hot: 0,
           swing: 0,
+        })
+        const c = Math.cos(yaw)
+        const s = Math.sin(yaw)
+        const to = (lx: number, ly: number, lz: number) => ({
+          x: px + scale * (lx * c + lz * s),
+          y: BODY_Y + scale * ly,
+          z: pz + scale * (-lx * s + lz * c),
+        })
+        const core = to(0, 0.06, 0.15)
+        const rim = to(0.12, 0.04, 0.15)
+        const floor = to(0.28, 0, 0.15)
+        probeAdd({
+          kind: 'sunspear',
+          level: spear.rank,
+          x: core.x,
+          y: core.y,
+          z: core.z,
+          rimX: rim.x,
+          rimY: rim.y,
+          rimZ: rim.z,
+          floorX: floor.x,
+          floorY: 0.02,
+          floorZ: floor.z,
         })
       }
     },

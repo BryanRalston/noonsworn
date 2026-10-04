@@ -3,6 +3,7 @@ import { hasteMul } from '../sunClock'
 import { hashQuery } from '../spatialHash'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
+import { probeAdd } from './probe'
 
 const QUERY = new Int16Array(48)
 
@@ -69,6 +70,7 @@ export interface Flare {
   ) => void
   lights: (x: number, z: number) => boolean
   spots: () => { x: number; z: number; r: number; life: number }[]
+  mark: (level: number) => void
   clear: () => void
   show: (px: number, pz: number, level: number) => void
 }
@@ -94,6 +96,25 @@ export function createFlare(fx: WeaponFx): Flare {
     },
     spots() {
       return spots.map((s) => ({ x: s.x, z: s.z, r: s.r, life: s.life }))
+    },
+    mark(level) {
+      for (let i = 0; i < spots.length; i++) {
+        const s = spots[i]
+        if (!s || s.life <= 0) continue
+        probeAdd({
+          kind: 'sunspot',
+          level,
+          x: s.x,
+          y: 0.05,
+          z: s.z,
+          rimX: s.x + s.r * 0.86,
+          rimY: 0.05,
+          rimZ: s.z,
+          floorX: s.x + s.r + 0.35,
+          floorY: 0.02,
+          floorZ: s.z,
+        })
+      }
     },
     show(px, pz, level) {
       const stats = flareStats(Math.max(1, level))
