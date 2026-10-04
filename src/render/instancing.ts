@@ -111,10 +111,11 @@ export function writeInstance(
   scale: number,
   sy?: number,
   lean = 0,
+  sz?: number,
 ) {
   dummy.position.set(x, y, z)
   dummy.rotation.set(lean, yaw, 0)
-  dummy.scale.set(scale, sy ?? scale, scale)
+  dummy.scale.set(scale, sy ?? scale, sz ?? scale)
   dummy.updateMatrix()
   mesh.setMatrixAt(index, dummy.matrix)
 }

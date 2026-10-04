@@ -72,7 +72,7 @@ import { FX, createWeaponFx } from './weapons/fx'
 import { probeBodies, probeReset, probeSolo, setProbeSolo } from './weapons/probe'
 import { setWeaponPassives } from './weapons/passives'
 import { applyEvoAll, createChests } from './weapons/chests'
-import { clearEvos, evoCpu as readEvoCpu, evoDriving, readEvo, resetEvoCpu, setEvoHeal, setEvoSee } from './weapons/evoHook'
+import { clearEvos, evoCpu as readEvoCpu, evoDriving, readEvo, resetEvoCpu, setEvo, setEvoHeal, setEvoSee, type EvoKind } from './weapons/evoHook'
 
 interface W2Live {
   update: (
@@ -507,6 +507,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let profFx = 0
   let profBloom = 0
   let profSync = 0
+  let chestMs = 0
   let sparkVis = 0
   const armFloatAt = new Float32Array(TUNING.hordeCap)
   const fxSeed = forcedSeed ?? 1
@@ -822,6 +823,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
 
   function takeCard(index: number) {
     if (mode !== 'level') return
+    if (chests.revealUp() || chests.swallowing()) return
     audio.ui()
     tutorial.onClaim()
     applyCard(shown[index]?.id ?? CARD.heal)
@@ -1230,6 +1232,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       outer.position.y = -0.05
       pickups.setLift(null)
       lattice?.clear()
+      prewarmDraw()
     }
     hud.setCharges(0)
     levelUp.hide()
@@ -1616,6 +1619,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       profHalo = 0
       flareMs = 0
       bellMs = 0
+      chestMs = 0
       w2?.resetCpu()
       resetEvoCpu()
       follow.basis(basis)
@@ -2093,6 +2097,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       const chestAtRaw = params.get('chestAt')
       const chestAtNum = chestAtRaw == null ? Number.NaN : Number(chestAtRaw)
       const wasReveal = chests.revealUp()
+      const chestT = performance.now()
       chests.update({
         rawDt,
         time,
@@ -2112,6 +2117,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           chests.holdBank()
         },
       })
+      chestMs += performance.now() - chestT
       if (!wasReveal && chests.revealUp() && mode === 'level') {
         levelUp.hide()
         hidLevel = true
@@ -2496,11 +2502,22 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     shards.burst(0, 0, true)
     shards.burst(0.4, 0, false)
     shards.update(0.016)
+    // Bloom's prewarm draws a render target, which links a working-space program.
+    // The on-screen program is a different one, and its first getProgramInfoLog
+    // stalls the fight for a few hundred milliseconds. Draw it here, then draw
+    // the restored scene over that buffer before the browser paints.
+    const prevTarget = gpu.renderer.getRenderTarget()
+    gpu.renderer.setRenderTarget(null)
+    gpu.renderer.compile(gpu.scene, follow.camera)
+    gpu.renderer.render(gpu.scene, follow.camera)
+    gpu.renderer.setRenderTarget(prevTarget)
     bloom.prewarmScene(gpu.renderer, gpu.scene, follow.camera)
     fx.clear()
     shards.update(2)
     for (const row of counts) row.mesh.count = row.count
     for (const obj of hidden) obj.visible = false
+    gpu.renderer.setRenderTarget(null)
+    gpu.renderer.render(gpu.scene, follow.camera)
   }
 
   function warmScene() {
@@ -2659,11 +2676,27 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     },
     weaponCpu: () => {
       const extra = w2?.cpu() ?? { helio: 0, scarab: 0, stake: 0, prism: 0 }
-      return { spear: profSpear, halo: profHalo, flare: flareMs, bell: bellMs, helio: extra.helio, scarab: extra.scarab, stake: extra.stake, prism: extra.prism, ...readEvoCpu() }
+      return { spear: profSpear, halo: profHalo, flare: flareMs, bell: bellMs, helio: extra.helio, scarab: extra.scarab, stake: extra.stake, prism: extra.prism, chest: chestMs, ...readEvoCpu() }
     },
     chestSample: () => chests.sample(),
     evoSample: () => readEvo(),
     evoCpu: () => readEvoCpu(),
+    devEvo: (kind: string, on: boolean) => {
+      if (!devTools()) return false
+      const names: readonly string[] = ['spear', 'halo', 'flare', 'bell', 'helio', 'scarab', 'stake', 'prism']
+      if (!names.includes(kind)) return false
+      setEvo(kind as EvoKind, on)
+      return true
+    },
+    devAcquire: (id: number) => {
+      if (!devTools()) return false
+      chests.noteAcquire(id)
+      return true
+    },
+    devChest: (x: number, z: number, fill: number) => {
+      if (!devTools()) return false
+      return chests.devMove(x, z, fill)
+    },
     w2State: () => w2State,
     w2Sample: () => w2?.sample() ?? null,
     prismPeak: () => w2?.prismPeak() ?? 0,

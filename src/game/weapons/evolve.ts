@@ -2,6 +2,7 @@ import { TUNING } from '../../data/tuning'
 import { FreeList } from '../../core/pool'
 import { hashQuery } from '../spatialHash'
 import { insideArena, resolveCircle } from '../collision'
+import { yawFromDirection } from '../../core/math'
 import { hasteMul } from '../sunClock'
 import type { ShadowDir } from '../shadowDir'
 import type { Horde, HordeCtx } from '../enemies/horde'
@@ -210,6 +211,54 @@ function sunballPart() {
     const z1 = Math.sin(a1) * r
     pushTri(pos, col, em, [0, r * 0.85, 0], [x0, 0, z0], [x1, 0, z1], gold, 1)
     pushTri(pos, col, em, [0, -r * 0.7, 0], [x1, 0, z1], [x0, 0, z0], bronze, 0)
+    // Flat ring above the dome. A side lip is hidden under the gold from the pitched camera.
+    const inR = 0.22
+    const outR = 0.55
+    const top = 0.74
+    quad(
+      pos, col, em,
+      [Math.cos(a0) * inR, top, Math.sin(a0) * inR],
+      [Math.cos(a0) * outR, top, Math.sin(a0) * outR],
+      [Math.cos(a1) * outR, top, Math.sin(a1) * outR],
+      [Math.cos(a1) * inR, top, Math.sin(a1) * inR],
+      bronze, 0,
+    )
+  }
+  return pack(pos, col, em)
+}
+
+function tonguePart() {
+  const pos: number[] = []
+  const col: number[] = []
+  const em: number[] = []
+  const bronze = [0.03, 0.016, 0]
+  const gold = [1.033, 0.249, 0]
+  const n = 8
+  const inR = 1.05
+  const outR = 1.55
+  const y = 0.16
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2
+    const a1 = ((i + 1) / n) * Math.PI * 2
+    pushTri(
+      pos, col, em,
+      [0, 0.22, 0],
+      [Math.cos(a0) * 0.7, 0.22, Math.sin(a0) * 0.7],
+      [Math.cos(a1) * 0.7, 0.22, Math.sin(a1) * 0.7],
+      gold, 1,
+    )
+  }
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2
+    const a1 = ((i + 1) / n) * Math.PI * 2
+    quad(
+      pos, col, em,
+      [Math.cos(a0) * inR, y, Math.sin(a0) * inR],
+      [Math.cos(a0) * outR, y, Math.sin(a0) * outR],
+      [Math.cos(a1) * outR, y, Math.sin(a1) * outR],
+      [Math.cos(a1) * inR, y, Math.sin(a1) * inR],
+      bronze, 0,
+    )
   }
   return pack(pos, col, em)
 }
@@ -220,20 +269,22 @@ function due(last: Float32Array, slot: number, time: number, gap: number): boole
   return true
 }
 
-function bossTouch(horde: Horde, x: number, z: number, radius: number, base: number, might: number, scale: number, stamp: number) {
+function bossTouch(horde: Horde, x: number, z: number, radius: number, base: number, might: number, scale: number, stamp: number): boolean {
   const boss = horde.bossAt
-  if (!boss) return
+  if (!boss) return false
   const dx = boss.x - x
   const dz = boss.z - z
-  if (dx * dx + dz * dz > (radius + boss.r) * (radius + boss.r)) return
-  horde.bossHit?.(x, z, radius, base * scale, 'weapon', might, stamp)
+  if (dx * dx + dz * dz > (radius + boss.r) * (radius + boss.r)) return false
+  return !!horde.bossHit?.(x, z, radius, base * scale, 'weapon', might, stamp)
 }
 
 export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   const ob = obeliskPart()
   const ball = sunballPart()
+  const tongue = tonguePart()
   arsenal.append(ARSENAL_PART.obelisk, ob.position, ob.color, ob.emit)
   arsenal.append(ARSENAL_PART.sunball, ball.position, ball.color, ball.emit)
+  arsenal.append(ARSENAL_PART.tongue, tongue.position, tongue.color, tongue.emit)
   markEvoLive(true)
   setEvoLights(lightAt)
 
@@ -246,8 +297,13 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   const llife = new Float32Array(lanceN)
   const lalive = new Uint8Array(lanceN)
   const lbig = new Uint8Array(lanceN)
+  const lboss = new Uint8Array(lanceN)
+  const lnoted = new Uint8Array(lanceN)
+  let lanceThrows = 0
+  let lanceConnects = 0
   const ldmg = new Float32Array(lanceN)
-  const lhit = new Int16Array(lanceN * 8)
+  const hitStride = Math.ceil(TUNING.hordeCap / 8)
+  const hitBits = new Uint8Array(lanceN * hitStride)
   let volley = 0
   let fanCount = 0
   let fanSpan = 0
@@ -262,11 +318,15 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   const knockAt = new Float32Array(TUNING.hordeCap)
   coronaAt.fill(-10)
   knockAt.fill(-10)
+  let coronaBoss = -10
 
   let novaCd = ROW.dayburst.every
   let tongueIn = -1
   let tongueCount = 0
   let novaAt = 0
+  const tongueX = new Float32Array(8)
+  const tongueZ = new Float32Array(8)
+  const tongueLife = new Float32Array(8)
   const spotsX = new Float32Array(12)
   const spotsZ = new Float32Array(12)
   const spotsLife = new Float32Array(12)
@@ -296,6 +356,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   let ballHits = 0
   const ballAt = new Float32Array(TUNING.hordeCap)
   ballAt.fill(-10)
+  let ballBoss = -10
   const tailX = new Float32Array(3)
   const tailZ = new Float32Array(3)
   const tailAge = new Float32Array(3)
@@ -307,6 +368,8 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   const oLife = new Float32Array(obN)
   const oAng = new Float32Array(obN)
   const oAlive = new Uint8Array(obN)
+  const obBoss = new Float32Array(obN)
+  obBoss.fill(-10)
   let plantCd = 0.6
   let plantN = 0
   let fenceN = 0
@@ -337,7 +400,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   let dogCount = 0
 
   const read: EvoRead = {
-    meridianVolley: 0, meridianFan: 0, meridianSpan: 0, meridianBig: 0,
+    meridianVolley: 0, meridianFan: 0, meridianSpan: 0, meridianBig: 0, meridianThrows: 0, meridianConnects: 0,
     coronaR: 0, coronaBurst: 0, dayburstAt: 0, tongues: 0, spots: 0,
     tolls: 0, tollR: 0, dazed: 0, healed: 0, mirrors: 0, chain: 0,
     ballHits: 0, obelisks: 0, fences: 0, prismAlive: 0, prismMax: 0, dogs: 0,
@@ -358,19 +421,18 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
     llife[i] = life
     ldmg[i] = damage
     lbig[i] = big
-    const base = i * 8
-    for (let h = 0; h < 8; h++) lhit[base + h] = -1
+    lboss[i] = 0
+    lnoted[i] = 0
+    lanceThrows++
+    hitBits.fill(0, i * hitStride, (i + 1) * hitStride)
   }
 
   function seen(i: number, slot: number): boolean {
-    const base = i * 8
-    let open = -1
-    for (let h = 0; h < 8; h++) {
-      const mark = lhit[base + h]
-      if (mark === slot) return true
-      if (mark === -1 && open < 0) open = h
-    }
-    if (open >= 0) lhit[base + open] = slot
+    if (slot < 0 || slot >= TUNING.hordeCap) return true
+    const byte = i * hitStride + (slot >> 3)
+    const mask = 1 << (slot & 7)
+    if ((hitBits[byte] ?? 0) & mask) return true
+    hitBits[byte] = (hitBits[byte] ?? 0) | mask
     return false
   }
 
@@ -459,11 +521,15 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
         if (seen(i, s)) continue
         const hit = horde.damage(s, ldmg[i] ?? 0, 'weapon', might)
         if (hit > 0) {
+          if (!lnoted[i]) {
+            lnoted[i] = 1
+            lanceConnects++
+          }
           horde.gleamFor(s, ROW.meridian.gleam, time)
           fx.hit(horde.x[s] ?? nx, horde.z[s] ?? nz, (horde.lit[s] ?? 0) === 1)
         }
       }
-      bossTouch(horde, nx, nz, rad, ldmg[i] ?? 0, might, ROW.meridian.boss, stamp++)
+      if (!lboss[i] && bossTouch(horde, nx, nz, rad, ldmg[i] ?? 0, might, ROW.meridian.boss, stamp++)) lboss[i] = 1
     }
   }
 
@@ -533,6 +599,8 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
     read.meridianFan = fanCount
     read.meridianSpan = fanSpan
     read.meridianBig = bigCount
+    read.meridianThrows = lanceThrows
+    read.meridianConnects = lanceConnects
     read.coronaBurst = burstCount
     read.dayburstAt = novaAt
     read.tongues = tongueCount
@@ -560,10 +628,59 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
       lfree.reset()
       lalive.fill(0)
       volley = 0
+      fanCount = 0
+      fanSpan = 0
+      bigCount = 0
+      lanceThrows = 0
+      lanceConnects = 0
+      lnoted.fill(0)
+      spearCd = 0.2
+      burstCd = 0
+      burstCount = 0
+      coronaAt.fill(-10)
+      knockAt.fill(-10)
+      coronaBoss = -10
+      novaCd = ROW.dayburst.every
+      tongueIn = -1
+      tongueCount = 0
+      novaAt = 0
+      tongueLife.fill(0)
+      spotsLife.fill(0)
+      spotN = 0
+      bellCd = ROW.twelvefold.every
+      tolling = false
+      tollN = 0
+      tollGap = 0
+      tollR = 2
+      dazed = 0
+      healed = 0
+      tollAt.fill(-10)
+      chainCd = 0
+      retarget = 0
+      chainN = 0
+      bank = 0
+      bankAcc = 0
+      spendCd = 0
+      roll = 0
+      ballHits = 0
+      ballAt.fill(-10)
+      ballBoss = -10
+      tailAge.fill(10)
+      plantCd = 0.6
+      plantN = 0
+      fenceN = 0
+      pulseCd = 0.4
+      obAt.fill(-10)
+      fenceAt.fill(-10)
+      obBoss.fill(-10)
+      oAlive.fill(0)
+      prismCd = 0.2
+      runLeft = 0
+      volleyId = 1
       pfree.reset()
       pAlive.fill(0)
-      oAlive.fill(0)
       prismMax = 0
+      dogCount = 0
       haveFoot = false
       lightReset()
     },
@@ -605,7 +722,10 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             horde.nudge(s, (dx / d) * ROW.corona.knock, (dz / d) * ROW.corona.knock)
           }
         }
-        bossTouch(horde, px, pz, outer, haloStats(5)?.damage ?? 18, might, ROW.corona.boss, stamp++)
+        if (time - coronaBoss >= ROW.corona.tick) {
+          coronaBoss = time
+          bossTouch(horde, px, pz, outer, haloStats(5)?.damage ?? 18, might, ROW.corona.boss, stamp++)
+        }
         if (!sun) {
           burstCd -= dt
           if (burstCd <= 0) {
@@ -664,7 +784,9 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               const hx = px + Math.cos(a) * dist
               const hz = pz + Math.sin(a) * dist
               tongueCount++
-              fx.core(hx, hz, ROW.dayburst.tongueR)
+              tongueX[i] = hx
+              tongueZ[i] = hz
+              tongueLife[i] = 0.55
               const dmg = stats.damage * ROW.dayburst.tongueMul
               const n = hashQuery(hx, hz, ROW.dayburst.tongueR, Q)
               for (let k = 0; k < n; k++) {
@@ -676,6 +798,10 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               if (shade) addSpot(hx, hz)
             }
           }
+        }
+        for (let i = 0; i < tongueLife.length; i++) {
+          if ((tongueLife[i] ?? 0) <= 0) continue
+          tongueLife[i] = (tongueLife[i] ?? 0) - dt
         }
         for (let i = 0; i < ROW.dayburst.spotCap; i++) {
           if ((spotsLife[i] ?? 0) <= 0) continue
@@ -731,7 +857,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               }
               hits++
               if (tollN === ROW.twelvefold.tolls && evoSee(horde.x[s] ?? 0, horde.z[s] ?? 0)) {
-                horde.staggerFor(s, ROW.twelvefold.daze)
+                horde.staggerFor(s, ROW.twelvefold.daze, true)
                 dazed++
               }
             }
@@ -866,7 +992,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           horde.damage(s, ROW.sunroller.damage, 'weapon', might)
           if (d > 0.05) horde.nudge(s, (dx / d) * ROW.sunroller.knock, (dz / d) * ROW.sunroller.knock)
         }
-        bossTouch(horde, bx, bz, ROW.sunroller.ball * 0.5, ROW.sunroller.damage, might, ROW.sunroller.boss, stamp++)
+        if (time - ballBoss >= ROW.sunroller.gap && bossTouch(horde, bx, bz, ROW.sunroller.ball * 0.5, ROW.sunroller.damage, might, ROW.sunroller.boss, stamp++)) ballBoss = time
       }
       addEvoCpu('sunroller', performance.now() - t5)
 
@@ -920,7 +1046,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               if (!due(obAt, s, time, ROW.obelisk.gap)) continue
               horde.damage(s, ROW.obelisk.damage, 'weapon', might)
             }
-            bossTouch(horde, x1, z1, 0.6, ROW.obelisk.damage, might, ROW.obelisk.boss, stamp++)
+            if (time - (obBoss[i] ?? -10) >= ROW.obelisk.gap && bossTouch(horde, x1, z1, 0.6, ROW.obelisk.damage, might, ROW.obelisk.boss, stamp++)) obBoss[i] = time
           }
         }
         for (let i = 0; i < obN; i++) {
@@ -1027,12 +1153,16 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             pfree.release(i)
             break
           }
+          if (pAlive[i] && bossTouch(horde, pxA[i] ?? 0, pzA[i] ?? 0, 0.45, dmg, might, ROW.mocksun.boss, stamp++)) {
+            pAlive[i] = 0
+            pfree.release(i)
+            continue
+          }
           if ((pxA[i] ?? 0) * (pxA[i] ?? 0) + (pzA[i] ?? 0) * (pzA[i] ?? 0) > 80 * 80 && pAlive[i]) {
             pAlive[i] = 0
             pfree.release(i)
           }
         }
-        bossTouch(horde, px, pz, 1, dmg, might, ROW.mocksun.boss, stamp++)
       }
       addEvoCpu('mocksun', performance.now() - t7)
       publish()
@@ -1043,16 +1173,20 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           if (!lalive[i]) continue
           const big = lbig[i] === 1
           const scale = big ? 6.8 : 2.6
-          const ang = Math.atan2(lvz[i] ?? 0, lvx[i] ?? 1)
-          arsenal.add({ kind: ARSENAL_PART.lance, x: lx[i] ?? 0, y: big ? 1.2 : 0.9, z: lz[i] ?? 0, yaw: ang, scale, hot: big ? 1 : 0.4, swing: 0 })
+          // 24 m along the flight line so a broadside still covers 70% of 1280 px.
+          const stretch = big ? 12 : scale
+          const ang = yawFromDirection(lvx[i] ?? 0, lvz[i] ?? 1) + Math.PI
+          arsenal.add({ kind: ARSENAL_PART.lance, x: lx[i] ?? 0, y: big ? 1.2 : 0.9, z: lz[i] ?? 0, yaw: ang, scale, sz: stretch, hot: big ? 1 : 0.4, swing: 0 })
           const rims = spinRims(lx[i] ?? 0, big ? 1.2 : 0.9, lz[i] ?? 0, ang, scale, [
-            [0.22, 0.02, 0.15], [-0.22, 0.02, 0.15], [0.2, 0.02, -0.85], [-0.2, 0.02, -0.85],
-            [0.16, 0.02, 0.7], [-0.16, 0.02, 0.7], [0.14, 0.02, -0.4], [-0.14, 0.02, -0.4],
-          ])
+            [0.27, 0.14, 0.2], [-0.27, 0.14, 0.2], [0.27, 0.14, -0.3], [-0.27, 0.14, -0.3],
+            [0.27, 0.14, -0.7], [-0.27, 0.14, -0.7], [0.27, 0.14, 0.4], [-0.27, 0.14, 0.4],
+          ], scale, stretch)
           const rim = rims[0] ?? { x: lx[i] ?? 0, y: 1, z: lz[i] ?? 0 }
+          const beside = spinRims(lx[i] ?? 0, 0.02, lz[i] ?? 0, ang, scale, [[0.42, 0, 0.2]], scale, stretch)
+          const floorPt = beside[0] ?? { x: (lx[i] ?? 0) + 1.2, y: 0.02, z: lz[i] ?? 0 }
           probeAdd({
             kind: big ? 'meridian' : 'sunspear', level: 5, x: lx[i] ?? 0, y: big ? 1.2 : 0.9, z: lz[i] ?? 0,
-            rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: (lx[i] ?? 0) + 1.2, floorY: 0.02, floorZ: lz[i] ?? 0, rims,
+            rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: floorPt.x, floorY: 0.02, floorZ: floorPt.z, rims,
           })
           if (big) fx.streak(lx[i] ?? 0, 0.4, lz[i] ?? 0, ang, 40, ROW.meridian.width, 0.12, [1.033, 0.249, 0])
         }
@@ -1089,7 +1223,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           const mx = px + Math.cos(a) * ROW.solar.radius
           const mz = pz + Math.sin(a) * ROW.solar.radius
           arsenal.add({ kind: ARSENAL_PART.mirror, x: mx, y: 1.7, z: mz, yaw: a, scale: 2.1, hot: 1, swing: 0 })
-          const rims = spinRims(mx, 1.7, mz, a, 2.1, ringLocal(0.47, 0.03))
+          const rims = spinRims(mx, 1.7, mz, a, 2.1, ringLocal(0.52, 0.03))
           const rim = rims[0] ?? { x: mx, y: 1.7, z: mz }
           probeAdd({
             kind: 'solar', level: 5, x: mx, y: 1.7, z: mz,
@@ -1106,7 +1240,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
         arsenal.add({ kind: ARSENAL_PART.scarab, x: bx + Math.cos(ang) * 0.9, y: 0.45, z: bz + Math.sin(ang) * 0.9, yaw: ang, scale: scarabScale, hot: 1, swing: time * 8 })
         const ballScale = ROW.sunroller.ball / 1.6
         arsenal.add({ kind: ARSENAL_PART.sunball, x: bx, y: 0.9, z: bz, yaw: ang, scale: ballScale, hot: 1, swing: 0 })
-        const rims = ringRims(bx, 0.9, bz, 0.8 * ballScale)
+        const rims = ringRims(bx, 0.9 + 0.74 * ballScale, bz, 0.38 * ballScale)
         const rim = rims[0] ?? { x: bx, y: 0.9, z: bz }
         probeAdd({
           kind: 'sunroller', level: 5, x: bx, y: 0.9, z: bz,
@@ -1151,7 +1285,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           const x = px + Math.cos(a) * ROW.mocksun.orbit
           const z = pz + Math.sin(a) * ROW.mocksun.orbit
           arsenal.add({ kind: ARSENAL_PART.prism, x, y: 1.4, z, yaw: a, scale: 3.4, hot: 0, swing: 0 })
-          const rims = spinRims(x, 1.4, z, a, 3.4, ringLocal(0.32, 0))
+          const rims = spinRims(x, 1.4, z, a, 3.4, ringLocal(0.14, 0.42))
           const rim = rims[0] ?? { x, y: 1.4, z }
           probeAdd({
             kind: 'mocksun', level: 5, x, y: 1.4, z,
@@ -1166,6 +1300,18 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
         }
       }
       if (evoDriving('flare')) {
+        for (let i = 0; i < tongueLife.length; i++) {
+          if ((tongueLife[i] ?? 0) <= 0) continue
+          arsenal.add({ kind: ARSENAL_PART.tongue, x: tongueX[i] ?? 0, y: 0, z: tongueZ[i] ?? 0, yaw: 0, scale: 1, hot: 0, swing: 0 })
+          const rims = ringRims(tongueX[i] ?? 0, 0.16, tongueZ[i] ?? 0, 1.3)
+          const rim = rims[0] ?? { x: tongueX[i] ?? 0, y: 0.16, z: tongueZ[i] ?? 0 }
+          probeAdd({
+            kind: 'dayburst', level: 5, x: tongueX[i] ?? 0, y: 0.22, z: tongueZ[i] ?? 0,
+            rimX: rim.x, rimY: rim.y, rimZ: rim.z,
+            floorX: (tongueX[i] ?? 0) + 1.9, floorY: 0.02, floorZ: tongueZ[i] ?? 0,
+            rims,
+          })
+        }
         for (let i = 0; i < ROW.dayburst.spotCap; i++) {
           if ((spotsLife[i] ?? 0) <= 0) continue
           fx.sunspot(spotsX[i] ?? 0, spotsZ[i] ?? 0, ROW.dayburst.spotR, 0.16)

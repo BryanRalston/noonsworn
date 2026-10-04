@@ -27,6 +27,7 @@ export const ARSENAL_PART = {
   obelisk: 8,
   sunball: 9,
   chest: 10,
+  tongue: 11,
 } as const
 
 const CAP = 128
@@ -39,6 +40,8 @@ export interface ArsenalItem {
   yaw: number
   scale: number
   sy?: number
+  /** Local-Z scale. Defaults to `scale`. The Meridian lance is long and not wide. */
+  sz?: number
   hot: number
   swing: number
 }
@@ -102,15 +105,15 @@ function lanceArrays(pos: number[], col: number[], emit: number[], parts: number
   const up = [0, 0.06, 0.2]
   pushTri(part, pos, col, emit, parts, tip, left, up, EDGE, GOLD, GOLD, 1, 0.85, 0.85)
   pushTri(part, pos, col, emit, parts, tip, up, right, EDGE, GOLD, GOLD, 1, 0.85, 0.85)
-  pushTri(part, pos, col, emit, parts, left, tail, up, BRONZE, BRONZE, GOLD, 0, 0, 0.4)
-  pushTri(part, pos, col, emit, parts, right, up, tail, BRONZE, GOLD, BRONZE, 0, 0.4, 0)
+  pushTri(part, pos, col, emit, parts, left, tail, up, BRONZE, BRONZE, GOLD, 0.6, 0.6, 0.4)
+  pushTri(part, pos, col, emit, parts, right, up, tail, BRONZE, GOLD, BRONZE, 0.6, 0.4, 0.6)
   pushTri(part, pos, col, emit, parts, tip, up, left, EDGE, GOLD, GOLD, 1, 0.85, 0.85)
   pushTri(part, pos, col, emit, parts, tip, right, up, EDGE, GOLD, GOLD, 1, 0.85, 0.85)
   quad(part, pos, col, emit, parts, [-0.07, 0.07, 0.55], [0.07, 0.07, 0.55], [0.05, 0.07, -0.7], [-0.05, 0.07, -0.7], SPINE, 0)
   quad(part, pos, col, emit, parts, [-0.12, 0.09, -0.15], [0.12, 0.09, -0.15], [0.1, 0.09, 0.62], [-0.1, 0.09, 0.62], GOLD, 1)
   quad(part, pos, col, emit, parts, [-0.16, 0.05, 0.7], [0.16, 0.05, 0.7], [0.04, 0.05, 1.02], [-0.04, 0.05, 1.02], EDGE, 1)
-  quad(part, pos, col, emit, parts, [-0.22, 0.02, 0.15], [-0.16, 0.02, 0.15], [-0.14, 0.02, -0.85], [-0.2, 0.02, -0.85], BRONZE, 0)
-  quad(part, pos, col, emit, parts, [0.16, 0.02, 0.15], [0.22, 0.02, 0.15], [0.2, 0.02, -0.85], [0.14, 0.02, -0.85], BRONZE, 0)
+  // One top face. Two strips left a gap, so the size sample counted a single strip.
+  quad(part, pos, col, emit, parts, [-0.36, 0.14, 1.05], [0.36, 0.14, 1.05], [0.36, 0.14, -1.0], [-0.36, 0.14, -1.0], BRONZE, 0)
 }
 
 function discArrays(pos: number[], col: number[], emit: number[], parts: number[]) {
@@ -209,6 +212,7 @@ function chestArrays(pos: number[], col: number[], emit: number[], parts: number
   const rim = 0.06
   quad(part, pos, col, emit, parts, [-(x + rim), y0, z + rim], [x + rim, y0, z + rim], [x + rim, y1 + 0.04, z + rim], [-(x + rim), y1 + 0.04, z + rim], BRONZE, 0)
   quad(part, pos, col, emit, parts, [x + rim, y0, -(z + rim)], [-(x + rim), y0, -(z + rim)], [-(x + rim), y1 + 0.04, -(z + rim)], [x + rim, y1 + 0.04, -(z + rim)], BRONZE, 0)
+  quad(part, pos, col, emit, parts, [-0.9, 0.74, 0.5], [0.9, 0.74, 0.5], [0.9, 0.74, 0.72], [-0.9, 0.74, 0.72], BRONZE, 0)
   const lid = y1 + 0.16
   quad(part, pos, col, emit, parts, [-0.72, y1, -0.44], [0.72, y1, -0.44], [0.66, lid, -0.28], [-0.66, lid, -0.28], EDGE, 1)
   quad(part, pos, col, emit, parts, [-0.66, lid, -0.28], [0.66, lid, -0.28], [0.66, lid, 0.28], [-0.66, lid, 0.28], gold, 1)
@@ -378,7 +382,7 @@ export function createArsenal(): Arsenal {
       for (let i = 0; i < n; i++) {
         const it = items[i]
         if (!it) continue
-        writeInstance(mesh, i, it.x, it.y, it.z, it.yaw, it.scale, it.sy)
+        writeInstance(mesh, i, it.x, it.y, it.z, it.yaw, it.scale, it.sy, 0, it.sz)
         kind.setX(i, it.kind)
         hot.setX(i, it.hot)
         swing.setX(i, it.swing)

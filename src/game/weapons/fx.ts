@@ -177,6 +177,7 @@ export interface WeaponFx {
   star: (x: number, z: number) => void
   core: (x: number, z: number, radius: number) => void
   band: (x: number, z: number, radius: number, life: number) => void
+  tongue: (x: number, z: number, radius: number) => void
   shock: (x: number, z: number, radius: number) => void
   shadowDisc: (x: number, z: number, radius: number, life: number) => void
   gleamMark: (slot: number, x: number, z: number) => void
@@ -568,6 +569,11 @@ export function createWeaponFx(): WeaponFx {
     band(px, pz, radius, seconds) {
       const d = Math.max(0.8, radius) * 2
       put(CELL.flareBand, px, 0.12, pz, 0, d, d, seconds, FX.punch, 0, 0, 0)
+    },
+    tongue(px, pz, radius) {
+      void radius
+      // Hot core only. The dark rim is the tongue mesh, outside this billboard.
+      put(CELL.flareBand, px, 0.4, pz, 0, 1.4, 1.4, 0.55, FX.punch, 0, 0, 0)
     },
     shock(px, pz, radius) {
       const d = (Math.max(0.4, radius) * 2) / RING

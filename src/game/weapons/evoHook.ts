@@ -93,6 +93,8 @@ export interface EvoRead {
   meridianFan: number
   meridianSpan: number
   meridianBig: number
+  meridianThrows: number
+  meridianConnects: number
   coronaR: number
   coronaBurst: number
   dayburstAt: number
@@ -114,7 +116,7 @@ export interface EvoRead {
 }
 
 const blankRead = (): EvoRead => ({
-  meridianVolley: 0, meridianFan: 0, meridianSpan: 0, meridianBig: 0,
+  meridianVolley: 0, meridianFan: 0, meridianSpan: 0, meridianBig: 0, meridianThrows: 0, meridianConnects: 0,
   coronaR: 0, coronaBurst: 0, dayburstAt: 0, tongues: 0, spots: 0,
   tolls: 0, tollR: 0, dazed: 0, healed: 0, mirrors: 0, chain: 0,
   ballHits: 0, obelisks: 0, fences: 0, prismAlive: 0, prismMax: 0, dogs: 0,

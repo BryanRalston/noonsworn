@@ -62,8 +62,8 @@ function mirrorPart(): { position: Float32Array; color: Float32Array; emit: Floa
       pos, col, em,
       [Math.cos(a0) * 0.42, 0.04, Math.sin(a0) * 0.42],
       [Math.cos(a1) * 0.42, 0.04, Math.sin(a1) * 0.42],
-      [Math.cos(a1) * 0.5, 0.02, Math.sin(a1) * 0.5],
-      [Math.cos(a0) * 0.5, 0.02, Math.sin(a0) * 0.5],
+      [Math.cos(a1) * 0.62, 0.08, Math.sin(a1) * 0.62],
+      [Math.cos(a0) * 0.62, 0.08, Math.sin(a0) * 0.62],
       BRONZE, 0,
     )
   }
@@ -136,6 +136,20 @@ function prismPart(): { position: Float32Array; color: Float32Array; emit: Float
     const bx = (b[0] ?? 0) * 0.9
     const bz = (b[2] ?? 0) * 0.9
     quad(pos, col, em, [ax, -0.08, az], [bx, -0.08, bz], [bx, 0.08, bz], [ax, 0.08, az], BRONZE, 0)
+  }
+  // Cap above the gold apex. The pitched camera hides the skirt under the facets.
+  const capY = 0.42
+  for (let i = 0; i < 4; i++) {
+    const a0 = (i / 4) * Math.PI * 2
+    const a1 = ((i + 1) / 4) * Math.PI * 2
+    quad(
+      pos, col, em,
+      [Math.cos(a0) * 0.06, capY, Math.sin(a0) * 0.06],
+      [Math.cos(a0) * 0.22, capY, Math.sin(a0) * 0.22],
+      [Math.cos(a1) * 0.22, capY, Math.sin(a1) * 0.22],
+      [Math.cos(a1) * 0.06, capY, Math.sin(a1) * 0.06],
+      BRONZE, 0,
+    )
   }
   return pack(pos, col, em)
 }
@@ -1094,7 +1108,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         }
         const mx = mirrorX || px + 0.55
         const mz = mirrorZ || pz
-        const rims = spinRims(mx, 1.7, mz, mirrorYaw, mirrorScale, ringLocal(0.47, 0.03))
+        const rims = spinRims(mx, 1.7, mz, mirrorYaw, mirrorScale, ringLocal(0.52, 0.05))
         const rim = rims[0] ?? { x: mx, y: 1.7, z: mz }
         probeAdd({
           kind: 'heliograph',
@@ -1121,14 +1135,14 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
             const bx = sx[i] ?? 0
             const bz = sz[i] ?? 0
             const rims = spinRims(bx, 0.45, bz, yaw, scarabScale, [
+              [-0.26, 0.08, -0.04],
+              [0.26, 0.08, -0.04],
+              [-0.22, 0.08, -0.12],
+              [0.22, 0.08, -0.12],
+              [-0.18, 0.08, 0.02],
+              [0.18, 0.08, 0.02],
               [0, 0.08, -0.08],
-              [0.12, 0.02, -0.12],
-              [-0.12, 0.02, -0.12],
-              [-0.42, 0.08, -0.05],
-              [-0.36, 0.08, -0.22],
-              [0.42, 0.08, -0.05],
-              [0.36, 0.08, -0.22],
-              [-0.16, 0.08, 0.12],
+              [0, 0.1, 0.02],
             ])
             const rim = rims[0] ?? { x: bx, y: 0.5, z: bz }
             probeAdd({
@@ -1140,7 +1154,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
               rimX: rim.x,
               rimY: rim.y,
               rimZ: rim.z,
-              floorX: bx + 1.4,
+              floorX: bx + 0.55 * scarabScale,
               floorY: 0.02,
               floorZ: bz,
               rims,
@@ -1198,7 +1212,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
             rimX: rim.x,
             rimY: rim.y,
             rimZ: rim.z,
-            floorX: (pxA[i] ?? 0) + 0.55 * scale,
+            floorX: (pxA[i] ?? 0) + 0.55 * scale + 1.6,
             floorY: 0.02,
             floorZ: pzA[i] ?? 0,
             rims,

@@ -162,7 +162,7 @@ export interface Horde {
   visit: (fn: (x: number, z: number, kind: number) => void) => void
   each: (fn: (index: number, x: number, z: number) => void) => void
   place: (index: number, x: number, z: number) => void
-  staggerFor: (index: number, seconds: number) => void
+  staggerFor: (index: number, seconds: number, force?: boolean) => void
   washFor: (index: number, seconds: number) => void
   /** Forces Exposed for `seconds`, with the entering-light stagger on the first frame. */
   gleamFor: (index: number, seconds: number, now: number) => void
@@ -725,9 +725,9 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       x[index] = nx
       z[index] = nz
     },
-    staggerFor(index, seconds) {
+    staggerFor(index, seconds, force = false) {
       if (!alive[index] || state[index] === DYING || bench[index]) return
-      if (!allowControl(index, clock)) return
+      if (!force && !allowControl(index, clock)) return
       state[index] = STAGGER
       stateT[index] = seconds
     },

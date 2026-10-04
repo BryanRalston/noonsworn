@@ -68,8 +68,8 @@ export interface ChestView {
 
 const aim = new Vector3()
 const RIM: readonly (readonly [number, number, number])[] = [
-  [0.86, 0.4, 0.56], [0.86, 0.4, -0.56], [-0.86, 0.4, 0.56], [-0.86, 0.4, -0.56],
-  [0.86, 0.08, 0.56], [0.86, 0.08, -0.56], [-0.86, 0.08, 0.56], [-0.86, 0.08, -0.56],
+  [0, 0.74, 0.61], [0.35, 0.74, 0.61], [-0.35, 0.74, 0.61], [0.6, 0.74, 0.58],
+  [-0.6, 0.74, 0.58], [0.2, 0.74, 0.66], [-0.2, 0.74, 0.66], [0, 0.74, 0.55],
 ]
 
 function pairOf(kind: EvoKind) {
@@ -101,7 +101,7 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   let lastFlash = -10
   setDayburstFlash((simTime) => {
-    if (reduce) return
+    if (reduced()) return
     if (simTime - lastFlash < 2) return
     lastFlash = simTime
     flashEl.classList.remove('on')
@@ -268,6 +268,14 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
     noteAcquire(id: number) {
       if (order.indexOf(id) >= 0) return
       order.push(id)
+    },
+    devMove(x: number, z: number, fill: number) {
+      const chest = list[list.length - 1]
+      if (!chest || chest.open) return false
+      chest.x = x
+      chest.z = z
+      chest.fill = fill
+      return true
     },
     syncAcquire(build: Build) {
       for (let i = 0; i < SLOT_ORDER.length; i++) {

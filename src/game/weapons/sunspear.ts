@@ -532,7 +532,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
         const big = spear.rank >= 5
         // Local +Z is the tip. yawFromDirection points local −Z along velocity, so add half a turn.
         const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1) + Math.PI
-        const scale = (big ? 2.6 : 2.15) * reachMul()
+        const scale = (big ? 2.81 : 2.32) * reachMul()
         const px = x[i] ?? 0
         const pz = z[i] ?? 0
         arsenal.add({
@@ -553,17 +553,17 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
           z: pz + scale * (-lx * s + lz * c),
         })
         const core = to(0, 0.09, 0.2)
-        const floor = to(0.42, 0, 0.15)
+        const floor = to(0.48, 0, 0.2)
         // Bronze rails on the lance, local x ±0.14–0.22, z 0.15 to −0.85.
         const rims = spinRims(px, BODY_Y, pz, yaw, scale, [
-          [-0.22, 0.02, 0.15],
-          [-0.2, 0.02, -0.35],
-          [-0.16, 0.02, -0.85],
-          [-0.14, 0.02, 0.15],
-          [0.22, 0.02, 0.15],
-          [0.2, 0.02, -0.35],
-          [0.16, 0.02, -0.85],
-          [0.14, 0.02, 0.15],
+          [-0.27, 0.14, 0.2],
+          [-0.27, 0.14, -0.15],
+          [-0.27, 0.14, -0.5],
+          [-0.27, 0.14, -0.8],
+          [0.27, 0.14, 0.2],
+          [0.27, 0.14, -0.15],
+          [0.27, 0.14, -0.5],
+          [0.27, 0.14, -0.8],
         ])
         const rim = rims[0] ?? core
         probeAdd({

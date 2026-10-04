@@ -749,6 +749,7 @@ body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .evo-card.flip { animation: none; }
 }
+html.reduce-motion .evo-card.flip { animation: none; }
 #dayburst-flash {
   position: fixed;
   inset: 0;
@@ -765,6 +766,7 @@ body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   #dayburst-flash.on { animation: none; opacity: 0; }
 }
+html.reduce-motion #dayburst-flash.on { animation: none; opacity: 0; }
 #chest-pointer {
   position: fixed;
   z-index: 6;

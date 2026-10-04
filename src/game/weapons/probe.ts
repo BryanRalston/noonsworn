@@ -47,6 +47,7 @@ const PART_OF: Record<number, string> = {
   8: 'obelisk',
   9: 'sunroller',
   10: 'chest',
+  11: 'flare',
 }
 
 function canon(kind: string): string {
@@ -99,6 +100,7 @@ export function spinRims(
   scale: number,
   local: readonly (readonly [number, number, number])[],
   sy = scale,
+  sz = scale,
 ): ProbePoint[] {
   const c = Math.cos(yaw)
   const s = Math.sin(yaw)
@@ -110,9 +112,9 @@ export function spinRims(
     const ly = p[1]
     const lz = p[2]
     out.push({
-      x: px + scale * (lx * c + lz * s),
+      x: px + scale * lx * c + sz * lz * s,
       y: py + sy * ly,
-      z: pz + scale * (-lx * s + lz * c),
+      z: pz - scale * lx * s + sz * lz * c,
     })
   }
   return out
