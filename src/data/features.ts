@@ -132,4 +132,5 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Solar Flare nova and Sunspot', status: 'shipped', since: 'W1' },
   { area: 'Combat & Weapons', feature: 'Noon Bell drop and tolls', status: 'shipped', since: 'W1' },
   { area: 'Graphics/Performance', feature: 'Shared weapon mesh and atlas v2', status: 'shipped', since: 'W1' },
+  { area: 'Maps', feature: 'Sundial medallion takes the floor sun and shade', status: 'shipped', since: 'W2' },
 ]

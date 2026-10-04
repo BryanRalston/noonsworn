@@ -275,6 +275,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const traps = createTraps()
   const inlay = new Mesh(buildInlay(), inlayMat)
   inlay.renderOrder = 1
+  inlay.visible = false
   const outer = new Mesh(new PlaneGeometry(900, 900).rotateX(-Math.PI / 2), outerMat)
   outer.position.y = -0.05
   const skyHeight = 140

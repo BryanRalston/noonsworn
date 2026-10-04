@@ -71,6 +71,24 @@ void main() {
   vec3 albedo = texture(uAlbedo, p * 0.08).rgb;
   col = mix(col, col * albedo, uTexMix);
   col *= mix(1.22, 1.05, clamp(cone, 0.0, 1.0));
+  float medR = length(p);
+  float medDisc = 1.0 - smoothstep(7.35, 7.5, medR);
+  float ax = abs(p.x);
+  float az = abs(p.y);
+  float band = 0.0;
+  if (az > 22.5 && az < 23.8 && ax < 23.9) band = 1.0;
+  if (ax > 22.5 && ax < 23.8 && az < 23.9) band = 1.0;
+  float medMask = max(medDisc, band);
+  if (medMask > 0.001) {
+    float rings = 0.985 + 0.015 * sin(medR * 5.0);
+    vec3 sunMedal = uSand * rings;
+    vec3 shadeOnly = mix(shCol, shadeCol, clamp(shadow, 0.0, 1.0));
+    shadeOnly = mix(shadeOnly, shadeOnly * albedo, uTexMix);
+    shadeOnly *= 1.05;
+    float sunW = clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
+    vec3 medal = mix(shadeOnly, sunMedal, sunW);
+    col = mix(col, medal, medMask);
+  }
   float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
