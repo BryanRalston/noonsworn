@@ -38,11 +38,18 @@ export default defineConfig({
     sourcemap: false,
     target: 'es2022',
     chunkSizeWarningLimit: 800,
+    modulePreload: {
+      resolveDependencies(filename, deps) {
+        void filename
+        return deps.filter((dep) => !dep.includes('arsenal'))
+      },
+    },
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          const norm = id.replace(/\\/g, '/')
-          if (norm.endsWith('/src/game/weapons/w2.ts')) return 'arsenal'
+        chunkFileNames(info) {
+          const id = info.facadeModuleId?.replace(/\\/g, '/') ?? ''
+          if (id.endsWith('/src/game/weapons/w2.ts')) return 'assets/arsenal-[hash].js'
+          return 'assets/[name]-[hash].js'
         },
       },
     },
