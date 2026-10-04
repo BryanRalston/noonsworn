@@ -45,39 +45,22 @@ export function bellText(level: number): string {
   return 'Noon Bell is mastered'
 }
 
-export function bellCandidates(px: number, pz: number): { x: number; z: number }[] {
-  const step = TUNING.bell.sample
-  const turn = (15 * Math.PI) / 180
-  const c = Math.cos(turn)
-  const s = Math.sin(turn)
-  const out: { x: number; z: number }[] = []
-  for (let iz = -1; iz <= 1; iz++) {
-    for (let ix = -1; ix <= 1; ix++) {
-      const lx = ix * step
-      const lz = iz * step
-      out.push({ x: px + lx * c - lz * s, z: pz + lx * s + lz * c })
-    }
-  }
-  return out
-}
-
-/** Densest of the 9 samples. An empty court targets Sela. */
+/** Densest 0.5 m cell inside the seek radius. An empty court targets Sela. */
 export function pickBell(px: number, pz: number, countAt: (x: number, z: number) => number): { x: number; z: number } {
-  const spots = bellCandidates(px, pz)
-  let best = 0
-  let bestD = 1e9
+  const steps = Math.round(TUNING.bell.seek / 0.5)
+  let best = -1
   let bx = px
   let bz = pz
-  for (let i = 0; i < spots.length; i++) {
-    const s = spots[i]
-    if (!s) continue
-    const n = countAt(s.x, s.z)
-    const d = (s.x - px) * (s.x - px) + (s.z - pz) * (s.z - pz)
-    if (n > best || (n === best && n > 0 && d < bestD)) {
-      best = n
-      bestD = d
-      bx = s.x
-      bz = s.z
+  for (let iz = -steps; iz <= steps; iz++) {
+    const z = pz + iz * 0.5
+    for (let ix = -steps; ix <= steps; ix++) {
+      const x = px + ix * 0.5
+      const n = countAt(x, z)
+      if (n > best) {
+        best = n
+        bx = x
+        bz = z
+      }
     }
   }
   if (best <= 0) return { x: px, z: pz }
@@ -176,7 +159,7 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
     },
     sync() {
       if (phase === 'idle') return
-      const visual = height > TUNING.bell.height + 0.05 ? 3 : 2.6
+      const visual = height > TUNING.bell.height + 0.05 ? 3.2 : 2.6
       const scale = visual / TUNING.bell.body
       arsenal.add({
         kind: ARSENAL_PART.bell,
@@ -198,15 +181,16 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
         hot: 0,
         swing,
       })
-      const coreY = y + 0.55 * scale
+      const lip = 0.4 * scale
+      const coreY = y + 0.28 * scale
       probeAdd({
         kind: 'bell',
         level: shownLevel,
-        x: tx,
+        x: tx + lip,
         y: coreY,
-        z: tz + 0.22 * scale,
-        rimX: tx + 0.46 * scale,
-        rimY: y + 0.02 * scale,
+        z: tz,
+        rimX: tx + 0.22 * scale,
+        rimY: y + 0.9 * scale,
         rimZ: tz,
         floorX: tx + 0.7 * scale,
         floorY: 0.02,
@@ -304,7 +288,7 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
   function slam(horde: Horde, might: number, ctx: HordeCtx) {
     const radius = TUNING.bell.slamRadius * reachMul()
     hurt(horde, tx, tz, radius, TUNING.bell.slam, might, ctx)
-    fx.shock(tx, tz, radius)
+    fx.shock(tx, tz, radius * (shownLevel >= 5 ? 1.18 : 1))
     fx.dust(tx, tz)
   }
 
@@ -312,7 +296,7 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
     const radius = tollRadius * reachMul()
     const daze = TUNING.bell.daze * endureMul()
     hurt(horde, tx, tz, radius, tollDamage, might, ctx)
-    fx.shock(tx, tz, radius)
+    fx.shock(tx, tz, radius * (shownLevel >= 5 ? 1.18 : 1))
     onToll()
     if (sun) horde.pullTo(tx, tz, radius, TUNING.bell.pull)
     else {

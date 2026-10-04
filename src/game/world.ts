@@ -302,6 +302,53 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     polygonOffset: true,
     polygonOffsetFactor: -2,
   })
+  inlayMat.customProgramCacheKey = () => 'inlay-shade'
+  inlayMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uSun = floor.uniforms.uSun
+    shader.uniforms.uDir = floor.uniforms.uDir
+    shader.uniforms.uCosBeta = floor.uniforms.uCosBeta
+    shader.uniforms.uPillars = floor.uniforms.uPillars
+    shader.uniforms.uPillarN = floor.uniforms.uPillarN
+    const decl = `#include <common>
+varying vec3 vMedalWorld;
+uniform vec2 uSun;
+uniform vec2 uDir;
+uniform float uCosBeta;
+uniform vec3 uPillars[12];
+uniform float uPillarN;
+float medalClearance(vec2 s, vec2 p, vec2 c, float r) {
+  vec2 d = p - s;
+  float len2 = dot(d, d);
+  if (len2 < 1e-6) return length(s - c) - r;
+  float t = clamp(dot(c - s, d) / len2, 0.0, 1.0);
+  return length(s + d * t - c) - r;
+}`
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', decl)
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvMedalWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', decl)
+      .replace(
+        '#include <opaque_fragment>',
+        `vec2 mp = vMedalWorld.xz;
+vec2 toP = mp - uSun;
+float dist = length(toP);
+vec2 nrm = dist > 1e-4 ? toP / dist : uDir;
+float cosAng = dot(nrm, uDir);
+float cone = smoothstep(0.0, 0.4, (cosAng - uCosBeta) * max(dist, 0.001));
+float clearN = 40.0;
+for (int i = 0; i < 4; i++) clearN = min(clearN, medalClearance(uSun, mp, uPillars[i].xy, uPillars[i].z));
+if (uPillarN > 4.5) {
+  for (int i = 4; i < 12; i++) {
+    if (float(i) >= uPillarN) break;
+    clearN = min(clearN, medalClearance(uSun, mp, uPillars[i].xy, uPillars[i].z));
+  }
+}
+float shadow = smoothstep(-0.4, 0.4, clearN);
+diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
+#include <opaque_fragment>`,
+      )
+  }
   const shell = new Mesh(buildShell(), wallMat)
   const pillars = new Mesh(buildPillars(), pillarMat)
   const wingFloor = new Mesh(buildWingFloors(), createWingFloorMaterial(floor.uniforms))
@@ -318,7 +365,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const traps = createTraps()
   const inlay = new Mesh(buildInlay(), inlayMat)
   inlay.renderOrder = 1
-  inlay.visible = false
   const outer = new Mesh(new PlaneGeometry(900, 900).rotateX(-Math.PI / 2), outerMat)
   outer.position.y = -0.05
   const skyHeight = 140
@@ -2222,13 +2268,13 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       const bloomT = performance.now()
       if (hideWeaponDraw) {
         arsenal.mesh.visible = false
-        fx.mesh.visible = false
+        fx.maskToHero()
       }
       if (quality.tier === 'high') bloom.render(gpu.renderer, gpu.scene, follow.camera)
       else gpu.renderer.render(gpu.scene, follow.camera)
       if (hideWeaponDraw) {
         arsenal.mesh.visible = arsenal.mesh.count > 0
-        fx.mesh.visible = true
+        fx.unmask()
       }
       profBloom = performance.now() - bloomT
       if (activeMap !== 'stair') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)

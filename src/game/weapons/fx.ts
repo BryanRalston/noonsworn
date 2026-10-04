@@ -164,6 +164,9 @@ export interface WeaponFx {
   setFocus: (x: number, z: number) => void
   update: (dt: number) => void
   clear: () => void
+  /** Weapon-off captures keep Sela's ring. It is not a weapon. */
+  maskToHero: () => void
+  unmask: () => void
   ready: Promise<void>
 }
 
@@ -296,6 +299,19 @@ export function createWeaponFx(): WeaponFx {
   ord.fill(-1)
   let nOrder = 0
   let cursor = RESERVED
+  let heroDraw = -1
+  let masked = false
+  let savedCount = 0
+  const savedMat = new Float32Array(16)
+  const savedUv = new Float32Array(4)
+  const heroMat = new Float32Array(16)
+  const heroUv = new Float32Array(4)
+  const savedFlag = new Float32Array(1)
+  const savedHot = new Float32Array(1)
+  const savedCol = new Float32Array(3)
+  const heroFlag = new Float32Array(1)
+  const heroHot = new Float32Array(1)
+  const heroCol = new Float32Array(3)
   let tier: TierName = 'high'
   let active = 0
   let salt = 1
@@ -578,6 +594,7 @@ export function createWeaponFx(): WeaponFx {
     },
     update(dt) {
       let nA = 0
+      heroDraw = -1
       const limit = cap()
       let drawn = 0
       const face = TUNING.camera.yaw
@@ -631,6 +648,7 @@ export function createWeaponFx(): WeaponFx {
         hotA.setX(n, hotBit[i] ? 1 : 0)
         tint.setRGB((cr[i] ?? 0) * fade, (cg[i] ?? 0) * fade, (cb[i] ?? 0) * fade)
         mesh.setColorAt(n, tint)
+        if (i === SLOT_HERO) heroDraw = n
         nA++
       }
       mesh.count = nA
@@ -643,7 +661,69 @@ export function createWeaponFx(): WeaponFx {
         if (mesh.instanceColor) stageFx(mesh.instanceColor, nA * 3, fxRange.color)
       }
     },
+    maskToHero() {
+      if (masked) return
+      masked = true
+      savedCount = mesh.count
+      if (heroDraw < 0 || savedCount < 1) {
+        mesh.count = 0
+        mesh.visible = false
+        return
+      }
+      const mat = mesh.instanceMatrix.array as Float32Array
+      const uv = uvA.array as Float32Array
+      const col = mesh.instanceColor?.array as Float32Array | undefined
+      if (heroDraw !== 0) {
+        savedMat.set(mat.subarray(0, 16))
+        savedUv.set(uv.subarray(0, 4))
+        savedFlag[0] = flagA.getX(0)
+        savedHot[0] = hotA.getX(0)
+        if (col) savedCol.set(col.subarray(0, 3))
+        heroMat.set(mat.subarray(heroDraw * 16, heroDraw * 16 + 16))
+        heroUv.set(uv.subarray(heroDraw * 4, heroDraw * 4 + 4))
+        heroFlag[0] = flagA.getX(heroDraw)
+        heroHot[0] = hotA.getX(heroDraw)
+        if (col) heroCol.set(col.subarray(heroDraw * 3, heroDraw * 3 + 3))
+        mat.set(heroMat, 0)
+        uv.set(heroUv, 0)
+        flagA.setX(0, heroFlag[0] ?? 0)
+        hotA.setX(0, heroHot[0] ?? 0)
+        if (col) col.set(heroCol, 0)
+      }
+      mesh.count = 1
+      mesh.visible = true
+      stageFx(mesh.instanceMatrix, 16, fxRange.matrix)
+      stageFx(uvA, 4, fxRange.uv)
+      stageFx(flagA, 1, fxRange.flag)
+      stageFx(hotA, 1, fxRange.hot)
+      if (mesh.instanceColor) stageFx(mesh.instanceColor, 3, fxRange.color)
+    },
+    unmask() {
+      if (!masked) return
+      masked = false
+      const mat = mesh.instanceMatrix.array as Float32Array
+      const uv = uvA.array as Float32Array
+      const col = mesh.instanceColor?.array as Float32Array | undefined
+      if (heroDraw > 0) {
+        mat.set(savedMat, 0)
+        uv.set(savedUv, 0)
+        flagA.setX(0, savedFlag[0] ?? 0)
+        hotA.setX(0, savedHot[0] ?? 0)
+        if (col) col.set(savedCol, 0)
+      }
+      mesh.count = savedCount
+      mesh.visible = savedCount > 0
+      if (savedCount > 0) {
+        stageFx(mesh.instanceMatrix, savedCount * 16, fxRange.matrix)
+        stageFx(uvA, savedCount * 4, fxRange.uv)
+        stageFx(flagA, savedCount, fxRange.flag)
+        stageFx(hotA, savedCount, fxRange.hot)
+        if (mesh.instanceColor) stageFx(mesh.instanceColor, savedCount * 3, fxRange.color)
+      }
+    },
     clear() {
+      masked = false
+      heroDraw = -1
       life.fill(0)
       ord.fill(-1)
       nOrder = 0

@@ -280,6 +280,12 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
         litHold = 0
         return
       }
+      const offer = document.getElementById('level-up')
+      if (step === 5 && offer && !offer.hidden) {
+        label.hidden = true
+        hideArrow()
+        return
+      }
       if (step === 2 && timer >= 3) litHold = now.inLight ? litHold + dt : 0
       timer += dt
       if (timer >= 12 || done()) advance()

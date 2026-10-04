@@ -128,6 +128,21 @@ export function createFlare(fx: WeaponFx): Flare {
         s.life -= dt
         if (s.life <= 0) spots.splice(i, 1)
       }
+      // Weapon light only. mapLit (Heliograph footing) does not read these spots.
+      for (let i = 0; i < spots.length; i++) {
+        const s = spots[i]
+        if (!s || s.life <= 0) continue
+        const n = hashQuery(s.x, s.z, s.r, QUERY)
+        const r2 = s.r * s.r
+        for (let k = 0; k < n; k++) {
+          const slot = QUERY[k] ?? -1
+          if (slot < 0 || !horde.living(slot)) continue
+          const dx = (horde.x[slot] ?? 0) - s.x
+          const dz = (horde.z[slot] ?? 0) - s.z
+          if (dx * dx + dz * dz > r2) continue
+          horde.washFor(slot, 0.2)
+        }
+      }
       if (level <= 0) return
       flare.cooldown -= dt
       if (flare.cooldown > 0) return

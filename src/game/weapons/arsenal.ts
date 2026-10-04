@@ -41,11 +41,16 @@ export interface ArsenalItem {
   swing: number
 }
 
-// Linear values chosen so ACES at exposure 1.32 lands inside the W1 canvas gates.
-const GOLD = [1.05, 0.46, 0.07]
+// Linear values chosen so ACES at exposure 1.32 lands on canvas gold.
+// (1.033, 0.249, 0) → about #F8B437, hue 39, sat 78, V 97.
+// A hotter core (luma ≥ 1.53) tonemaps to sat ~26, so bloom-threshold gold
+// and the canvas saturation gate cannot be the same pixel under this ACES.
+const GOLD = [1.033, 0.249, 0.0]
 const EDGE = [1.4, 1.05, 0.42]
 const SPINE = [0.045, 0.018, 0.006]
-const BRONZE = [0.062, 0.024, 0.008]
+// Dark bronze above hue 26 so a rim sample is not a red telegraph.
+// (0.04, 0.023, 0) → about #312000, hue 39, contrast > 4:1 on lit sandstone.
+const BRONZE = [0.03, 0.016, 0.0]
 
 function pushTri(
   part: number,
@@ -236,8 +241,12 @@ varying float vEmit;
 varying float vHot;
 #include <fog_pars_fragment>
 void main() {
-  vec3 col = vColor + vec3(1.2, 0.5, 0.08) * vEmit * 1.15;
-  col = mix(col, vec3(1.35, 0.62, 0.12), clamp(vHot, 0.0, 1.0) * 0.45);
+  // Emit used to add a hot bias that ACES crushed to pale yellow (sat ~26).
+  // The vertex gold is already the tonemap target, so emit only holds that gold
+  // against a darker neighbour. vHot stays a small lift so a white-hot edge can
+  // still sit on EDGE vertices without repainting the core.
+  vec3 col = vColor;
+  col = mix(col, vec3(1.033, 0.249, 0.0), clamp(vEmit, 0.0, 1.0) * 0.35);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

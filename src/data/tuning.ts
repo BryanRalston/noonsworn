@@ -194,8 +194,8 @@ export const TUNING = {
     shadePeriod: 1.4,
     knock: 1.5,
     knockL5: 2,
-    disc: 0.5,
-    discL5: 0.6,
+    disc: 0.54,
+    discL5: 0.648,
     // Boss hits only. Measured Newel mean 189.7 s at 0.535, inside the pre-W1 ±15% window.
     boss: 0.535,
   },

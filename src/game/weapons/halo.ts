@@ -214,8 +214,8 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
           hot: 0,
           swing: 0,
         })
-        const rim = 0.5 * discScale
-        if (!halo.sun && d === 0) fx.ward(px, pz, halo.orbit * (1 + wardPulse * 0.08))
+        const rim = 0.43 * discScale
+        if (!halo.sun && d === 0) fx.ward(px, pz, halo.orbit * (level >= 5 ? 1.18 : 1) * (1 + wardPulse * 0.08))
         probeAdd({
           kind: 'halo',
           level,

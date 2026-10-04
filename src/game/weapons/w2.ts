@@ -12,9 +12,9 @@ import type { WeaponFx } from './fx'
 import { endureMul, reachMul } from './passives'
 import { probeAdd } from './probe'
 
-const GOLD = [1.05, 0.46, 0.07]
+const GOLD = [1.033, 0.249, 0.0]
 const EDGE = [1.4, 1.05, 0.42]
-const BRONZE = [0.062, 0.024, 0.008]
+const BRONZE = [0.03, 0.016, 0.0]
 const QH = new Int16Array(48)
 const QS = new Int16Array(48)
 const QK = new Int16Array(48)
@@ -117,7 +117,12 @@ function prismPart(): { position: Float32Array; color: Float32Array; emit: Float
     const b = eq[(i + 1) % 4] ?? top
     pushTri(pos, col, em, top, a, b, GOLD, 0.85)
     pushTri(pos, col, em, bot, b, a, BRONZE, 0)
-    quad(pos, col, em, a, b, [b[0] ?? 0, (b[1] ?? 0) + 0.02, b[2] ?? 0], [a[0] ?? 0, (a[1] ?? 0) + 0.02, a[2] ?? 0], EDGE, 1)
+    quad(pos, col, em, a, b, [b[0] ?? 0, (b[1] ?? 0) + 0.02, b[2] ?? 0], [a[0] ?? 0, (a[1] ?? 0) + 0.02, a[2] ?? 0], BRONZE, 0)
+    const ax = (a[0] ?? 0) * 0.9
+    const az = (a[2] ?? 0) * 0.9
+    const bx = (b[0] ?? 0) * 0.9
+    const bz = (b[2] ?? 0) * 0.9
+    quad(pos, col, em, [ax, -0.08, az], [bx, -0.08, bz], [bx, 0.08, bz], [ax, 0.08, az], BRONZE, 0)
   }
   return pack(pos, col, em)
 }
@@ -361,12 +366,15 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
     return hit
   }
 
-  function rayStrike(horde: Horde, ox: number, oz: number, tx: number, tz: number, amount: number, pierce: number, might: number, ctx: HordeCtx, width: number, dazzle: number) {
+  function rayStrike(horde: Horde, ox: number, oz: number, tx: number, tz: number, amount: number, pierce: number, might: number, ctx: HordeCtx, width: number, dazzle: number, range: number) {
     const dx = tx - ox
     const dz = tz - oz
-    const len = Math.hypot(dx, dz) || 1
-    const yaw = yawFromDirection(dx / len, dz / len)
-    fx.helioRay((ox + tx) * 0.5, 1.2, (oz + tz) * 0.5, yaw, len, width * reachMul(), 0.16)
+    const span = Math.hypot(dx, dz) || 1
+    const len = range > 0 ? range : span
+    const endX = ox + (dx / span) * len
+    const endZ = oz + (dz / span) * len
+    const yaw = yawFromDirection(dx / span, dz / span)
+    fx.helioRay((ox + endX) * 0.5, 1.2, (oz + endZ) * 0.5, yaw, len, width * reachMul(), 0.16)
     fx.glow(ox, oz, 0.45)
     let hits = 0
     const want = 1 + pierce
@@ -381,9 +389,9 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         if (s < 0 || s === skip || !horde.living(s)) continue
         const ex = horde.x[s] ?? 0
         const ez = horde.z[s] ?? 0
-        const along = ((ex - ox) * dx + (ez - oz) * dz) / (len * len)
+        const along = ((ex - ox) * (endX - ox) + (ez - oz) * (endZ - oz)) / (len * len)
         if (along < 0 || along > 1) continue
-        if (segDist2(ox, oz, tx, tz, ex, ez) > 0.81) continue
+        if (segDist2(ox, oz, endX, endZ, ex, ez) > 0.81) continue
         const d2 = (ex - ox) * (ex - ox) + (ez - oz) * (ez - oz)
         if (d2 >= bestD) continue
         bestD = d2
@@ -400,7 +408,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       skip = best
     }
     const boss = horde.bossAt
-    if (boss && segDist2(ox, oz, tx, tz, boss.x, boss.z) <= (boss.r + 0.4) * (boss.r + 0.4)) {
+    if (boss && segDist2(ox, oz, endX, endZ, boss.x, boss.z) <= (boss.r + 0.4) * (boss.r + 0.4)) {
       horde.bossHit?.(tx, tz, boss.r, amount * TUNING.helio.boss, 'weapon', might, stampN++)
     }
     return hits
@@ -491,14 +499,14 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       }
     }
     mirrorYaw = yawFromDirection(aimX - mirrorX, aimZ - mirrorZ) + Math.PI
-    rayStrike(horde, mirrorX, mirrorZ, aimX, aimZ, amount, pierce, might, ctx, width, dazzle)
+    rayStrike(horde, mirrorX, mirrorZ, aimX, aimZ, amount, pierce, might, ctx, width, dazzle, range)
     banN = 0
     if (skip >= 0) ban[banN++] = skip
     const extra = multi > 2 ? 2 : multi
     for (let i = 0; i < extra; i++) {
       const slot = nearest(horde, px, pz, range, -1, QH)
       if (slot < 0) break
-      rayStrike(horde, mirrorX, mirrorZ, horde.x[slot] ?? px, horde.z[slot] ?? pz, amount, pierce, might, ctx, width, dazzle)
+      rayStrike(horde, mirrorX, mirrorZ, horde.x[slot] ?? px, horde.z[slot] ?? pz, amount, pierce, might, ctx, width, dazzle, range)
       if (banN < ban.length) ban[banN++] = slot
     }
     banN = 0
@@ -828,7 +836,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
             if (dx * dx + dz * dz > r2) continue
             hitSlot(horde, slot, ring, might, ctx)
           }
-          fx.shock(kx[i] ?? 0, kz[i] ?? 0, radius)
+          fx.shock(kx[i] ?? 0, kz[i] ?? 0, radius * (level >= 5 ? 1.18 : 1))
           horde.bossHit?.(kx[i] ?? 0, kz[i] ?? 0, radius, ring * row.boss, 'weapon', might, 9400 + i)
         }
       }
@@ -1060,7 +1068,8 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
     },
     sync(px, pz, helio, scarab, stake, prism, time) {
       if (helio > 0) {
-        arsenal.add({ kind: ARSENAL_PART.mirror, x: mirrorX || px + 0.55, y: 1.7, z: mirrorZ || pz, yaw: mirrorYaw, scale: reachMul(), hot: bank > 0 ? 1 : 0, swing: 0 })
+        const mirrorScale = reachMul() * (shownHelio >= 5 ? 1.56 : 1.3)
+        arsenal.add({ kind: ARSENAL_PART.mirror, x: mirrorX || px + 0.55, y: 1.7, z: mirrorZ || pz, yaw: mirrorYaw, scale: mirrorScale, hot: bank > 0 ? 1 : 0, swing: 0 })
         for (let i = 0; i < bank; i++) {
           const a = (i / Math.max(1, bank)) * Math.PI * 2
           fx.glint((mirrorX || px) + Math.cos(a) * 0.42, 1.75, (mirrorZ || pz) + Math.sin(a) * 0.42, 0.18)
@@ -1071,10 +1080,10 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
           x: mirrorX || px + 0.55,
           y: 1.7,
           z: mirrorZ || pz,
-          rimX: (mirrorX || px) + 0.5,
-          rimY: 1.7,
+          rimX: (mirrorX || px) + 0.46 * mirrorScale,
+          rimY: 1.74,
           rimZ: mirrorZ || pz,
-          floorX: (mirrorX || px) + 0.85,
+          floorX: (mirrorX || px) + 1.8,
           floorY: 0.02,
           floorZ: mirrorZ || pz,
         })
@@ -1083,7 +1092,8 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         for (let i = 0; i < SCARABS; i++) {
           if (!sAlive[i]) continue
           const yaw = yawFromDirection(svx[i] ?? 0, svz[i] ?? 1) + Math.PI
-          arsenal.add({ kind: ARSENAL_PART.scarab, x: sx[i] ?? 0, y: 0.45, z: sz[i] ?? 0, yaw, scale: 1, hot: 0, swing: time * 14 })
+          const scarabScale = shownScarab >= 5 ? 2.6 : 2.2
+          arsenal.add({ kind: ARSENAL_PART.scarab, x: sx[i] ?? 0, y: 0.45, z: sz[i] ?? 0, yaw, scale: scarabScale, hot: 0, swing: time * 14 })
           if (i === 0 || (sMode[i] ?? 0) === 0) {
             probeAdd({
               kind: 'scarablight',
@@ -1091,10 +1101,10 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
               x: sx[i] ?? 0,
               y: 0.55,
               z: (sz[i] ?? 0) + 0.1,
-              rimX: (sx[i] ?? 0) + 0.32,
-              rimY: 0.45,
+              rimX: (sx[i] ?? 0) + 0.38 * scarabScale,
+              rimY: 0.5,
               rimZ: sz[i] ?? 0,
-              floorX: (sx[i] ?? 0) + 0.5,
+              floorX: (sx[i] ?? 0) + 1.4,
               floorY: 0.02,
               floorZ: sz[i] ?? 0,
             })
@@ -1104,15 +1114,16 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       if (stake > 0) {
         for (let i = 0; i < STAKES; i++) {
           if (!kAlive[i]) continue
-          arsenal.add({ kind: ARSENAL_PART.stake, x: kx[i] ?? 0, y: 0, z: kz[i] ?? 0, yaw: yawFromDirection(kDx[i] ?? 0, kDz[i] ?? 1), scale: 1, hot: kSun[i] ? 1 : 0, swing: 0 })
+          const stakeScale = shownStake >= 5 ? 1.9 : 1.45
+          arsenal.add({ kind: ARSENAL_PART.stake, x: kx[i] ?? 0, y: 0, z: kz[i] ?? 0, yaw: yawFromDirection(kDx[i] ?? 0, kDz[i] ?? 1), scale: stakeScale, hot: kSun[i] ? 1 : 0, swing: 0 })
           probeAdd({
             kind: 'stakes',
             level: shownStake,
             x: kx[i] ?? 0,
-            y: 1.9,
+            y: 1.98 * stakeScale,
             z: kz[i] ?? 0,
-            rimX: (kx[i] ?? 0) + 0.14,
-            rimY: 0.4,
+            rimX: (kx[i] ?? 0) + 0.06 * stakeScale,
+            rimY: 1.0 * stakeScale,
             rimZ: kz[i] ?? 0,
             floorX: (kx[i] ?? 0) + 0.45,
             floorY: 0.02,
@@ -1121,7 +1132,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         }
       }
       if (prism > 0) {
-        const scale = reachMul()
+        const scale = reachMul() * (shownPrism >= 5 ? 2.6 : 1.5)
         for (let i = 0; i < PRISMS; i++) {
           if (!pAlive[i]) continue
           arsenal.add({ kind: ARSENAL_PART.prism, x: pxA[i] ?? 0, y: 0.9, z: pzA[i] ?? 0, yaw: time * 2 + i, scale, hot: 1, swing: 0 })
@@ -1131,7 +1142,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
             x: pxA[i] ?? 0,
             y: 0.9,
             z: pzA[i] ?? 0,
-            rimX: (pxA[i] ?? 0) + 0.32 * scale,
+            rimX: (pxA[i] ?? 0) + 0.28 * scale,
             rimY: 0.9,
             rimZ: pzA[i] ?? 0,
             floorX: (pxA[i] ?? 0) + 0.55 * scale,
