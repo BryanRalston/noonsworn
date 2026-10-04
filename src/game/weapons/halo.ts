@@ -1,9 +1,11 @@
 import { CylinderGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
 import { TUNING } from '../../data/tuning'
+import { hasteMul } from '../sunClock'
 import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
+import { ARSENAL_PART, type Arsenal } from './arsenal'
 import type { Horde, HordeCtx } from '../enemies/horde'
-import { type WeaponFx } from './fx'
+import type { WeaponFx } from './fx'
 
 const QUERY = new Int16Array(48)
 const bossStamp = new Float64Array(TUNING.halo.maxDiscs)
@@ -43,95 +45,170 @@ export interface Halo {
   angle: number
   stamps: Float32Array
   pulses: number
-  update: (dt: number, px: number, pz: number, horde: Horde, level: number, might: number, time: number, ctx: HordeCtx) => void
+  orbit: number
+  period: number
+  sun: boolean
+  live: number
+  update: (
+    dt: number,
+    px: number,
+    pz: number,
+    horde: Horde,
+    level: number,
+    might: number,
+    haste: number,
+    time: number,
+    ctx: HordeCtx,
+  ) => void
   sync: (px: number, pz: number, level: number) => void
   clear: () => void
   onImpact: ((x: number, z: number, lit: boolean) => void) | null
 }
 
-export function createHalo(fx: WeaponFx): Halo {
-  const geo = new CylinderGeometry(TUNING.halo.discR, TUNING.halo.discR, 0.07, 6)
-  geo.rotateX(0)
-  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), TUNING.halo.maxDiscs)
+export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z: number) => boolean): Halo {
+  const geo = new CylinderGeometry(0.05, 0.05, 0.02, 3)
+  const mesh = makeCrowd(geo, new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), 1)
+  mesh.count = 0
+  mesh.visible = false
   const stamps = new Float32Array(TUNING.hordeCap * TUNING.halo.maxDiscs)
+  const knockAt = new Float32Array(TUNING.hordeCap)
+  knockAt.fill(-10)
   let rayAt = -1
-  let arcAt = 0
+  let footSun = false
+  let footHold = 0
+  let footReady = false
+  let easeT = 1
+  let easeOrbit: number = TUNING.halo.sunOrbit
+  let easePeriod: number = TUNING.halo.sunPeriod
+  let targetOrbit: number = TUNING.halo.sunOrbit
+  let targetPeriod: number = TUNING.halo.sunPeriod
+  let discScale = 1
   const halo: Halo = {
     mesh,
     angle: 0,
     stamps,
     pulses: 0,
+    orbit: TUNING.halo.sunOrbit,
+    period: TUNING.halo.sunPeriod,
+    sun: true,
+    live: 0,
     onImpact: null,
     clear() {
       halo.angle = 0
       halo.pulses = 0
+      halo.live = 0
       rayAt = -1
+      footReady = false
+      footHold = 0
       stamps.fill(0)
+      knockAt.fill(-10)
     },
-    update(dt, px, pz, horde, level, might, time, ctx) {
+    update(dt, px, pz, horde, level, might, haste, time, ctx) {
       const stats = haloStats(level)
-      if (!stats) return
-      halo.angle += dt * ((Math.PI * 2) / TUNING.halo.period)
-      const big = level >= 5
-      const blades = big ? 6 : 3
-      const arc = time - arcAt > 0.12
-      if (arc) arcAt = time
-      for (let d = 0; d < blades; d++) {
-        const a = halo.angle + (d * Math.PI * 2) / blades
-        const hx = px + Math.cos(a) * stats.orbit
-        const hz = pz + Math.sin(a) * stats.orbit
-        fx.blade(d, hx, hz, TUNING.camera.yaw, big)
+      if (!stats) {
+        halo.live = 0
+        return
       }
+      const want = mapLit(px, pz)
+      if (!footReady) {
+        footSun = want
+        footReady = true
+        footHold = 0
+      } else if (want !== footSun) {
+        footHold += dt
+        if (footHold >= TUNING.halo.footHold) {
+          footSun = want
+          footHold = 0
+        }
+      } else footHold = 0
+      const big = level >= 5
+      const nextOrbit = footSun ? (big ? TUNING.halo.sunOrbitL5 : TUNING.halo.sunOrbit) : big ? TUNING.halo.shadeOrbitL5 : TUNING.halo.shadeOrbit
+      const nextPeriod = (footSun ? TUNING.halo.sunPeriod : TUNING.halo.shadePeriod) * hasteMul(haste)
+      if (nextOrbit !== targetOrbit || nextPeriod !== targetPeriod) {
+        easeOrbit = halo.orbit
+        easePeriod = halo.period
+        easeT = 0
+        targetOrbit = nextOrbit
+        targetPeriod = nextPeriod
+      }
+      easeT = Math.min(1, easeT + dt / TUNING.halo.ease)
+      halo.orbit = easeOrbit + (targetOrbit - easeOrbit) * easeT
+      halo.period = easePeriod + (targetPeriod - easePeriod) * easeT
+      halo.sun = footSun
+      halo.angle += dt * ((Math.PI * 2) / Math.max(0.2, halo.period))
+      discScale = (big ? TUNING.halo.discL5 : TUNING.halo.disc) / 0.5
+      const damage = stats.damage * (footSun ? TUNING.halo.sunDamage : 1)
+      const reach = TUNING.halo.discR + TUNING.halo.reachPad
+      const knock = big ? TUNING.halo.knockL5 : TUNING.halo.knock
       if (big && time - rayAt > 0.36) {
         rayAt = time
         halo.pulses++
-        for (let r = 0; r < 10; r++) {
-          const ray = (r / 10) * Math.PI * 2
-          const ox = Math.cos(ray)
-          const oz = Math.sin(ray)
-          fx.ray(px + ox * (stats.orbit + 0.4), 1.15, pz + oz * (stats.orbit + 0.4), TUNING.camera.yaw, 1.2, 0.12, 0.4)
-        }
       } else if (!big && time - rayAt > 1) {
         rayAt = time
         halo.pulses++
       }
-      const n = hashQuery(px, pz, stats.orbit + 1.2, QUERY)
+      const n = hashQuery(px, pz, halo.orbit + reach, QUERY)
       for (let d = 0; d < stats.count; d++) {
         const a = halo.angle + (d * Math.PI * 2) / stats.count
-        const dx = Math.cos(a) * stats.orbit
-        const dz = Math.sin(a) * stats.orbit
-        const sx = px + dx
-        const sz = pz + dz
+        const sx = px + Math.cos(a) * halo.orbit
+        const sz = pz + Math.sin(a) * halo.orbit
+        const tangent = a + Math.PI / 2
+        fx.ray(sx, 1.05, sz, tangent, 0.9, 0.22, 0.12)
         for (let k = 0; k < n; k++) {
           const slot = QUERY[k] ?? -1
           if (slot < 0 || !horde.alive[slot]) continue
           const ex = (horde.x[slot] ?? 0) - sx
           const ez = (horde.z[slot] ?? 0) - sz
-          const reach = TUNING.halo.discR + TUNING.halo.reachPad
           if (ex * ex + ez * ez > reach * reach) continue
           const stampAt = slot * TUNING.halo.maxDiscs + d
           if (time - (stamps[stampAt] ?? 0) < TUNING.halo.hitEvery) continue
           stamps[stampAt] = time
-          const hit = horde.damage(slot, stats.damage, 'weapon', might)
+          const hit = horde.damage(slot, damage, 'weapon', might)
           if (hit === 0) continue
+          if (!footSun && time - (knockAt[slot] ?? -10) >= TUNING.halo.hitEvery) {
+            knockAt[slot] = time
+            const ox = (horde.x[slot] ?? sx) - px
+            const oz = (horde.z[slot] ?? sz) - pz
+            const od = Math.hypot(ox, oz) || 1
+            horde.nudge(slot, (ox / od) * knock, (oz / od) * knock)
+          }
           const hx = horde.x[slot] ?? sx
           const hz = horde.z[slot] ?? sz
-          const lit = ctx.isLit(hx, hz)
-          halo.onImpact?.(hx, hz, lit)
-          fx.hit(hx, hz, lit)
+          halo.onImpact?.(hx, hz, ctx.isLit(hx, hz))
+          fx.hit(hx, hz, ctx.isLit(hx, hz))
           if (hit === 2) horde.slay(slot, ctx)
         }
         if ((bossStamp[d] ?? 0) > time) bossStamp[d] = 0
         const gate = !horde.bossLock || time - (bossStamp[d] ?? 0) >= TUNING.halo.hitEvery
         if (gate) {
-          const landed = horde.bossHit?.(sx, sz, TUNING.halo.discR + TUNING.halo.reachPad, stats.damage, 'weapon', might, 10 + d)
+          const landed = horde.bossHit?.(sx, sz, reach, damage * TUNING.halo.boss, 'weapon', might, 10 + d)
           if (landed && horde.bossLock) bossStamp[d] = time
         }
       }
+      halo.live = stats.count
     },
-    sync() {
+    sync(px, pz, level) {
+      const stats = haloStats(level)
       mesh.count = 0
       mesh.visible = false
+      if (!stats) {
+        halo.live = 0
+        return
+      }
+      for (let d = 0; d < stats.count; d++) {
+        const a = halo.angle + (d * Math.PI * 2) / stats.count
+        arsenal.add({
+          kind: ARSENAL_PART.disc,
+          x: px + Math.cos(a) * halo.orbit,
+          y: 1.05,
+          z: pz + Math.sin(a) * halo.orbit,
+          yaw: a,
+          scale: discScale,
+          hot: 0,
+          swing: 0,
+        })
+      }
+      halo.live = stats.count
     },
   }
   return halo

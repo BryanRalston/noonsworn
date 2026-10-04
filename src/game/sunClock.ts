@@ -90,6 +90,11 @@ export function createSunClock(): SunClock {
   return sun
 }
 
+/** Cooldown scale shared by the four weapons. Haste 0 leaves the printed cadence. */
+export function hasteMul(ranks: number): number {
+  return Math.max(0.2, 1 - TUNING.passive.haste * ranks)
+}
+
 /** Multiplier shared by weapons and the Noon Cut. */
 export function damageAmount(base: number, lit: boolean, source: 'weapon' | 'cut', might: number, deep = false): number {
   let m = 1 + TUNING.passive.might * might

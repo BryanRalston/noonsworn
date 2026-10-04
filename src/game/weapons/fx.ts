@@ -50,26 +50,59 @@ const CELL = {
   scorch: 13,
   sunRing: 14,
   puff: 15,
+  sunspot: 16,
+  flareBand: 17,
+  flareCore: 18,
+  shockRing: 19,
+  bellShadow: 20,
+  gleam: 21,
+  lanceRibbon: 22,
+  impactStar: 23,
+  ray: 24,
+  scarabDust: 25,
+  stakeBlade: 26,
+  prismStar: 27,
+  fence: 28,
 } as const
 
 /** u, v, width, height in three.js UV space (flipY true). */
 const UV = [
-  [0, 0.759766, 0.25, 0.230468],
-  [0.259766, 0.759766, 0.230468, 0.230468],
-  [0.509766, 0.759766, 0.230468, 0.230468],
-  [0.759766, 0.759766, 0.230468, 0.230468],
-  [0.009766, 0.509766, 0.230468, 0.230468],
-  [0.259766, 0.509766, 0.230468, 0.230468],
-  [0.509766, 0.509766, 0.230468, 0.230468],
-  [0.759766, 0.509766, 0.230468, 0.230468],
-  [0.009766, 0.259766, 0.230468, 0.230468],
-  [0.259766, 0.259766, 0.230468, 0.230468],
-  [0.509766, 0.259766, 0.230468, 0.230468],
-  [0.759766, 0.259766, 0.230468, 0.230468],
-  [0.009766, 0.009766, 0.230468, 0.230468],
-  [0.259766, 0.009766, 0.230468, 0.230468],
-  [0.509766, 0.009766, 0.230468, 0.230468],
-  [0.759766, 0.009766, 0.230468, 0.230468],
+  [0, 0.839844, 0.166667, 0.153646],
+  [0.173177, 0.839844, 0.153646, 0.153646],
+  [0.339844, 0.839844, 0.153646, 0.153646],
+  [0.50651, 0.839844, 0.153646, 0.153646],
+  [0.673177, 0.839844, 0.153646, 0.153646],
+  [0.839844, 0.839844, 0.153646, 0.153646],
+  [0.00651, 0.673177, 0.153646, 0.153646],
+  [0.173177, 0.673177, 0.153646, 0.153646],
+  [0.339844, 0.673177, 0.153646, 0.153646],
+  [0.50651, 0.673177, 0.153646, 0.153646],
+  [0.673177, 0.673177, 0.153646, 0.153646],
+  [0.839844, 0.673177, 0.153646, 0.153646],
+  [0.00651, 0.50651, 0.153646, 0.153646],
+  [0.173177, 0.50651, 0.153646, 0.153646],
+  [0.339844, 0.50651, 0.153646, 0.153646],
+  [0.50651, 0.50651, 0.153646, 0.153646],
+  [0.673177, 0.506511, 0.153645, 0.153645],
+  [0.839844, 0.506511, 0.153645, 0.153645],
+  [0.006511, 0.339844, 0.153645, 0.153645],
+  [0.173177, 0.339844, 0.153645, 0.153645],
+  [0.339844, 0.339844, 0.153645, 0.153645],
+  [0.506511, 0.339844, 0.153645, 0.153645],
+  [0.673177, 0.339844, 0.153645, 0.153645],
+  [0.839844, 0.339844, 0.153645, 0.153645],
+  [0.006511, 0.173177, 0.153645, 0.153645],
+  [0.173177, 0.173177, 0.153645, 0.153645],
+  [0.339844, 0.173177, 0.153645, 0.153645],
+  [0.506511, 0.173177, 0.153645, 0.153645],
+  [0.673177, 0.173177, 0.153645, 0.153645],
+  [0.839844, 0.173177, 0.153645, 0.153645],
+  [0.006511, 0.006511, 0.153645, 0.153645],
+  [0.173177, 0.006511, 0.153645, 0.153645],
+  [0.339844, 0.006511, 0.153645, 0.153645],
+  [0.506511, 0.006511, 0.153645, 0.153645],
+  [0.673177, 0.006511, 0.153645, 0.153645],
+  [0.839844, 0.006511, 0.153645, 0.153645],
 ] as const
 
 function lin(hex: number): [number, number, number] {
@@ -107,6 +140,15 @@ export interface WeaponFx {
   anchor: (x: number, y: number, z: number, yaw: number) => void
   hero: (x: number, z: number) => void
   death: (x: number, z: number, lit: boolean) => void
+  ribbon: (x: number, y: number, z: number, yaw: number, length: number) => void
+  star: (x: number, z: number) => void
+  core: (x: number, z: number, radius: number) => void
+  band: (x: number, z: number, radius: number, life: number) => void
+  shock: (x: number, z: number, radius: number) => void
+  shadowDisc: (x: number, z: number, radius: number, life: number) => void
+  gleamMark: (slot: number, x: number, z: number) => void
+  sunspot: (x: number, z: number, radius: number, life: number) => void
+  dust: (x: number, z: number) => void
   tele: (x: number, z: number, yaw: number) => void
   setFocus: (x: number, z: number) => void
   update: (dt: number) => void
@@ -329,9 +371,10 @@ export function createWeaponFx(): WeaponFx {
     isHot = 0,
     isRibbon = 0,
   ) {
+    const pool = MAX - TUNING.gleam.glyphs
     if (active >= cap()) return
     const i = cursor
-    cursor = cursor + 1 >= MAX ? RESERVED : cursor + 1
+    cursor = cursor + 1 >= pool ? RESERVED : cursor + 1
     writeSlot(i, kind, px, py, pz, rot, w, h, seconds, rgb, how, rise, isHot, isRibbon)
   }
 
@@ -422,6 +465,42 @@ export function createWeaponFx(): WeaponFx {
     hero(px, pz) {
       writeSlot(SLOT_HERO, CELL.sunRing, px, 0.07, pz, 0, 2.5, 2.5, 0.25, FX.goldHot, 0, 0, 1)
     },
+    ribbon(px, py, pz, rot, length) {
+      put(CELL.lanceRibbon, px, py, pz, rot, 0.28, length, 0.18, FX.goldBlade, 0, 0, 0, 1)
+    },
+    star(px, pz) {
+      const at = toward(px, 0.9, pz, 0.4)
+      put(CELL.impactStar, at[0], at[1], at[2], TUNING.camera.yaw, 1.15, 1.15, 0.18, FX.goldHot, 5, 0, 1)
+    },
+    core(px, pz, radius) {
+      const d = Math.max(0.4, radius) * 2
+      put(CELL.flareCore, px, 0.2, pz, 0, d, d, TUNING.flare.core, FX.white, 0, 0, 1)
+    },
+    band(px, pz, radius, seconds) {
+      const d = Math.max(0.8, radius) * 2
+      put(CELL.flareBand, px, 0.12, pz, 0, d, d, seconds, FX.white, 3, 0, 0)
+    },
+    shock(px, pz, radius) {
+      const d = (Math.max(0.4, radius) * 2) / RING
+      put(CELL.shockRing, px, 0.14, pz, 0, d, d, 0.4, FX.gold, 3, 0)
+    },
+    shadowDisc(px, pz, radius, seconds) {
+      const d = Math.max(0.6, radius) * 2
+      put(CELL.bellShadow, px, 0.06, pz, 0, d, d, seconds, FX.gold, 0, 0)
+    },
+    gleamMark(slot, px, pz) {
+      if (slot < 0 || slot >= TUNING.gleam.glyphs) return
+      const at = toward(px, 1.35, pz, 0.35)
+      const i = MAX - TUNING.gleam.glyphs + slot
+      writeSlot(i, CELL.gleam, at[0], at[1], at[2], TUNING.camera.yaw, 0.85, 0.85, 0.08, FX.white, 5, 0, 0)
+    },
+    sunspot(px, pz, radius, seconds) {
+      const d = Math.max(0.4, radius) * 2
+      put(CELL.sunspot, px, 0.05, pz, 0, d, d, seconds, FX.white, 6, 0, 0)
+    },
+    dust(px, pz) {
+      put(CELL.puff, px, 0.35, pz, 0, 1.4, 0.7, 0.35, FX.gold, 5, 0.4)
+    },
     death(px, pz, lit) {
       salt = (salt + 17) | 0
       const n = 8
@@ -471,7 +550,11 @@ export function createWeaponFx(): WeaponFx {
           h = s
         }
         if (mode[i] === 2) y[i] = (y[i] ?? 0) + (vy[i] ?? 0) * dt
-        const fade = mode[i] === 3 ? Math.max(0.35, k) : k
+        let fade = mode[i] === 3 ? Math.max(0.35, k) : k
+        if (mode[i] === 6) {
+          const left = life[i] ?? 0
+          fade = left > 0.3 ? 1 : left / 0.3
+        }
         const how = mode[i] ?? 0
         dummy.position.set(x[i] ?? 0, y[i] ?? 0, z[i] ?? 0)
         dummy.rotation.set(0, 0, 0)

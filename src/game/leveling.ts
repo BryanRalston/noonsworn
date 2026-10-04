@@ -1,5 +1,8 @@
 import type { Rng } from '../core/rng'
+import { mulberry32 } from '../core/rng'
 import { TUNING } from '../data/tuning'
+import { bellText } from './weapons/bell'
+import { flareText } from './weapons/flare'
 import { haloText } from './weapons/halo'
 import { spearText } from './weapons/sunspear'
 
@@ -78,8 +81,18 @@ export function isSunBoon(id: number): boolean {
   return id === CARD.wide || id === CARD.longday || id === CARD.searing
 }
 
+export const WEAPON_IDS: readonly number[] = [CARD.spear, CARD.halo, CARD.flare, CARD.bell]
+export const PASSIVE_IDS: readonly number[] = [CARD.might, CARD.haste, CARD.swift, CARD.vitality, CARD.lodestone]
+export const SLOT_CAP = 6
+
+export function countHeld(ids: readonly number[], rank: (id: number) => number): number {
+  let n = 0
+  for (let i = 0; i < ids.length; i++) if (rank(ids[i] ?? -1) > 0) n++
+  return n
+}
+
 function isWeapon(id: number): boolean {
-  return id === CARD.spear || id === CARD.halo || id === CARD.flare || id === CARD.bell
+  return WEAPON_IDS.includes(id)
 }
 
 export function rankOf(build: Build, id: number): number {
@@ -138,22 +151,26 @@ export function rollCards(build: Build, rng: Rng, out: Card[], count = 3): numbe
   restPool.length = 0
   boonPool.length = 0
   const cap = TUNING.passive.max
+  const weaponsHeld = countHeld(WEAPON_IDS, (id) => rankOf(build, id))
+  const passivesHeld = countHeld(PASSIVE_IDS, (id) => rankOf(build, id))
+  const weaponRoom = (rank: number) => (rank <= 0 ? weaponsHeld < SLOT_CAP : rank < cap)
+  const passiveRoom = (rank: number) => (rank <= 0 ? passivesHeld < SLOT_CAP : rank < cap)
   const add = (id: number, room: boolean) => {
     if (!room) return
     if (isSunBoon(id)) boonPool.push(id)
     else restPool.push(id)
   }
-  add(CARD.spear, build.spear < cap)
-  add(CARD.halo, build.halo < cap)
-  add(CARD.might, build.might < cap)
-  add(CARD.haste, build.haste < cap)
-  add(CARD.swift, build.swift < cap)
-  add(CARD.vitality, build.vitality < cap)
-  add(CARD.lodestone, build.lodestone < cap)
+  add(CARD.spear, weaponRoom(build.spear))
+  add(CARD.halo, weaponRoom(build.halo))
+  add(CARD.might, passiveRoom(build.might))
+  add(CARD.haste, passiveRoom(build.haste))
+  add(CARD.swift, passiveRoom(build.swift))
+  add(CARD.vitality, passiveRoom(build.vitality))
+  add(CARD.lodestone, passiveRoom(build.lodestone))
   add(CARD.wide, build.wide < TUNING.wideMax)
   if (build.level >= 4) {
-    add(CARD.flare, build.flare < cap)
-    add(CARD.bell, build.bell < cap)
+    add(CARD.flare, weaponRoom(build.flare))
+    add(CARD.bell, weaponRoom(build.bell))
     add(CARD.longday, build.longday < cap)
     add(CARD.searing, build.searing < cap)
   }
@@ -216,12 +233,156 @@ export function describe(build: Build, id: number): Card {
   if (id === CARD.vitality) return cardOf(build, id, 'Vitality', '+20 max HP and heal 20', 5)
   if (id === CARD.lodestone) return cardOf(build, id, 'Lodestone', '+25% pickup radius', 5)
   if (id === CARD.wide) return cardOf(build, id, 'Wide Noon', 'the sun\'s beam gets wider', TUNING.wideMax)
-  if (id === CARD.flare) return cardOf(build, id, 'Solar Flare', 'A sun burst every 6s, doubled in light', 5)
-  if (id === CARD.bell) return cardOf(build, id, 'Noon Bell', 'A toll slows nearby shade', 5)
+  if (id === CARD.flare) return cardOf(build, id, 'Solar Flare', flareText(build.flare), 5)
+  if (id === CARD.bell) return cardOf(build, id, 'Noon Bell', bellText(build.bell), 5)
   if (id === CARD.longday) return cardOf(build, id, 'Long Day', 'The sun turns 12% slower', 5)
   if (id === CARD.searing) return cardOf(build, id, 'Searing Light', 'Lit enemies burn for 2s', 5)
   if (id === CARD.mirage) return cardOf(build, id, 'Mirage Sandals', 'A sidestep that leaves a decoy', 1)
   return { id: CARD.heal, name: 'Heal 30', text: 'Restore 30 HP', from: 'now', to: '+30', rank: 0, max: 1, next: 1 }
+}
+
+/** Rank changes shared by the offer test and the live pick. Side effects stay in world. */
+export function applyRank(build: Build, id: number): 'vitality' | 'wide' | 'heal' | 'done' {
+  const step = cardStep(build, id)
+  const cap = TUNING.passive.max
+  if (id === CARD.spear && build.spear < cap) {
+    build.spear = Math.min(cap, build.spear + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.halo && build.halo < cap) {
+    build.halo = Math.min(cap, build.halo + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.flare && build.flare < cap) {
+    build.flare = Math.min(cap, build.flare + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.bell && build.bell < cap) {
+    build.bell = Math.min(cap, build.bell + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.might && build.might < cap) {
+    build.might++
+    return 'done'
+  }
+  if (id === CARD.haste && build.haste < cap) {
+    build.haste++
+    return 'done'
+  }
+  if (id === CARD.swift && build.swift < cap) {
+    build.swift++
+    return 'done'
+  }
+  if (id === CARD.lodestone && build.lodestone < cap) {
+    build.lodestone++
+    return 'done'
+  }
+  if (id === CARD.vitality && build.vitality < cap) {
+    build.vitality++
+    return 'vitality'
+  }
+  if (id === CARD.wide && build.wide < TUNING.wideMax) {
+    build.wide++
+    return 'wide'
+  }
+  if (id === CARD.longday && build.longday < cap) {
+    build.longday++
+    return 'done'
+  }
+  if (id === CARD.searing && build.searing < cap) {
+    build.searing++
+    return 'done'
+  }
+  if (id === CARD.mirage && build.mirage === 0) {
+    build.mirage = 1
+    return 'done'
+  }
+  return 'heal'
+}
+
+function legacyIds(build: Build, rng: Rng, count: number): number[] {
+  const rest: number[] = []
+  const boon: number[] = []
+  const cap = TUNING.passive.max
+  const add = (id: number, room: boolean) => {
+    if (!room) return
+    if (isSunBoon(id)) boon.push(id)
+    else rest.push(id)
+  }
+  add(CARD.spear, build.spear < cap)
+  add(CARD.halo, build.halo < cap)
+  add(CARD.might, build.might < cap)
+  add(CARD.haste, build.haste < cap)
+  add(CARD.swift, build.swift < cap)
+  add(CARD.vitality, build.vitality < cap)
+  add(CARD.lodestone, build.lodestone < cap)
+  add(CARD.wide, build.wide < TUNING.wideMax)
+  if (build.level >= 4) {
+    add(CARD.flare, build.flare < cap)
+    add(CARD.bell, build.bell < cap)
+    add(CARD.longday, build.longday < cap)
+    add(CARD.searing, build.searing < cap)
+  }
+  if (build.level >= TUNING.temple.cardLevel && build.mirage === 0) add(CARD.mirage, true)
+  if (rest.length + boon.length === 0) rest.push(CARD.heal)
+  shuffle(rest, rng)
+  shuffle(boon, rng)
+  const wantHalo = build.halo === 0 && build.level <= 2
+  if (wantHalo) {
+    const at = rest.indexOf(CARD.halo)
+    if (at > 0) {
+      rest[at] = rest[0] ?? CARD.halo
+      rest[0] = CARD.halo
+    }
+  }
+  const need = count < 1 ? 1 : count
+  const takeBoon = boon.length > 0 ? 1 : 0
+  const ids: number[] = []
+  const restTake = Math.max(0, need - takeBoon)
+  for (let i = 0; i < rest.length && ids.length < restTake; i++) ids.push(rest[i] ?? CARD.heal)
+  if (takeBoon) {
+    const slot = ids.length === 0 ? 0 : (rng() * (ids.length + 1)) | 0
+    ids.splice(slot, 0, boon[0] ?? CARD.wide)
+  }
+  if (wantHalo && !ids.includes(CARD.halo) && rest.includes(CARD.halo)) ids[0] = CARD.halo
+  while (ids.length < need) ids.push(CARD.heal)
+  return ids
+}
+
+/** Cap proof with a stub list, plus the seeded offer ids for 12 level-ups. */
+export function assertSlotCap(): void {
+  const stubs = [100, 101, 102, 103, 104, 105, 106]
+  const ranks = [1, 1, 1, 1, 1, 1, 0]
+  const held = countHeld(stubs, (id) => ranks[stubs.indexOf(id)] ?? 0)
+  if (held !== 6) throw new Error(`stub held ${held}`)
+  const room = (rank: number) => (rank <= 0 ? held < SLOT_CAP : rank < TUNING.passive.max)
+  if (room(0)) throw new Error('offered a 7th weapon')
+  if (!room(2)) throw new Error('blocked an owned upgrade')
+  const sixth = (rank: number) => (rank <= 0 ? 5 < SLOT_CAP : rank < TUNING.passive.max)
+  if (!sixth(0)) throw new Error('sixth weapon blocked')
+  if (WEAPON_IDS.includes(CARD.wide) || WEAPON_IDS.includes(CARD.longday) || WEAPON_IDS.includes(CARD.searing) || WEAPON_IDS.includes(CARD.mirage)) {
+    throw new Error('a sun boon or Mirage counts as a weapon')
+  }
+  if (PASSIVE_IDS.includes(CARD.wide) || PASSIVE_IDS.includes(CARD.mirage) || PASSIVE_IDS.includes(CARD.longday) || PASSIVE_IDS.includes(CARD.searing)) {
+    throw new Error('a sun boon or Mirage counts as a passive')
+  }
+  const build = createBuild()
+  const live = mulberry32(1)
+  const old = mulberry32(1)
+  const shown: Card[] = []
+  for (let n = 0; n < 12; n++) {
+    build.level += 1
+    rollCards(build, live, shown, 3)
+    const next = legacyIds(build, old, 3)
+    for (let i = 0; i < 3; i++) {
+      if ((shown[i]?.id ?? -1) !== (next[i] ?? -2)) throw new Error(`offer drift at level-up ${n + 1}`)
+    }
+    applyRank(build, shown[recommendIndex(build, shown, 3)]?.id ?? CARD.heal)
+  }
 }
 
 export function grantXp(build: Build, amount: number) {

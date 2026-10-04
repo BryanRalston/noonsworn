@@ -51,7 +51,7 @@ import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector, latticePlan } from './director'
 import { createHorde, type HordeCtx } from './enemies/horde'
-import { CARD, cardStep, createBuild, describe, grantXp, isSunBoon, noteJump, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
+import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBoon, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
 import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
@@ -62,6 +62,9 @@ import type { LatticeHandle } from './lattice'
 import type { StairHandle } from './stair'
 import { createTemple, writeFloorPillars } from './temple'
 import { createTraps } from './traps'
+import { createArsenal } from './weapons/arsenal'
+import { bellPackHits, createBell } from './weapons/bell'
+import { createFlare } from './weapons/flare'
 import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
@@ -129,7 +132,8 @@ export async function boot(container: HTMLElement) {
   let showX = 0
   let showZ = 0
   let previewFires = 0
-  const flareRadius = (level: number) => (level <= 1 ? 7.5 * 0.6 : 3.5 + (level - 1))
+  const arsenalParam = params.get('arsenal')
+  const arsenalRank = (import.meta.env.DEV || params.get('dev') === '1') && (arsenalParam === 'l1' || arsenalParam === 'l5') ? (arsenalParam === 'l5' ? 5 : 1) : 0
   let cutMark = -1
   let teleGate = 0
   let hitPreview = 0.2
@@ -306,11 +310,17 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
 
   const sun = createSunClock()
   const horde = createHorde(cast.mite, cast.hound)
-  const spears = createSunspear(fx)
-  const halo = createHalo(fx)
+  let spotLight: ((x: number, z: number) => boolean) | null = null
+  const arsenal = createArsenal()
+  const spears = createSunspear(fx, arsenal)
+  const halo = createHalo(fx, arsenal, (x, z) => mapLit(x, z))
+  const flare = createFlare(fx)
+  const bell = createBell(fx, arsenal)
+  spotLight = (x, z) => flare.lights(x, z)
   const pickups = createPickups()
   const director = createDirector()
-  gpu.scene.add(horde.miteMesh, horde.houndMesh, horde.darterMesh, spears.mesh, halo.mesh, pickups.mesh)
+  gpu.scene.add(horde.miteMesh, horde.houndMesh, horde.darterMesh, arsenal.mesh, pickups.mesh)
+  arsenal.prewarm(gpu.renderer, follow.camera)
 
   const bus = createEvents()
   const player = createPlayer()
@@ -354,11 +364,14 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let offerCount = 3
   let debugClock = 0
   let stats = { calls: 0, triangles: 0, geometries: 0, textures: 0 }
+  assertSlotCap()
+  const packHits = bellPackHits()
   const audit =
     damageAmount(10, true, 'weapon', 0) === 20 &&
     damageAmount(10, false, 'weapon', 0) === 5 &&
     damageAmount(45, false, 'cut', 0) === 45 &&
-    damageAmount(45, true, 'cut', 0) === 90
+    damageAmount(45, true, 'cut', 0) === 90 &&
+    packHits >= 45
 
   const floats = createFloats(container, TUNING.tiers.high.floats)
   const audio = createAudio(() => fxRng())
@@ -375,8 +388,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let litBurst = 0
   let stepAcc = 0
   let litBurstAt = 0
-  let flareCd = 6
-  let bellCd = 10
+  let flareMs = 0
+  let bellMs = 0
   let previewSweepX = 0
   let previewSweepZ = -1
   let previewSweepN = 0
@@ -406,11 +419,15 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     return sun.isLit(x, z)
   }
 
-  function litAt(x: number, z: number): boolean {
+  function mapLit(x: number, z: number): boolean {
     if (activeMap === 'stair' && stair?.ready) return stair.isLit(x, z)
     if (activeMap === 'cloister' && cloister?.ready) return cloister.isLit(x, z)
     if (activeMap === 'lattice' && lattice?.ready) return lattice.isLit(sunLit, x, z)
     return sunLit(x, z)
+  }
+
+  function litAt(x: number, z: number): boolean {
+    return mapLit(x, z) || (spotLight?.(x, z) ?? false)
   }
 
   const ctx: HordeCtx = {
@@ -623,37 +640,12 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   function applyCard(id: number) {
-    const step = cardStep(build, id)
-    const cap = TUNING.passive.max
-    if (id === CARD.spear && build.spear < cap) {
-      build.spear = Math.min(cap, build.spear + step)
-      noteJump(build, id, step)
-    } else if (id === CARD.halo && build.halo < cap) {
-      build.halo = Math.min(cap, build.halo + step)
-      noteJump(build, id, step)
-    } else if (id === CARD.flare && build.flare < cap) {
-      build.flare = Math.min(cap, build.flare + step)
-      noteJump(build, id, step)
-    } else if (id === CARD.bell && build.bell < cap) {
-      build.bell = Math.min(cap, build.bell + step)
-      noteJump(build, id, step)
-    } else if (id === CARD.might && build.might < cap) build.might++
-    else if (id === CARD.haste && build.haste < cap) build.haste++
-    else if (id === CARD.swift && build.swift < cap) build.swift++
-    else if (id === CARD.lodestone && build.lodestone < cap) build.lodestone++
-    else if (id === CARD.vitality && build.vitality < cap) {
-      build.vitality++
+    const kind = applyRank(build, id)
+    if (kind === 'vitality') {
       player.maxHp += TUNING.passive.vitalHp
       player.hp = Math.min(player.maxHp, player.hp + TUNING.passive.vitalHeal)
-    } else if (id === CARD.wide && build.wide < TUNING.wideMax) {
-      build.wide++
-      sun.setWide(build.wide)
-    } else if (id === CARD.longday && build.longday < cap) build.longday++
-    else if (id === CARD.searing && build.searing < cap) build.searing++
-    else if (id === CARD.mirage && build.mirage === 0) build.mirage = 1
-    else {
-      player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
-    }
+    } else if (kind === 'wide') sun.setWide(build.wide)
+    else if (kind === 'heal') player.hp = Math.min(player.maxHp, player.hp + TUNING.healCard)
     build.pending = Math.max(0, build.pending - 1)
     animFlourish = true
   }
@@ -971,6 +963,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     horde.clear()
     spears.clear()
     halo.clear()
+    flare.clear()
+    bell.clear()
     pickups.clear()
     fx.clear()
     time = 0
@@ -981,8 +975,21 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     shakeT = 0
     follow.snap(0, 0)
     exposePops = 0
-    flareCd = 6
-    bellCd = 10
+    if (arsenalRank > 0 && !previewWeapon) {
+      build.spear = arsenalRank
+      build.halo = arsenalRank
+      build.flare = arsenalRank
+      build.bell = arsenalRank
+      const requested = Number(params.get('n') ?? '0')
+      if (Number.isFinite(requested) && requested > 0) {
+        const swarm = Math.max(1, Math.min(400, requested))
+        for (let i = 0; i < swarm; i++) {
+          const ang = i * 2.399963
+          const dist = 6 + (i % 12) * 0.45
+          horde.spawn(i % 17 === 0 ? 1 : 0, Math.cos(ang) * dist, Math.sin(ang) * dist, false, 400, 0, 0)
+        }
+      }
+    }
     audio.startMusic()
     activeMap = wantMap
     resetHomePillars()
@@ -1148,8 +1155,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         horde.spawn(i % 14 === 0 ? 1 : 0, Math.cos(ang) * dist, Math.sin(ang) * dist, false, 400, 0, 0)
       }
     }
-    flareCd = 0.15
-    bellCd = 0.35
+    flare.cooldown = 0.15
+    bell.cooldown = 0.35
     previewCutIn = 0.2
     cutMark = -1
     hitPreview = 0.15
@@ -1359,11 +1366,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       calls: stats.calls,
       fx: fx.mesh.count,
       hot: 0,
-      spears: spears.mesh.count,
+      spears: spears.used(),
       enemies: horde.count(),
       kills,
       cut: cut.active ? 1 : 0,
-      halo: halo.mesh.count,
+      halo: halo.live,
       hordeMs: Math.round(profHorde * 100) / 100,
       spearMs: Math.round(profSpear * 100) / 100,
       haloMs: Math.round(profHalo * 100) / 100,
@@ -1434,6 +1441,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       profHorde = 0
       profSpear = 0
       profHalo = 0
+      flareMs = 0
+      bellMs = 0
       follow.basis(basis)
       const front = mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits' || mode === 'paused' || mode === 'dead' || mode === 'clear'
       input.setNavLock(mode !== 'playing')
@@ -1544,37 +1553,6 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       wingFloor.visible = wing.x + wing.y + wing.z + wing.w > 0
       if (activeMap === 'lattice') lattice?.veil()
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
-      if (build.flare > 0 && !(previewShow && previewWeapon === 'flare')) {
-        flareCd -= dt
-        if (flareCd <= 0) {
-          flareCd = 6
-          const radius = flareRadius(build.flare)
-          horde.radial(player.x, player.z, radius, 16, ctx)
-          audio.exposed()
-          const big = build.flare >= 5
-          const same = big || build.flare === 1
-          fx.ring(player.x, player.z, radius, FX.orange, 1.2)
-          if (same) fx.ring(player.x, player.z, radius * 0.62, FX.orange, 1.2)
-          previewFires++
-          const bits = big ? 7 : 4
-          for (let i = 0; i < bits; i++) {
-            const a = (i / bits) * Math.PI * 2
-            fx.ember(player.x + Math.cos(a) * radius * 0.4, player.z + Math.sin(a) * radius * 0.4, big)
-          }
-        }
-      }
-      if (build.bell > 0 && !(previewShow && previewWeapon === 'bell')) {
-        bellCd -= dt
-        if (bellCd <= 0) {
-          bellCd = 10
-          horde.slow(player.x, player.z, 5, 1.2)
-          audio.bell()
-          const big = build.bell >= 5
-          fx.shell(player.x, player.z, big ? 6.4 : 5.2, 1.45)
-          if (big) fx.shell(player.x, player.z, 4.4, 1.45)
-          previewFires++
-        }
-      }
       if (previewShow && previewWeapon !== 'halo') {
         showIn -= dt
         if (showIn <= 0) {
@@ -1583,16 +1561,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
             spears.kick(player.x, player.z, 0.15, build.spear, TUNING.tiers[quality.tier].projectiles)
           } else if (previewWeapon === 'bell') {
             showIn = 1.15
-            const big = build.bell >= 5
-            fx.shell(player.x, player.z, big ? 6.4 : 5.2, 1.45)
-            if (big) fx.shell(player.x, player.z, 4.4, 1.45)
+            bell.show(player.x, player.z, build.bell)
             previewFires++
           } else if (previewWeapon === 'flare') {
             showIn = 0.9
-            const radius = flareRadius(build.flare)
-            const big = build.flare >= 5
-            fx.ring(player.x, player.z, radius, FX.orange, 1.2)
-            if (big || build.flare === 1) fx.ring(player.x, player.z, radius * 0.62, FX.orange, 1.2)
+            flare.show(player.x, player.z, build.flare)
             previewFires++
           } else if (previewWeapon === 'cut') {
             showIn = 1
@@ -1618,10 +1591,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       noteHint(time, prevStep === 0 && steppedFrom === 0 ? 0 : prevStep)
       prevStep = time
       if (previewWeapon === 'flare' || previewWeapon === 'all') {
-        if (flareCd > 0.9) flareCd = 0.9
+        if (flare.cooldown > 0.9) flare.cooldown = 0.9
       }
       if (previewWeapon === 'bell' || previewWeapon === 'all') {
-        if (bellCd > 1.15) bellCd = 1.15
+        if (bell.cooldown > 1.15) bell.cooldown = 1.15
       }
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all')) {
         previewCutIn -= dt
@@ -1904,8 +1877,18 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
       profSpear += performance.now() - spearT
       const haloT = performance.now()
-      halo.update(dt, player.x, player.z, horde, build.halo, build.might, time, ctx)
+      halo.update(dt, player.x, player.z, horde, build.halo, build.might, build.haste, time, ctx)
       profHalo += performance.now() - haloT
+      const flareT = performance.now()
+      if (!(previewShow && previewWeapon === 'flare')) {
+        flare.update(dt, player.x, player.z, horde, build.flare, build.haste, build.might, mapLit, ctx)
+      }
+      flareMs += performance.now() - flareT
+      const bellT = performance.now()
+      if (!(previewShow && previewWeapon === 'bell')) {
+        bell.update(dt, player.x, player.z, horde, build.bell, build.haste, build.might, mapLit, ctx, () => audio.bell())
+      }
+      bellMs += performance.now() - bellT
       const before = build.pending
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, (value) => {
         xpWindow += value
@@ -2080,8 +2063,16 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           fx.tele(mark.x, mark.z, mark.yaw)
         }
       }
+      arsenal.clear()
       spears.sync()
       halo.sync(x, z, build.halo)
+      bell.sync()
+      let gleamSlot = 0
+      horde.gleamDraw((gx, gz) => {
+        fx.gleamMark(gleamSlot, gx, gz)
+        gleamSlot++
+      }, TUNING.gleam.glyphs)
+      arsenal.flush()
       pickups.sync((gx, gz) => litAt(gx, gz))
       shards.update(frameSec)
       const fxT = performance.now()
@@ -2393,6 +2384,32 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       player.hp = player.maxHp
       player.invuln = 0
     },
+    weaponCpu: () => ({ spear: profSpear, halo: profHalo, flare: flareMs, bell: bellMs }),
+    primeNova: () => {
+      flare.cooldown = 0
+      bell.cooldown = 0
+    },
+    seedSpears: (n: number) => spears.seed(n, player.x, player.z),
+    foe: (index: number) => horde.sample(index),
+    mapOnly: (x: number, z: number) => mapLit(x, z),
+    parts: () => arsenal.partVerts(),
+    clearWeapons: () => {
+      spears.clear()
+      halo.clear()
+      flare.clear()
+      bell.clear()
+    },
+    weaponProbe: () => ({
+      audit,
+      packHits,
+      spearCd: spears.cooldown,
+      spearN: spears.used(),
+      halo: { orbit: halo.orbit, period: halo.period, sun: halo.sun, live: halo.live, angle: halo.angle },
+      flare: { cooldown: flare.cooldown, spots: flare.spots() },
+      bell: bell.pose(),
+      mesh: arsenal.mesh.count,
+      arsenalVisible: arsenal.mesh.visible,
+    }),
     lowpassHz: () => audio.lowpassHz(),
     pinWater: (which: number | string) => {
       if (!cloister) return

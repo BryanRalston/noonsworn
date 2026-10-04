@@ -162,6 +162,12 @@ export interface Horde {
   place: (index: number, x: number, z: number) => void
   staggerFor: (index: number, seconds: number) => void
   washFor: (index: number, seconds: number) => void
+  /** Forces Exposed for `seconds`, with the entering-light stagger on the first frame. */
+  gleamFor: (index: number, seconds: number, now: number) => void
+  gleamDraw: (draw: (x: number, z: number) => void, limit: number) => number
+  lit: Uint8Array
+  sample: (index: number) => { hp: number; lit: number; alive: number; state: number; stateT: number; slow: number; gleam: number; x: number; z: number }
+  setHp: (index: number, value: number) => void
   radial: (x: number, z: number, radius: number, amount: number, ctx: HordeCtx) => void
   soak: (index: number, amount: number, expose: boolean, ctx: HordeCtx) => 0 | 1 | 2
   punishBox: (cx: number, cz: number, hx: number, hz: number, amount: number, ctx: HordeCtx) => void
@@ -169,6 +175,8 @@ export interface Horde {
   staggerRing: (cx: number, cz: number, inner: number, outer: number, seconds: number) => void
   exposeBox: (cx: number, cz: number, half: number, freeze: number) => void
   knockFrom: (cx: number, cz: number, radius: number, dist: number) => void
+  pullTo: (cx: number, cz: number, radius: number, dist: number) => void
+  nudge: (index: number, dx: number, dz: number) => void
   slow: (x: number, z: number, radius: number, seconds: number) => void
   frozen: boolean
   tris: { mite: number; hound: number; darter: number }
@@ -255,6 +263,9 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const stateT = new Float32Array(MAX)
   const contact = new Float32Array(MAX)
   const washT = new Float32Array(MAX)
+  const gleamT = new Float32Array(MAX)
+  const gleamIds = new Int16Array(48)
+  let gleamN = 0
   const staggerAt = new Float32Array(MAX)
   const aimX = new Float32Array(MAX)
   const aimZ = new Float32Array(MAX)
@@ -331,6 +342,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     stateT[i] = 0
     contact[i] = 0
     washT[i] = 0
+    gleamT[i] = 0
     staggerAt[i] = -10
     aimX[i] = 0
     aimZ[i] = 1
@@ -381,6 +393,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     z,
     alive,
     state,
+    lit,
     miteMesh,
     houndMesh,
     darterMesh,
@@ -435,6 +448,8 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       alive.fill(0)
       state.fill(0)
       bench.fill(0)
+      gleamT.fill(0)
+      gleamN = 0
       bonusMites = 0
       horde.frozen = false
       free.reset()
@@ -587,6 +602,37 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         z[i] = slid.z
       }
     },
+    pullTo(cx, cz, radius, dist) {
+      const r2 = radius * radius
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || state[i] === DYING || bench[i]) continue
+        const dx = cx - (x[i] ?? 0)
+        const dz = cz - (z[i] ?? 0)
+        const d2 = dx * dx + dz * dz
+        if (d2 > r2 || d2 < 1e-6) continue
+        const d = Math.sqrt(d2)
+        const step = Math.min(dist, d)
+        const ox = x[i] ?? 0
+        const oz = z[i] ?? 0
+        x[i] = ox + (dx / d) * step
+        z[i] = oz + (dz / d) * step
+        const spec = specOf(type[i] ?? 0)
+        const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
+        x[i] = slid.x
+        z[i] = slid.z
+      }
+    },
+    nudge(index, dx, dz) {
+      if (!alive[index] || state[index] === DYING || bench[index]) return
+      const ox = x[index] ?? 0
+      const oz = z[index] ?? 0
+      x[index] = ox + dx
+      z[index] = oz + dz
+      const spec = specOf(type[index] ?? 0)
+      const slid = slideCircle(ox, oz, x[index] ?? 0, z[index] ?? 0, spec.radius)
+      x[index] = slid.x
+      z[index] = slid.z
+    },
     slow(cx, cz, radius, seconds) {
       const r2 = radius * radius
       for (let i = 0; i < MAX; i++) {
@@ -625,6 +671,54 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       lit[index] = 1
       litKnown[index] = 1
     },
+    gleamFor(index, seconds, now) {
+      if (!alive[index] || state[index] === DYING || bench[index]) return
+      const was = lit[index] === 1
+      gleamT[index] = Math.max(gleamT[index] ?? 0, seconds)
+      if (!was) {
+        horde.onExpose?.(x[index] ?? 0, z[index] ?? 0)
+        if (type[index] === 2) wantDart[index] = 1
+        if (now - (staggerAt[index] ?? -10) >= TUNING.staggerGap) {
+          state[index] = STAGGER
+          stateT[index] = TUNING.staggerTime
+          staggerAt[index] = now
+        }
+      }
+      lit[index] = 1
+      litKnown[index] = 1
+      for (let g = 0; g < gleamN; g++) if (gleamIds[g] === index) return
+      if (gleamN < gleamIds.length) gleamIds[gleamN++] = index
+    },
+    gleamDraw(draw, limit) {
+      let shown = 0
+      let w = 0
+      for (let g = 0; g < gleamN; g++) {
+        const id = gleamIds[g] ?? -1
+        if (id < 0 || !alive[id] || (gleamT[id] ?? 0) <= 0) continue
+        gleamIds[w++] = id
+        if (shown >= limit) continue
+        draw(x[id] ?? 0, z[id] ?? 0)
+        shown++
+      }
+      gleamN = w
+      return shown
+    },
+    sample(index) {
+      return {
+        hp: hp[index] ?? 0,
+        lit: lit[index] ?? 0,
+        alive: alive[index] ?? 0,
+        state: state[index] ?? 0,
+        stateT: stateT[index] ?? 0,
+        slow: slowT[index] ?? 0,
+        gleam: gleamT[index] ?? 0,
+        x: x[index] ?? 0,
+        z: z[index] ?? 0,
+      }
+    },
+    setHp(index, value) {
+      if (alive[index]) hp[index] = value
+    },
     shove(apply) {
       for (let i = 0; i < MAX; i++) {
         if (!alive[i] || bench[i] || state[i] === DYING) continue
@@ -661,7 +755,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       const blooms = ctx.bloomLive
       for (let i = 0; i < MAX; i++) {
         if (!alive[i] || bench[i] || state[i] === DYING) continue
-        if ((washT[i] ?? 0) > 0) {
+        if ((washT[i] ?? 0) > 0 || (gleamT[i] ?? 0) > 0) {
           lit[i] = 1
           litKnown[i] = 1
           continue
@@ -691,6 +785,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         squash[i] = Math.max(0, (squash[i] ?? 0) - ctx.dt)
         contact[i] = Math.max(0, (contact[i] ?? 0) - ctx.dt)
         if ((washT[i] ?? 0) > 0) washT[i] = Math.max(0, (washT[i] ?? 0) - ctx.dt)
+        if ((gleamT[i] ?? 0) > 0) gleamT[i] = Math.max(0, (gleamT[i] ?? 0) - ctx.dt)
         if (bench[i]) continue
         if (state[i] === DYING) {
           stateT[i] = (stateT[i] ?? 0) - ctx.dt

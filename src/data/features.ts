@@ -127,4 +127,9 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'The Newel disc is inside the frame on the first wake frame', status: 'shipped', since: 'M6b.2' },
   { area: 'Combat & Weapons', feature: 'Newel unassisted time-to-kill is about 1.37× the Compline', status: 'shipped', since: 'M6b.2' },
   { area: 'Maps', feature: 'Stair tile jitter is stored on the floor vertices, and the eight-ray tile star is gone', status: 'shipped', since: 'M6b.3' },
+  { area: 'Combat & Weapons', feature: 'Thick Sunspear lance and Gleam', status: 'shipped', since: 'W1' },
+  { area: 'Combat & Weapons', feature: 'Halo sun orbit and shade ward', status: 'shipped', since: 'W1' },
+  { area: 'Combat & Weapons', feature: 'Solar Flare nova and Sunspot', status: 'shipped', since: 'W1' },
+  { area: 'Combat & Weapons', feature: 'Noon Bell drop and tolls', status: 'shipped', since: 'W1' },
+  { area: 'Graphics/Performance', feature: 'Shared weapon mesh and atlas v2', status: 'shipped', since: 'W1' },
 ]
