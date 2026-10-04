@@ -50,12 +50,13 @@ import { buildInlay, buildPillars, buildShell, buildWingFloors, createScatter, c
 import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector, latticePlan } from './director'
-import { createHorde, type HordeCtx } from './enemies/horde'
-import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBoon, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
+import { createHorde, type Horde, type HordeCtx } from './enemies/horde'
+import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBoon, lockW1Pool, openW2Offers, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
 import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
 import { createSunClock, damageAmount } from './sunClock'
+import { clockShadow, stairShadow, type ShadowDir } from './shadowDir'
 import { cellBlocked, resetHomePillars, setBeds } from './collision'
 import type { CloisterHandle } from './cloister'
 import type { LatticeHandle } from './lattice'
@@ -69,6 +70,49 @@ import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
 import { probeBodies, probeReset } from './weapons/probe'
+import { setWeaponPassives } from './weapons/passives'
+
+interface W2Live {
+  update: (
+    dt: number,
+    px: number,
+    pz: number,
+    horde: Horde,
+    helio: number,
+    scarab: number,
+    stake: number,
+    prism: number,
+    multitude: number,
+    haste: number,
+    might: number,
+    mapLit: (x: number, z: number) => boolean,
+    shadow: (out: ShadowDir) => void,
+    ctx: HordeCtx,
+    time: number,
+  ) => void
+  mark: (mapLit: (x: number, z: number) => boolean, shadow: (out: ShadowDir) => void) => void
+  sync: (px: number, pz: number, helio: number, scarab: number, stake: number, prism: number, time: number) => void
+  clear: () => void
+  lights: (x: number, z: number) => boolean
+  cpu: () => { helio: number; scarab: number; stake: number; prism: number }
+  resetCpu: () => void
+  prismPeak: () => number
+  sample: () => {
+    bank: number
+    helioGap: number
+    helioHits: number
+    scarabWave: number
+    gnawTicks: number
+    latchSeen: number
+    stakeLen: number
+    stakeSun: number
+    prismSpeed: number
+    prismPeak: number
+    litHz: number
+    retargetHz: number
+    splits: number
+  }
+}
 
 function paintCaster(geo: CylinderGeometry) {
   const pos = geo.getAttribute('position')
@@ -134,7 +178,6 @@ export async function boot(container: HTMLElement) {
   let showZ = 0
   let previewFires = 0
   const arsenalParam = params.get('arsenal')
-  const arsenalRank = (import.meta.env.DEV || params.get('dev') === '1') && (arsenalParam === 'l1' || arsenalParam === 'l5') ? (arsenalParam === 'l5' ? 5 : 1) : 0
   let hideWeaponDraw = false
   let cutMark = -1
   let teleGate = 0
@@ -325,6 +368,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   const halo = createHalo(fx, arsenal, (x, z) => mapLit(x, z))
   const flare = createFlare(fx)
   const bell = createBell(fx, arsenal)
+  let w2: W2Live | null = null
+  let w2State: 'loading' | 'ready' | 'failed' = 'loading'
   spotLight = (x, z) => flare.lights(x, z)
   const pickups = createPickups()
   const director = createDirector()
@@ -436,8 +481,64 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
 
   function litAt(x: number, z: number): boolean {
-    return mapLit(x, z) || (spotLight?.(x, z) ?? false)
+    return mapLit(x, z) || (spotLight?.(x, z) ?? false) || (w2?.lights(x, z) ?? false)
   }
+
+  function writeShadow(out: ShadowDir): void {
+    if (activeMap === 'stair' && stair?.ready) {
+      const info = stair.sunInfo()
+      stairShadow(info.a, info.L, out)
+      return
+    }
+    clockShadow(sun.dirX, sun.dirZ, activeMap === 'sundial', out)
+  }
+
+  function applyArsenalDev() {
+    if (!devTools() || previewWeapon) return
+    if (arsenalParam === 'l5x8') {
+      build.spear = 5
+      build.halo = 5
+      build.flare = 5
+      build.bell = 5
+      build.helio = 5
+      build.scarab = 5
+      build.stake = 5
+      build.prism = 5
+      build.multitude = 2
+      build.reach = 5
+      build.endurance = 5
+      return
+    }
+    if (arsenalParam !== 'l1' && arsenalParam !== 'l5') return
+    const rank = arsenalParam === 'l5' ? 5 : 1
+    build.spear = rank
+    build.halo = rank
+    build.flare = rank
+    build.bell = rank
+    build.helio = rank
+    build.prism = rank
+  }
+
+  function loadArsenal() {
+    const dev = import.meta.env.DEV || params.get('dev') === '1'
+    if (dev && params.get('pool') === 'w1') lockW1Pool()
+    if (dev && params.get('w2block') === '1') return
+    void import('./weapons/w2')
+      .then((mod) => {
+        mod.appendParts(arsenal)
+        mod.registerCards()
+        w2 = mod.createW2(fx, arsenal)
+        openW2Offers()
+        applyArsenalDev()
+        w2State = 'ready'
+      })
+      .catch(() => {
+        w2State = 'failed'
+        const el = document.getElementById('debug')
+        if (el) el.dataset.w2 = 'failed'
+      })
+  }
+  loadArsenal()
 
   const ctx: HordeCtx = {
     dt: 0,
@@ -974,6 +1075,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     halo.clear()
     flare.clear()
     bell.clear()
+    w2?.clear()
     pickups.clear()
     fx.clear()
     time = 0
@@ -984,11 +1086,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     shakeT = 0
     follow.snap(0, 0)
     exposePops = 0
-    if (arsenalRank > 0 && !previewWeapon) {
-      build.spear = arsenalRank
-      build.halo = arsenalRank
-      build.flare = arsenalRank
-      build.bell = arsenalRank
+    applyArsenalDev()
+    if (devTools() && !previewWeapon && (arsenalParam === 'l1' || arsenalParam === 'l5' || arsenalParam === 'l5x8')) {
       const requested = Number(params.get('n') ?? '0')
       if (Number.isFinite(requested) && requested > 0) {
         const swarm = Math.max(1, Math.min(400, requested))
@@ -1452,6 +1551,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       profHalo = 0
       flareMs = 0
       bellMs = 0
+      w2?.resetCpu()
       follow.basis(basis)
       const front = mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits' || mode === 'paused' || mode === 'dead' || mode === 'clear'
       input.setNavLock(mode !== 'playing')
@@ -1846,6 +1946,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
           activeMap === 'lattice' ? latticePlan(time, bossUp) : activeMap === 'cloister' && cloister ? cloister.plan(time) : activeMap === 'stair' && stair ? stair.plan(time) : undefined,
         )
       }
+      w2?.mark(mapLit, writeShadow)
       const hordeT = performance.now()
       horde.update(ctx)
       if (activeMap === 'stair' && time >= 15) {
@@ -1882,6 +1983,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       }
       fx.setTier(quality.tier)
       if (previewShow && previewWeapon === 'sunspear') spears.cooldown = 30
+      setWeaponPassives(build.reach, build.endurance)
+      spears.multitude = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
       const spearT = performance.now()
       spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
       profSpear += performance.now() - spearT
@@ -1898,6 +2001,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
         bell.update(dt, player.x, player.z, horde, build.bell, build.haste, build.might, mapLit, ctx, () => audio.bell())
       }
       bellMs += performance.now() - bellT
+      const multi = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
+      w2?.update(dt, player.x, player.z, horde, build.helio, build.scarab, build.stake, build.prism, multi, build.haste, build.might, mapLit, writeShadow, ctx, time)
       const before = build.pending
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, (value) => {
         xpWindow += value
@@ -2077,6 +2182,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       spears.sync()
       halo.sync(x, z, build.halo)
       bell.sync()
+      w2?.sync(x, z, build.helio, build.scarab, build.stake, build.prism, time)
       flare.mark(build.flare)
       let gleamSlot = 0
       horde.gleamDraw((gx, gz) => {
@@ -2407,7 +2513,28 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       player.hp = player.maxHp
       player.invuln = 0
     },
-    weaponCpu: () => ({ spear: profSpear, halo: profHalo, flare: flareMs, bell: bellMs }),
+    weaponCpu: () => {
+      const extra = w2?.cpu() ?? { helio: 0, scarab: 0, stake: 0, prism: 0 }
+      return { spear: profSpear, halo: profHalo, flare: flareMs, bell: bellMs, helio: extra.helio, scarab: extra.scarab, stake: extra.stake, prism: extra.prism }
+    },
+    w2State: () => w2State,
+    w2Sample: () => w2?.sample() ?? null,
+    prismPeak: () => w2?.prismPeak() ?? 0,
+    offerIds: (seed: number) => {
+      const roll = mulberry32(seed >>> 0)
+      const out: Card[] = []
+      const n = rollCards(build, roll, out, 4)
+      const ids: number[] = []
+      for (let i = 0; i < n; i++) ids.push(out[i]?.id ?? -1)
+      return ids
+    },
+    shadowDir: (x: number, z: number) => {
+      void x
+      void z
+      const out: ShadowDir = { dirX: 0, dirZ: 1, length: 5 }
+      writeShadow(out)
+      return { dirX: out.dirX, dirZ: out.dirZ, length: out.length }
+    },
     primeNova: () => {
       flare.cooldown = 0
       bell.cooldown = 0
@@ -2421,6 +2548,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       halo.clear()
       flare.clear()
       bell.clear()
+      w2?.clear()
     },
     weaponProbe: () => {
       const project = (wx: number, wy: number, wz: number) => {

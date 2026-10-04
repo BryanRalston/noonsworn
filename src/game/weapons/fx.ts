@@ -133,6 +133,10 @@ export interface WeaponFx {
   cores: (out: { kind: string; x: number; y: number; z: number; w: number; h: number }[]) => number
   streak: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number, rgb: readonly number[], upright?: boolean) => void
   ray: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number) => void
+  helioRay: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number) => void
+  stakeLine: (x: number, z: number, yaw: number, length: number, width: number) => void
+  scarabMote: (x: number, z: number) => void
+  prismFlash: (x: number, z: number) => void
   blade: (slot: number, x: number, z: number, yaw: number, big: boolean) => void
   crescent: (x: number, z: number, yaw: number, big: boolean) => void
   afterimage: (x: number, z: number, dirX: number, dirZ: number) => void
@@ -438,6 +442,18 @@ export function createWeaponFx(): WeaponFx {
     },
     ray(px, py, pz, rot, length, width, seconds) {
       put(CELL.haloStreak, px, py, pz, rot, Math.max(0.1, width), length, seconds, FX.goldBlade, 4, 0, 0, 1)
+    },
+    helioRay(px, py, pz, rot, length, width, seconds) {
+      put(CELL.ray, px, py, pz, rot, Math.max(0.12, width), length, seconds, FX.punch, 0, 0, 1)
+    },
+    stakeLine(px, pz, rot, length, width) {
+      put(CELL.stakeBlade, px, 0.08, pz, rot, Math.max(0.12, width), length, 0.12, FX.punch, 0, 0, 1)
+    },
+    scarabMote(px, pz) {
+      put(CELL.scarabDust, px, 0.2, pz, 0, 0.4, 0.4, 0.28, FX.punch, 0, 0, 1)
+    },
+    prismFlash(px, pz) {
+      put(CELL.prismStar, px, 0.8, pz, TUNING.camera.yaw, 1.4, 1.4, 0.22, FX.punch, 0, 0, 1)
     },
     blade(slot, px, pz, rot, big) {
       if (slot < 0 || slot >= 8) return

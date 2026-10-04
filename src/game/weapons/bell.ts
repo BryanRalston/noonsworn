@@ -1,6 +1,7 @@
 import { TUNING } from '../../data/tuning'
 import { mulberry32 } from '../../core/rng'
 import { hasteMul } from '../sunClock'
+import { endureMul, reachMul } from './passives'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
 import { probeAdd } from './probe'
@@ -301,19 +302,22 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
   }
 
   function slam(horde: Horde, might: number, ctx: HordeCtx) {
-    hurt(horde, tx, tz, TUNING.bell.slamRadius, TUNING.bell.slam, might, ctx)
-    fx.shock(tx, tz, TUNING.bell.slamRadius)
+    const radius = TUNING.bell.slamRadius * reachMul()
+    hurt(horde, tx, tz, radius, TUNING.bell.slam, might, ctx)
+    fx.shock(tx, tz, radius)
     fx.dust(tx, tz)
   }
 
   function toll(horde: Horde, might: number, ctx: HordeCtx, onToll: () => void) {
-    hurt(horde, tx, tz, tollRadius, tollDamage, might, ctx)
-    fx.shock(tx, tz, tollRadius)
+    const radius = tollRadius * reachMul()
+    const daze = TUNING.bell.daze * endureMul()
+    hurt(horde, tx, tz, radius, tollDamage, might, ctx)
+    fx.shock(tx, tz, radius)
     onToll()
-    if (sun) horde.pullTo(tx, tz, tollRadius, TUNING.bell.pull)
+    if (sun) horde.pullTo(tx, tz, radius, TUNING.bell.pull)
     else {
-      const n = hashQuery(tx, tz, tollRadius, QUERY)
-      const r2 = tollRadius * tollRadius
+      const n = hashQuery(tx, tz, radius, QUERY)
+      const r2 = radius * radius
       const hit: number[] = []
       for (let k = 0; k < n; k++) {
         const slot = QUERY[k] ?? -1
@@ -325,10 +329,10 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
       }
       for (let i = 0; i < hit.length; i++) {
         const slot = hit[i] ?? -1
-        horde.staggerFor(slot, TUNING.bell.daze)
+        horde.staggerFor(slot, daze)
         horde.slow(horde.x[slot] ?? tx, horde.z[slot] ?? tz, 0.2, TUNING.bell.slow)
       }
-      horde.knockFrom(tx, tz, tollRadius, TUNING.bell.push)
+      horde.knockFrom(tx, tz, radius, TUNING.bell.push)
     }
   }
 }

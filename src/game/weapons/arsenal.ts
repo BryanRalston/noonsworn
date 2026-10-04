@@ -212,6 +212,9 @@ void main() {
     p.y = y;
     p.z = z;
   }
+  if (aPart > 4.5 && aPart < 5.5 && position.y > 0.05) {
+    p.y += sin(iSwing) * 0.08;
+  }
   vec4 mv = modelViewMatrix * instanceMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   #ifdef USE_FOG
@@ -246,6 +249,7 @@ export interface Arsenal {
   mesh: InstancedMesh
   clear: () => void
   add: (item: ArsenalItem) => void
+  append: (part: number, position: Float32Array, color: Float32Array, emit: Float32Array) => void
   flush: () => void
   prewarm: (renderer: WebGLRenderer, camera: Camera) => void
   partVerts: () => Record<string, number>
@@ -283,6 +287,40 @@ export function createArsenal(): Arsenal {
     },
     add(item) {
       if (items.length < CAP) items.push(item)
+    },
+    append(part, position, color, emit) {
+      const old = mesh.geometry
+      const pos = old.getAttribute('position')
+      const col = old.getAttribute('aColor')
+      const em = old.getAttribute('aEmit')
+      const pa = old.getAttribute('aPart')
+      const base = pos.count
+      const add = (position.length / 3) | 0
+      const nextPos = new Float32Array(base * 3 + position.length)
+      const nextCol = new Float32Array(base * 3 + color.length)
+      const nextEm = new Float32Array(base + emit.length)
+      const nextPart = new Float32Array(base + add)
+      nextPos.set(pos.array as Float32Array)
+      nextCol.set(col.array as Float32Array)
+      nextEm.set(em.array as Float32Array)
+      nextPart.set(pa.array as Float32Array)
+      nextPos.set(position, base * 3)
+      nextCol.set(color, base * 3)
+      nextEm.set(emit, base)
+      nextPart.fill(part, base)
+      const fresh = new BufferGeometry()
+      fresh.setAttribute('position', new BufferAttribute(nextPos, 3))
+      fresh.setAttribute('aColor', new BufferAttribute(nextCol, 3))
+      fresh.setAttribute('aEmit', new BufferAttribute(nextEm, 1))
+      fresh.setAttribute('aPart', new BufferAttribute(nextPart, 1))
+      const kindAttr = old.getAttribute('iKind')
+      const hotAttr = old.getAttribute('iHot')
+      const swingAttr = old.getAttribute('iSwing')
+      if (kindAttr) fresh.setAttribute('iKind', kindAttr)
+      if (hotAttr) fresh.setAttribute('iHot', hotAttr)
+      if (swingAttr) fresh.setAttribute('iSwing', swingAttr)
+      mesh.geometry = fresh
+      old.dispose()
     },
     flush() {
       const n = items.length
@@ -322,7 +360,7 @@ export function createArsenal(): Arsenal {
       mesh.visible = false
     },
     partVerts() {
-      const attr = geo.getAttribute('aPart')
+      const attr = mesh.geometry.getAttribute('aPart')
       const counts: Record<string, number> = {}
       const names = Object.keys(ARSENAL_PART)
       for (let i = 0; i < names.length; i++) counts[names[i] ?? ''] = 0

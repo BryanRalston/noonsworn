@@ -1,5 +1,6 @@
 import { TUNING } from '../../data/tuning'
 import { hasteMul } from '../sunClock'
+import { endureMul, reachMul } from './passives'
 import { hashQuery } from '../spatialHash'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
@@ -133,7 +134,7 @@ export function createFlare(fx: WeaponFx): Flare {
       const stats = flareStats(level)
       flare.cooldown = stats.cooldown * hasteMul(haste)
       const sun = mapLit(px, pz)
-      const radius = sun ? stats.sun : stats.shade
+      const radius = (sun ? stats.sun : stats.shade) * reachMul()
       const n = hashQuery(px, pz, radius, QUERY)
       for (let k = 0; k < n; k++) {
         const slot = QUERY[k] ?? -1
@@ -149,7 +150,7 @@ export function createFlare(fx: WeaponFx): Flare {
       stamp = (stamp + 1) % 1000
       horde.bossHit?.(px, pz, radius, stats.damage * TUNING.flare.boss, 'weapon', might, 400 + stamp)
       burstVisual(px, pz, radius, level >= 5)
-      if (!sun) leaveSpot(px, pz, TUNING.flare.spotRadius, stats.spotLife, stats.spotMax)
+      if (!sun) leaveSpot(px, pz, TUNING.flare.spotRadius * reachMul(), stats.spotLife * endureMul(), stats.spotMax)
     },
   }
   return flare

@@ -38,6 +38,14 @@ export default defineConfig({
     sourcemap: false,
     target: 'es2022',
     chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const norm = id.replace(/\\/g, '/')
+          if (norm.endsWith('/src/game/weapons/w2.ts')) return 'arsenal'
+        },
+      },
+    },
   },
   server: {
     host: '127.0.0.1',

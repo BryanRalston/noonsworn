@@ -4,6 +4,7 @@ import { yawFromDirection } from '../../core/math'
 import { hashQuery } from '../spatialHash'
 import { resolveCircle, segmentBlocked } from '../collision'
 import { hasteMul } from '../sunClock'
+import { endureMul, reachMul } from './passives'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
 import { probeAdd } from './probe'
@@ -96,6 +97,8 @@ export interface Sunspear {
   see: (x: number, z: number) => boolean
   throws: number
   connects: number
+  /** Extra lances at the next-nearest bodies. Zero keeps the shipped throw. */
+  multitude: number
 }
 
 export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
@@ -145,7 +148,8 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
 
   function inbound(ex: number, ez: number): number {
     let sum = 0
-    const hitR2 = TUNING.spear.hit * TUNING.spear.hit
+    const hitW = TUNING.spear.hit * reachMul()
+    const hitR2 = hitW * hitW
     const speed = TUNING.spear.speed
     for (let n = 0; n < liveN; n++) {
       const i = live[n] ?? -1
@@ -168,8 +172,10 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
   }
 
   let lastHorde: Horde | null = null
+  let aimedSlot = -1
 
   function pickDir(px: number, pz: number, horde: Horde, windup: number, see: (x: number, z: number) => boolean): { x: number; z: number } | null {
+    aimedSlot = -1
     const speed = TUNING.spear.speed
     const range2 = TUNING.spear.range * TUNING.spear.range
     let aimD = 1e9
@@ -232,6 +238,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
     const pickNear = pick >= 0 ? Math.sqrt(pickD) : 0
     const chosen = seen >= 0 && seenD <= (pickNear + 2) * (pickNear + 2) ? seen : pick
     if (chosen < 0) return aimed ? { x: aimX, z: aimZ } : null
+    aimedSlot = chosen
     const ex = horde.x[chosen] ?? 0
     const ez = horde.z[chosen] ?? 0
     let flight = Math.hypot(ex - px, ez - pz) / speed + windup
@@ -245,6 +252,41 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
       az = ez
     }
     return { x: ax - px, z: az - pz }
+  }
+
+  function pickBody(px: number, pz: number, horde: Horde, see: (x: number, z: number) => boolean, skipA: number, skipB: number): { x: number; z: number; slot: number } | null {
+    const speed = TUNING.spear.speed
+    const range2 = TUNING.spear.range * TUNING.spear.range
+    let chosen = -1
+    let chosenD = range2
+    const slots = horde.x.length
+    for (let s = 0; s < slots; s++) {
+      if (s === skipA || s === skipB) continue
+      if (!horde.living(s)) continue
+      const ex = horde.x[s] ?? 0
+      const ez = horde.z[s] ?? 0
+      const dx = ex - px
+      const dz = ez - pz
+      const d2 = dx * dx + dz * dz
+      if (d2 > chosenD) continue
+      if (segmentBlocked(px, pz, ex, ez) || !see(ex, ez)) continue
+      chosen = s
+      chosenD = d2
+    }
+    if (chosen < 0) return null
+    const ex = horde.x[chosen] ?? 0
+    const ez = horde.z[chosen] ?? 0
+    let flight = Math.hypot(ex - px, ez - pz) / speed
+    horde.forecast(chosen, flight, lead)
+    flight = Math.hypot(lead.x - px, lead.z - pz) / speed
+    horde.forecast(chosen, flight, lead)
+    let ax = lead.x
+    let az = lead.z
+    if (segmentBlocked(px, pz, ax, az)) {
+      ax = ex
+      az = ez
+    }
+    return { x: ax - px, z: az - pz, slot: chosen }
   }
 
   let wind: { ang: number; damage: number; pierce: number; count: number; spread: number; cap: number } | null = null
@@ -304,12 +346,26 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
         launch(ox, oz, ang + armed.spread, armed.damage, armed.pierce, armed.cap)
       }
       spear.throws += liveN - before
+      const extra = spear.multitude > 2 ? 2 : spear.multitude
+      if (extra > 0 && lastHorde) {
+        let skipA = aimedSlot
+        let skipB = -1
+        for (let e = 0; e < extra; e++) {
+          const alt = pickBody(ox, oz, lastHorde, spear.see, skipA, skipB)
+          if (!alt) break
+          const beforeE = liveN
+          launch(ox, oz, Math.atan2(alt.z, alt.x), armed.damage, armed.pierce, armed.cap)
+          spear.throws += liveN - beforeE
+          skipB = alt.slot
+        }
+      }
       spear.onFire?.()
     },
     onImpact: null,
     see: () => true,
     throws: 0,
     connects: 0,
+    multitude: 0,
     rank: 1,
     clear() {
       alive.fill(0)
@@ -366,7 +422,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
         const oz = z[i] ?? 0
         const nx = ox + (vx[i] ?? 0) * dt
         const nz = oz + (vz[i] ?? 0) * dt
-        const hitR = TUNING.spear.hit
+        const hitR = TUNING.spear.hit * reachMul()
         const hitR2 = hitR * hitR
         const seg = Math.hypot(nx - ox, nz - oz)
         const qR = seg * 0.5 + hitR > 1.4 ? seg * 0.5 + hitR : 1.4
@@ -394,7 +450,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
           const hz = horde.z[slot] ?? nz
           if (!wasLit && !gleamed[i]) {
             gleamed[i] = 1
-            horde.gleamFor(slot, level >= 5 ? TUNING.gleam.timeL5 : TUNING.gleam.time, ctx.time)
+            horde.gleamFor(slot, (level >= 5 ? TUNING.gleam.timeL5 : TUNING.gleam.time) * endureMul(), ctx.time)
           }
           spear.onImpact?.(hx, hz, wasLit)
           fx.hit(hx, hz, wasLit)
@@ -473,7 +529,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
         const big = spear.rank >= 5
         // Local +Z is the tip. yawFromDirection points local −Z along velocity, so add half a turn.
         const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1) + Math.PI
-        const scale = big ? 1.2 : 1
+        const scale = (big ? 1.2 : 1) * reachMul()
         const px = x[i] ?? 0
         const pz = z[i] ?? 0
         arsenal.add({

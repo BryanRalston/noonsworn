@@ -146,7 +146,7 @@ export interface Horde {
   spawn: (type: 0 | 1 | 2, x: number, z: number, bench: boolean, limit?: number, fromX?: number, fromZ?: number) => number
   clear: () => void
   cullTo: (cap: number, px: number, pz: number) => void
-  damage: (index: number, base: number, source: DamageSource, might: number) => 0 | 1 | 2
+  damage: (index: number, base: number, source: DamageSource, might: number, raw?: boolean) => 0 | 1 | 2
   slay: (index: number, ctx: HordeCtx) => void
   update: (ctx: HordeCtx) => void
   sync: (camX: number, camZ: number, high: boolean) => void
@@ -736,12 +736,12 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         z[i] = next.z
       }
     },
-    damage(index, base, source, might) {
+    damage(index, base, source, might, raw = false) {
       if (horde.frozen) return 0
       if (!alive[index] || state[index] === DYING || bench[index]) return 0
       const darting = type[index] === 2 && state[index] === DART
       const inDeep = lit[index] !== 1 && !darting && (deepFn?.(x[index] ?? 0, z[index] ?? 0) ?? false)
-      let amount = damageAmount(base, lit[index] === 1 || darting, source, might, inDeep)
+      let amount = raw ? base * (1 + TUNING.passive.might * might) : damageAmount(base, lit[index] === 1 || darting, source, might, inDeep)
       if (darting && source === 'cut') amount *= 1.5
       hp[index] = (hp[index] ?? 0) - amount
       sting(index)

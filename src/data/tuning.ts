@@ -247,6 +247,23 @@ export const TUNING = {
     body: 1.15,
   },
   gleam: { time: 1.5, timeL5: 2, glyphs: 24 },
+  helio: {
+    period: 0.45, damage: 14, range: 12, pierce: 1, bank: 3, bankRate: 1, shadePeriod: 0.6, shadeMul: 2.5,
+    dazzle: 0.5, weakPeriod: 1.5, width: 0.25, flashWidth: 0.4, foot: 0.25, levelDamage: 4, rangeL3: 2, bankL3: 4,
+    periodL4: 0.38, masterDamage: 6, pierceL5: 2, dazzleL5: 0.7, boss: 0.28,
+  },
+  scarab: {
+    count: 3, cooldown: 2.2, damage: 9, hop: 2, hopRange: 4, latch: 2, gnaw: 4, gnawEvery: 0.25, levelDamage: 3,
+    countL3: 4, cooldownL4: 1.8, masterDamage: 3, hopL5: 3, latchL5: 2.5, retarget: 0.2, boss: 0.22,
+  },
+  stake: {
+    plant: 4, range: 6, max: 2, life: 8, width: 0.3, hit: 0.6, strike: 1.5, bladeDamage: 18, ring: 2.5, ringDamage: 10,
+    levelBlade: 5, levelRing: 3, maxL3: 3, strikeL4: 1.2, masterDamage: 6, lifeL5: 10, widthL5: 1.5, boss: 0.3,
+  },
+  prism: {
+    cooldown: 1.6, damage: 12, bounces: 3, sunSpeed: 20, shadeSpeed: 11, turn: 90, split: 8, alive: 24, levelDamage: 3,
+    bouncesL3: 4, cooldownL4: 1.3, masterDamage: 4, splitL5: 10, litStep: 1 / 30, boss: 0.24,
+  },
   xp: { fly: 12, collect: 0.45, base: 5, lin: 6, quad: 0.9, merge: 3, early1: 1, early2: 12, early3: 18, early4: 56, early5: 75 },
   touch: { stick: 60, deadzone: 0.12, cut: 96, left: 0.6, flickPx: 40, flickMs: 180, recenter: 1.5 },
   designCap: 240,

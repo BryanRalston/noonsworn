@@ -23,10 +23,21 @@ export interface Build {
   longday: number
   searing: number
   mirage: number
+  helio: number
+  scarab: number
+  stake: number
+  prism: number
+  multitude: number
+  reach: number
+  endurance: number
   spearJump: number
   haloJump: number
   flareJump: number
   bellJump: number
+  helioJump: number
+  scarabJump: number
+  stakeJump: number
+  prismJump: number
 }
 
 export interface Card {
@@ -59,12 +70,21 @@ export const CARD = {
   longday: 11,
   searing: 12,
   mirage: 13,
+  helio: 14,
+  scarab: 15,
+  stake: 16,
+  prism: 17,
+  multitude: 18,
+  reach: 19,
+  endurance: 20,
 } as const
 
 export function createBuild(): Build {
   return {
     level: 1, xp: 0, pending: 0, spear: 1, halo: 0, might: 0, haste: 0, swift: 0, vitality: 0,
-    lodestone: 0, wide: 0, flare: 0, bell: 0, longday: 0, searing: 0, mirage: 0, spearJump: 0, haloJump: 0, flareJump: 0, bellJump: 0,
+    lodestone: 0, wide: 0, flare: 0, bell: 0, longday: 0, searing: 0, mirage: 0,
+    helio: 0, scarab: 0, stake: 0, prism: 0, multitude: 0, reach: 0, endurance: 0,
+    spearJump: 0, haloJump: 0, flareJump: 0, bellJump: 0, helioJump: 0, scarabJump: 0, stakeJump: 0, prismJump: 0,
   }
 }
 
@@ -81,9 +101,36 @@ export function isSunBoon(id: number): boolean {
   return id === CARD.wide || id === CARD.longday || id === CARD.searing
 }
 
-export const WEAPON_IDS: readonly number[] = [CARD.spear, CARD.halo, CARD.flare, CARD.bell]
-export const PASSIVE_IDS: readonly number[] = [CARD.might, CARD.haste, CARD.swift, CARD.vitality, CARD.lodestone]
+export const WEAPON_IDS: number[] = [CARD.spear, CARD.halo, CARD.flare, CARD.bell]
+export const PASSIVE_IDS: number[] = [CARD.might, CARD.haste, CARD.swift, CARD.vitality, CARD.lodestone]
 export const SLOT_CAP = 6
+
+let offerW2 = false
+let poolW1 = false
+
+/** The lazy chunk calls this once it has registered card text. */
+export function openW2Offers(): void {
+  if (poolW1) return
+  offerW2 = true
+  if (!WEAPON_IDS.includes(CARD.helio)) WEAPON_IDS.push(CARD.helio, CARD.scarab, CARD.stake, CARD.prism)
+  if (!PASSIVE_IDS.includes(CARD.multitude)) PASSIVE_IDS.push(CARD.multitude, CARD.reach, CARD.endurance)
+}
+
+/** ?pool=w1 keeps the offer on the W1 list after the chunk loads. */
+export function lockW1Pool(): void {
+  poolW1 = true
+  offerW2 = false
+}
+
+export function w2OffersOpen(): boolean {
+  return offerW2 && !poolW1
+}
+
+const cardCopy = new Map<number, (rank: number) => { name: string; text: string; max: number }>()
+
+export function registerCard(id: number, copy: (rank: number) => { name: string; text: string; max: number }): void {
+  cardCopy.set(id, copy)
+}
 
 export function countHeld(ids: readonly number[], rank: (id: number) => number): number {
   let n = 0
@@ -109,6 +156,13 @@ export function rankOf(build: Build, id: number): number {
   if (id === CARD.longday) return build.longday
   if (id === CARD.searing) return build.searing
   if (id === CARD.mirage) return build.mirage
+  if (id === CARD.helio) return build.helio
+  if (id === CARD.scarab) return build.scarab
+  if (id === CARD.stake) return build.stake
+  if (id === CARD.prism) return build.prism
+  if (id === CARD.multitude) return build.multitude
+  if (id === CARD.reach) return build.reach
+  if (id === CARD.endurance) return build.endurance
   return 0
 }
 
@@ -117,6 +171,10 @@ function jumpUsed(build: Build, id: number): number {
   if (id === CARD.halo) return build.haloJump
   if (id === CARD.flare) return build.flareJump
   if (id === CARD.bell) return build.bellJump
+  if (id === CARD.helio) return build.helioJump
+  if (id === CARD.scarab) return build.scarabJump
+  if (id === CARD.stake) return build.stakeJump
+  if (id === CARD.prism) return build.prismJump
   return 2
 }
 
@@ -132,6 +190,10 @@ export function noteJump(build: Build, id: number, step: number) {
   else if (id === CARD.halo) build.haloJump++
   else if (id === CARD.flare) build.flareJump++
   else if (id === CARD.bell) build.bellJump++
+  else if (id === CARD.helio) build.helioJump++
+  else if (id === CARD.scarab) build.scarabJump++
+  else if (id === CARD.stake) build.stakeJump++
+  else if (id === CARD.prism) build.prismJump++
 }
 
 const restPool: number[] = []
@@ -168,6 +230,16 @@ export function rollCards(build: Build, rng: Rng, out: Card[], count = 3): numbe
   add(CARD.vitality, passiveRoom(build.vitality))
   add(CARD.lodestone, passiveRoom(build.lodestone))
   add(CARD.wide, build.wide < TUNING.wideMax)
+  if (offerW2 && !poolW1) {
+    add(CARD.helio, weaponRoom(build.helio))
+    add(CARD.scarab, weaponRoom(build.scarab))
+    add(CARD.stake, weaponRoom(build.stake))
+    add(CARD.prism, weaponRoom(build.prism))
+    const multiRoom = build.multitude <= 0 ? passivesHeld < SLOT_CAP : build.multitude < 2
+    add(CARD.multitude, multiRoom)
+    add(CARD.reach, passiveRoom(build.reach))
+    add(CARD.endurance, passiveRoom(build.endurance))
+  }
   if (build.level >= 4) {
     add(CARD.flare, weaponRoom(build.flare))
     add(CARD.bell, weaponRoom(build.bell))
@@ -238,6 +310,11 @@ export function describe(build: Build, id: number): Card {
   if (id === CARD.longday) return cardOf(build, id, 'Long Day', 'The sun turns 12% slower', 5)
   if (id === CARD.searing) return cardOf(build, id, 'Searing Light', 'Lit enemies burn for 2s', 5)
   if (id === CARD.mirage) return cardOf(build, id, 'Mirage Sandals', 'A sidestep that leaves a decoy', 1)
+  const extra = cardCopy.get(id)
+  if (extra) {
+    const row = extra(rankOf(build, id))
+    return cardOf(build, id, row.name, row.text, row.max)
+  }
   return { id: CARD.heal, name: 'Heal 30', text: 'Restore 30 HP', from: 'now', to: '+30', rank: 0, max: 1, next: 1 }
 }
 
@@ -263,6 +340,38 @@ export function applyRank(build: Build, id: number): 'vitality' | 'wide' | 'heal
   if (id === CARD.bell && build.bell < cap) {
     build.bell = Math.min(cap, build.bell + step)
     noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.helio && build.helio < cap) {
+    build.helio = Math.min(cap, build.helio + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.scarab && build.scarab < cap) {
+    build.scarab = Math.min(cap, build.scarab + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.stake && build.stake < cap) {
+    build.stake = Math.min(cap, build.stake + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.prism && build.prism < cap) {
+    build.prism = Math.min(cap, build.prism + step)
+    noteJump(build, id, step)
+    return 'done'
+  }
+  if (id === CARD.multitude && build.multitude < 2) {
+    build.multitude++
+    return 'done'
+  }
+  if (id === CARD.reach && build.reach < cap) {
+    build.reach++
+    return 'done'
+  }
+  if (id === CARD.endurance && build.endurance < cap) {
+    build.endurance++
     return 'done'
   }
   if (id === CARD.might && build.might < cap) {

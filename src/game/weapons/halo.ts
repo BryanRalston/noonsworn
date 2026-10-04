@@ -1,6 +1,7 @@
 import { CylinderGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
 import { TUNING } from '../../data/tuning'
 import { hasteMul } from '../sunClock'
+import { reachMul } from './passives'
 import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
@@ -139,9 +140,9 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
       halo.sun = footSun
       halo.angle += dt * ((Math.PI * 2) / Math.max(0.2, halo.period))
       wardPulse = Math.max(0, wardPulse - dt)
-      discScale = (big ? TUNING.halo.discL5 : TUNING.halo.disc) / 0.5
+      discScale = ((big ? TUNING.halo.discL5 : TUNING.halo.disc) / 0.5) * reachMul()
       const damage = stats.damage * (footSun ? TUNING.halo.sunDamage : 1)
-      const reach = TUNING.halo.discR + TUNING.halo.reachPad
+      const reach = (TUNING.halo.discR + TUNING.halo.reachPad) * reachMul()
       const knock = big ? TUNING.halo.knockL5 : TUNING.halo.knock
       if (big && time - rayAt > 0.36) {
         rayAt = time
