@@ -2072,6 +2072,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       setWeaponPassives(build.reach, build.endurance)
       spears.multitude = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
       const spearT = performance.now()
+      horde.dmgCap = build.level < TUNING.earlyLevel ? TUNING.earlyWeaponCap : 0
       spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
       profSpear += performance.now() - spearT
       const haloT = performance.now()

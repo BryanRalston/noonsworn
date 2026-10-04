@@ -17,6 +17,11 @@ export const TUNING = {
   litHzDiv: 3,
   staggerTime: 0.35,
   staggerGap: 2.5,
+  ccFatigue: { hits: 4, window: 6, ignore: 2 },
+  // While Sela is below this level, a weapon hit cannot exceed this much damage.
+  // Idle card-1 otherwise one-shots the ring and never takes a touch. Boss hits are separate.
+  earlyLevel: 6,
+  earlyWeaponCap: 3,
   exposedDamage: 2,
   exposedSpeed: 0.8,
   armoredWeapon: 0.5,

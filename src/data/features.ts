@@ -35,6 +35,7 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Obelisk Grove', status: 'shipped', since: 'W3' },
   { area: 'Combat & Weapons', feature: 'Mock Sun', status: 'shipped', since: 'W3' },
   { area: 'Combat & Weapons', feature: 'W2 art carry: Halo rim, Prism outline, Flare hue and size', status: 'shipped', since: 'W3' },
+  { area: 'Combat & Weapons', feature: 'Idle card-1 fix: crowd-control fatigue and an early weapon-damage cap', status: 'shipped', since: 'W3' },
   { area: 'Enemies', feature: 'Dusk Mite horde', status: 'shipped', since: 'M1' },
   { area: 'Enemies', feature: 'Shade Hound lunge', status: 'shipped', since: 'M1' },
   { area: 'Enemies', feature: 'Veilcaster, Crawler, Moth, Gloamling, elites, the Gloam', status: 'planned', since: 'M2' },

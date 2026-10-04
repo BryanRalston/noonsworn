@@ -147,6 +147,8 @@ export interface Horde {
   clear: () => void
   cullTo: (cap: number, px: number, pz: number) => void
   damage: (index: number, base: number, source: DamageSource, might: number, raw?: boolean) => 0 | 1 | 2
+  /** Weapon hits are capped at this while it is above 0. Boss hits do not use damage(). */
+  dmgCap: number
   slay: (index: number, ctx: HordeCtx) => void
   update: (ctx: HordeCtx) => void
   sync: (camX: number, camZ: number, high: boolean) => void
@@ -275,6 +277,11 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const gleamIds = new Int16Array(48)
   let gleamN = 0
   const staggerAt = new Float32Array(MAX)
+  const CTRL_SLOTS = 4
+  const ctrlAt = new Float32Array(MAX * CTRL_SLOTS)
+  ctrlAt.fill(-100)
+  const tired = new Float32Array(MAX)
+  let clock = 0
   const aimX = new Float32Array(MAX)
   const aimZ = new Float32Array(MAX)
   const sepX = new Float32Array(MAX)
@@ -368,9 +375,44 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     dartCd[i] = 0
     steerT[i] = 0
     wantDart[i] = 0
+    wipeControl(i)
     const bucket = (i * 13) % 5
     body[i] = kind === 0 ? (bucket < 2 ? 0.8 : bucket < 4 ? 1 : 1.35) : kind === 1 ? 1.3 : 1
     squash[i] = 0
+  }
+
+  function wipeControl(i: number) {
+    tired[i] = 0
+    const base = i * CTRL_SLOTS
+    ctrlAt[base] = -100
+    ctrlAt[base + 1] = -100
+    ctrlAt[base + 2] = -100
+    ctrlAt[base + 3] = -100
+  }
+
+  // The hit that reaches the count still lands. Further control is ignored, not damage.
+  function allowControl(i: number, now: number): boolean {
+    const row = TUNING.ccFatigue
+    if (now < (tired[i] ?? 0)) return false
+    const base = i * CTRL_SLOTS
+    let n = 0
+    let slot = 0
+    let oldest = Infinity
+    for (let k = 0; k < CTRL_SLOTS; k++) {
+      const t = ctrlAt[base + k] ?? -100
+      if (t >= 0 && now - t <= row.window) n++
+      else if (t < oldest) {
+        oldest = t
+        slot = k
+      }
+    }
+    if (n >= row.hits) {
+      tired[i] = now + row.ignore
+      return false
+    }
+    ctrlAt[base + slot] = now
+    if (n + 1 >= row.hits) tired[i] = now + row.ignore
+    return true
   }
 
   function sting(i: number) {
@@ -452,12 +494,15 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       return slot
     },
     frozen: false,
+    dmgCap: 0,
     clear() {
       alive.fill(0)
       state.fill(0)
       bench.fill(0)
       gleamT.fill(0)
       gleamN = 0
+      tired.fill(0)
+      ctrlAt.fill(-100)
       bonusMites = 0
       horde.frozen = false
       free.reset()
@@ -620,6 +665,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if (d2 > r2 || d2 < 1e-6) continue
         const d = Math.sqrt(d2)
         const step = Math.min(dist, d)
+        if (!allowControl(i, clock)) continue
         const ox = x[i] ?? 0
         const oz = z[i] ?? 0
         x[i] = ox + (dx / d) * step
@@ -632,6 +678,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     },
     nudge(index, dx, dz) {
       if (!alive[index] || state[index] === DYING || bench[index]) return
+      if (!allowControl(index, clock)) return
       const ox = x[index] ?? 0
       const oz = z[index] ?? 0
       x[index] = ox + dx
@@ -648,6 +695,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const dx = (x[i] ?? 0) - cx
         const dz = (z[i] ?? 0) - cz
         if (dx * dx + dz * dz > r2) continue
+        if (!allowControl(i, clock)) continue
         slowT[i] = Math.max(slowT[i] ?? 0, seconds)
       }
     },
@@ -670,6 +718,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     },
     staggerFor(index, seconds) {
       if (!alive[index] || state[index] === DYING || bench[index]) return
+      if (!allowControl(index, clock)) return
       state[index] = STAGGER
       stateT[index] = seconds
     },
@@ -686,7 +735,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       if (!was) {
         horde.onExpose?.(x[index] ?? 0, z[index] ?? 0)
         if (type[index] === 2) wantDart[index] = 1
-        if (now - (staggerAt[index] ?? -10) >= TUNING.staggerGap) {
+        if (now - (staggerAt[index] ?? -10) >= TUNING.staggerGap && allowControl(index, now)) {
           state[index] = STAGGER
           stateT[index] = TUNING.staggerTime
           staggerAt[index] = now
@@ -732,6 +781,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if (!alive[i] || bench[i] || state[i] === DYING) continue
         const next = apply(x[i] ?? 0, z[i] ?? 0, specOf(type[i] ?? 0).radius)
         if (!next) continue
+        if (!allowControl(i, clock)) continue
         x[i] = next.x
         z[i] = next.z
       }
@@ -743,6 +793,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       const inDeep = lit[index] !== 1 && !darting && (deepFn?.(x[index] ?? 0, z[index] ?? 0) ?? false)
       let amount = raw ? base * (1 + TUNING.passive.might * might) : damageAmount(base, lit[index] === 1 || darting, source, might, inDeep)
       if (darting && source === 'cut') amount *= 1.5
+      if (!raw && source === 'weapon' && horde.dmgCap > 0 && amount > horde.dmgCap) amount = horde.dmgCap
       hp[index] = (hp[index] ?? 0) - amount
       sting(index)
       const killed = (hp[index] ?? 0) <= 0
@@ -753,6 +804,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       kill(index, ctx)
     },
     update(ctx) {
+      clock = ctx.time
       syncLite = ctx.lite
       syncTick = ctx.tick
       deepFn = ctx.deep
@@ -774,7 +826,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if (litKnown[i] && now && !lit[i]) {
           ctx.onExpose?.(x[i] ?? 0, z[i] ?? 0)
           if (type[i] === 2) wantDart[i] = 1
-          if (ctx.time - (staggerAt[i] ?? -10) >= TUNING.staggerGap) {
+          if (ctx.time - (staggerAt[i] ?? -10) >= TUNING.staggerGap && allowControl(i, ctx.time)) {
             state[i] = STAGGER
             stateT[i] = TUNING.staggerTime
             staggerAt[i] = ctx.time
