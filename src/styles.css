@@ -620,6 +620,8 @@ body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
   #btn-halo.ready { animation: halo-pulse 1.15s ease-out infinite; }
 }
 @media (max-width: 800px) {
+  /* 34 px home-indicator inset. The card stays 12 px / 11 px; only the strip moves up. */
+  #level-up .strip { bottom: 34px; }
   #level-up #cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   #cards { grid-template-columns: 1fr; }
   h1 { font-size: 32px; }
@@ -759,14 +761,21 @@ html.reduce-motion .evo-card.flip { animation: none; }
   background: transparent;
 }
 #dayburst-flash.on { animation: dayburst-flash 0.18s ease-out; }
+#dayburst-flash.on.alt { animation-name: dayburst-flash-b; }
 @keyframes dayburst-flash {
   0% { background: rgba(255, 243, 176, 0.55); opacity: 1; }
   100% { opacity: 0; }
 }
-@media (prefers-reduced-motion: reduce) {
-  #dayburst-flash.on { animation: none; opacity: 0; }
+@keyframes dayburst-flash-b {
+  0% { background: rgba(255, 243, 176, 0.55); opacity: 1; }
+  100% { opacity: 0; }
 }
-html.reduce-motion #dayburst-flash.on { animation: none; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  #dayburst-flash.on,
+  #dayburst-flash.on.alt { animation: none; opacity: 0; }
+}
+html.reduce-motion #dayburst-flash.on,
+html.reduce-motion #dayburst-flash.on.alt { animation: none; opacity: 0; }
 #chest-pointer {
   position: fixed;
   z-index: 6;
