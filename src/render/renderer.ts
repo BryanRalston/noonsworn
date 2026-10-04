@@ -50,6 +50,10 @@ export function createGpu(canvas: HTMLCanvasElement, camera: PerspectiveCamera, 
     camera.aspect = w / h
     camera.fov = camera.aspect < 1 ? TUNING.camera.fovPortrait : TUNING.camera.fov
     camera.updateProjectionMatrix()
+    const bufferW = Math.floor(w * ratio)
+    const bufferH = Math.floor(h * ratio)
+    // Assigning canvas.width clears the bitmap even when the value is unchanged.
+    if (canvas.width === bufferW && canvas.height === bufferH && renderer.getPixelRatio() === ratio) return
     renderer.setPixelRatio(ratio)
     renderer.setSize(w, h, false)
   }

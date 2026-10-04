@@ -707,6 +707,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     return `${m}:${s < 10 ? '0' : ''}${s}   ${kills} kills   level ${build.level}`
   }
 
+  // setSize clears the drawing buffer. Auto-resolution used to do that after
+  // the draw, so the browser painted one black frame. Hold the resize and
+  // apply it at the start of the next frame, before that frame draws.
+  let presentationDue = false
   function applyPresentation() {
     gpu.resize(quality.ratio)
     bloom.setSize(canvas.width, canvas.height)
@@ -716,7 +720,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     if (!(previewWeapon && previewHold)) horde.cullTo(quality.cap, player.x, player.z)
     featureMap.refresh()
   }
-  quality.onChange = () => applyPresentation()
+  quality.onChange = () => {
+    presentationDue = true
+  }
   applyPresentation()
 
   function showMode(next: ScreenMode) {
@@ -2192,6 +2198,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       return hitStop <= 0
     },
     render(alpha, frameSec, frameMs) {
+      if (presentationDue) {
+        presentationDue = false
+        applyPresentation()
+      }
       const x = player.px + (player.x - player.px) * alpha
       const z = player.pz + (player.z - player.pz) * alpha
       let dy = player.yaw - player.prevYaw
