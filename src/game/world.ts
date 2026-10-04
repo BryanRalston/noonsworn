@@ -1261,6 +1261,10 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
   hud.onPause = () => {
     audio.ui()
+    if (mode === 'level') {
+      closeOffer()
+      return
+    }
     if (mode === 'playing') {
       showMode('paused')
       ads.gameplayStop()
@@ -1270,10 +1274,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     }
   }
   levelUp.onPick = (index) => {
-    if (mode === 'level') {
-      audio.ui()
-      applyCard(shown[index]?.id ?? CARD.heal)
-    }
+    takeCard(index)
   }
   debug.onTier = (tier: TierName) => quality.forceTier(tier)
   debug.onSpawn = () => spawnStress(50)
