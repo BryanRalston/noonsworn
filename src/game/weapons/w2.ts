@@ -557,7 +557,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         sMode[id] = target === -2 ? 2 : 0
         sLatch[id] = latch * endureMul()
         sGnaw[id] = row.gnawEvery
-        sRetarget[id] = 0
+        sRetarget[id] = row.retarget
         sTicks[id] = 0
         sRetargets[id] = 0
         sAge[id] = 0
@@ -584,7 +584,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         sz[i] = horde.z[slot] ?? sz[i] ?? 0
         sGnaw[i] = (sGnaw[i] ?? 0) + dt
         const dur = sLatch[i] ?? row.latch
-        if ((sAge[i] ?? 0) >= dur) {
+        if ((sAge[i] ?? 0) >= dur || (sTicks[i] ?? 0) >= 8) {
           latchSeen = dur
           gnawTicks = sTicks[i] ?? 0
           releaseScarab(i)
@@ -596,8 +596,6 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
           if (hit > 0) sTicks[i] = (sTicks[i] ?? 0) + 1
           fx.hit(sx[i] ?? 0, sz[i] ?? 0, false)
         }
-        const hz = (sRetargets[i] ?? 0) / Math.max(0.2, sAge[i] ?? 0.2)
-        if (hz > retargetHz) retargetHz = hz
         continue
       }
       sRetarget[i] = (sRetarget[i] ?? 0) - dt
@@ -631,8 +629,11 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       }
       if (slot >= 0 && dist < 0.55) landScarab(i, slot, horde, damage, might, ctx)
       if ((sAge[i] ?? 0) > 4) releaseScarab(i)
-      const hz = (sRetargets[i] ?? 0) / Math.max(0.2, sAge[i] ?? 0.2)
-      if (hz > retargetHz) retargetHz = hz
+      const age = sAge[i] ?? 0
+      if (age >= 0.2) {
+        const hz = (sRetargets[i] ?? 0) / age
+        if (hz > retargetHz) retargetHz = hz
+      }
     }
   }
 
@@ -643,6 +644,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       sTarget[i] = slot
       sAge[i] = 0
       sTicks[i] = 0
+      sRetargets[i] = 0
       sGnaw[i] = TUNING.scarab.gnawEvery
       return
     }
