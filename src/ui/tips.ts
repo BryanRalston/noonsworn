@@ -64,6 +64,14 @@ export function createTips(parent: HTMLElement): Tips {
     },
     update(dt) {
       if (!enabled) return
+      const strip = document.getElementById('level-up')
+      const offering = !!strip && !strip.hidden
+      if (offering && current?.id === 'boon') {
+        root.hidden = true
+        return
+      }
+      if (offering && !current && queue[0]?.id === 'boon') return
+      if (!offering && current?.id === 'boon' && root.hidden) show(current)
       if (!current) {
         current = queue.shift() ?? null
         if (!current) {

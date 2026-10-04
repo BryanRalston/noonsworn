@@ -317,17 +317,17 @@ h1 { color: var(--goldHot); font-size: 40px; }
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 22vh;
+  max-height: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--ink) 88%, transparent);
   border-top: 1px solid var(--shade);
   transform: translateY(110%);
   transition: transform 150ms ease;
   pointer-events: auto;
-  overflow: hidden;
+  overflow: visible;
 }
 body:has(#level-up:not([hidden])) #touch-root,
 body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
@@ -341,11 +341,19 @@ body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
   padding: 10px 16px;
   margin-right: env(safe-area-inset-right);
 }
-#level-up #cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
-#level-up .card { min-height: 0; padding: 6px 8px; gap: 2px; border-radius: 10px; }
-#level-up .card-icon { width: 36px; height: 36px; }
-#level-up .card strong { font-size: 13px; }
-#level-up .card-line { color: var(--sandstone); font: 12px/1.25 system-ui, sans-serif; }
+#level-up #cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; align-items: stretch; }
+#level-up .card { min-height: 0; padding: 6px 6px 8px; gap: 2px; border-radius: 10px; overflow: visible; }
+#level-up .card-icon { width: 28px; height: 28px; flex: 0 0 auto; }
+#level-up .card strong { font-size: 12px; line-height: 1.15; }
+#level-up .card-line {
+  color: var(--sandstone);
+  font: 11px/1.2 system-ui, sans-serif;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+#level-up .pips { flex: 0 0 auto; }
 .pips { display: flex; gap: 3px; }
 .pips i { width: 7px; height: 7px; border-radius: 50%; background: var(--shadeDeep); display: block; }
 .pips i.on { background: var(--gold); }

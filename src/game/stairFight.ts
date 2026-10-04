@@ -617,8 +617,10 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
           yawA[i] = Math.atan2(ax, az)
         }
       }
-      const nx = (xA[i] ?? 0) + ax * speed * dt
-      const nz = (zA[i] ?? 0) + az * speed * dt
+      vxA[i] = ax * speed
+      vzA[i] = az * speed
+      const nx = (xA[i] ?? 0) + (vxA[i] ?? 0) * dt
+      const nz = (zA[i] ?? 0) + (vzA[i] ?? 0) * dt
       if (!host.parapet(nx, nz) && nx > -23 && nx < 23 && nz > -23 && nz < 23) {
         xA[i] = nx
         zA[i] = nz
@@ -1220,7 +1222,17 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
         if (d < bestD) { bestD = d; best = i }
       }
       if (best < 0) return null
-      return { x: xA[best] ?? 0, z: zA[best] ?? 0 }
+      const state = stA[best] ?? 0
+      const courser = (kindA[best] ?? 0) < 0.5
+      let nvx = vxA[best] ?? 0
+      let nvz = vzA[best] ?? 0
+      let wind = 0
+      if (courser && state === 2) {
+        wind = tmA[best] ?? 0
+        nvx = (vxA[best] ?? 0) * 12
+        nvz = (vzA[best] ?? 0) * 12
+      }
+      return { x: xA[best] ?? 0, z: zA[best] ?? 0, vx: nvx, vz: nvz, wind, hp: hpA[best] ?? 0 }
     },
     hit(x, z, radius, base, source, might, stamp) {
       let hit = false

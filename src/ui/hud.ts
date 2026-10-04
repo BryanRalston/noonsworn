@@ -105,9 +105,9 @@ function bindTap(el: Element | null, fn: () => void) {
     e.preventDefault()
     fromTouch = true
     fn()
-    requestAnimationFrame(() => {
+    window.setTimeout(() => {
       fromTouch = false
-    })
+    }, 150)
   })
   el.addEventListener('click', () => {
     if (fromTouch) return

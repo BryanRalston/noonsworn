@@ -57,7 +57,7 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
           e.preventDefault()
           touchPick = true
           ui.onPick?.(i)
-          requestAnimationFrame(() => {
+          holdTouch(() => {
             touchPick = false
           })
         })
@@ -95,6 +95,11 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
   return ui
 }
 
+/** A synthesized click can arrive well after pointerup when the strip reopens. */
+function holdTouch(release: () => void) {
+  window.setTimeout(release, 150)
+}
+
 function bindTouch(el: HTMLElement, fn: () => void) {
   let fromTouch = false
   el.addEventListener('pointerup', (e) => {
@@ -102,7 +107,7 @@ function bindTouch(el: HTMLElement, fn: () => void) {
     e.preventDefault()
     fromTouch = true
     fn()
-    requestAnimationFrame(() => {
+    holdTouch(() => {
       fromTouch = false
     })
   })

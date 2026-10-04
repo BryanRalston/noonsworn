@@ -187,7 +187,13 @@ export interface Horde {
   bossAt: { x: number; z: number; r: number } | null
   /** While set, a boss already in spear range keeps the shot. Stair only. */
   bossLock: boolean
-  annexNear: ((x: number, z: number, range: number) => { x: number; z: number } | null) | null
+  annexNear: ((x: number, z: number, range: number) => { x: number; z: number; vx?: number; vz?: number; wind?: number; hp?: number } | null) | null
+  hpOf: (index: number) => number
+  living: (index: number) => boolean
+  /** 1 telegraph, 2 lunge, 3 shade dart, 0 anything that should be aimed where it stands. */
+  motion: (index: number) => 0 | 1 | 2 | 3
+  /** Where this body will be after `seconds`, from the move it is already making. */
+  forecast: (index: number, seconds: number, out: { x: number; z: number }) => void
 }
 
 export interface HordeCtx {
@@ -252,6 +258,8 @@ function sampleMorph(lut: MorphLut, phase: number, out: number[]) {
 export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const x = new Float32Array(MAX)
   const z = new Float32Array(MAX)
+  const vx = new Float32Array(MAX)
+  const vz = new Float32Array(MAX)
   const hp = new Float32Array(MAX)
   const yaw = new Float32Array(MAX)
   const phase = new Float32Array(MAX)
@@ -781,6 +789,8 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       }
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
+        vx[i] = 0
+        vz[i] = 0
         flash[i] = Math.max(0, (flash[i] ?? 0) - ctx.dt)
         squash[i] = Math.max(0, (squash[i] ?? 0) - ctx.dt)
         contact[i] = Math.max(0, (contact[i] ?? 0) - ctx.dt)
@@ -1012,8 +1022,10 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           sz = along.z
         }
         const steer = Math.hypot(sx, sz) || 1
-        x[i] = ox + (sx / steer) * spd * ctx.dt
-        z[i] = oz + (sz / steer) * spd * ctx.dt
+        vx[i] = (sx / steer) * spd
+        vz[i] = (sz / steer) * spd
+        x[i] = ox + (vx[i] ?? 0) * ctx.dt
+        z[i] = oz + (vz[i] ?? 0) * ctx.dt
         const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
         x[i] = slid.x
         z[i] = slid.z
@@ -1059,6 +1071,59 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         ctx.onHurt(spec.contact * open)
         if (!ctx.vulnerable()) return
       }
+    },
+    hpOf(index) {
+      return hp[index] ?? 0
+    },
+    living(index) {
+      return alive[index] === 1 && bench[index] === 0 && state[index] !== DYING
+    },
+    motion(index) {
+      const st = state[index] ?? 0
+      if ((type[index] ?? 0) === 1 && st === TELE) return 1
+      if ((type[index] ?? 0) === 1 && st === LUNGE) return 2
+      if ((type[index] ?? 0) === 2 && st === DART) return 3
+      return 0
+    },
+    forecast(index, seconds, out) {
+      const px = x[index] ?? 0
+      const pz = z[index] ?? 0
+      const kind = type[index] ?? 0
+      const st = state[index] ?? 0
+      const t = seconds > 0 ? seconds : 0
+      if (kind === 1 && st === TELE) {
+        const wait = stateT[index] ?? 0
+        const fly = Math.max(0, t - wait)
+        const cap = Math.min(TUNING.hound.lunge, TUNING.hound.lungeSpeed * fly)
+        out.x = px + (aimX[index] ?? 0) * cap
+        out.z = pz + (aimZ[index] ?? 0) * cap
+        return
+      }
+      if (kind === 1 && st === LUNGE) {
+        const left = Math.max(0, TUNING.hound.lunge - (travelled[index] ?? 0))
+        const step = Math.min(left, TUNING.hound.lungeSpeed * t)
+        out.x = px + (aimX[index] ?? 0) * step
+        out.z = pz + (aimZ[index] ?? 0) * step
+        return
+      }
+      if (kind === 2 && st === DART) {
+        const tx = aimX[index] ?? px
+        const tz = aimZ[index] ?? pz
+        const mx = tx - px
+        const mz = tz - pz
+        const left = Math.hypot(mx, mz) || 1
+        const step = Math.min(left, TUNING.darter.dart * t)
+        out.x = px + (mx / left) * step
+        out.z = pz + (mz / left) * step
+        return
+      }
+      if (st === CHASE) {
+        out.x = px + (vx[index] ?? 0) * t
+        out.z = pz + (vz[index] ?? 0) * t
+        return
+      }
+      out.x = px
+      out.z = pz
     },
     nearest(px, pz, range) {
       let best = -1

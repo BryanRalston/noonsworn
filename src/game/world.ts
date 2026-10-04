@@ -144,6 +144,7 @@ export async function boot(container: HTMLElement) {
   let animSlashSeen = 0
   let slashStopAt = -10
   const spearPoint = new Vector3()
+  const aimPoint = new Vector3()
   let litAx = 10.2
   let litAz = 1.4
   let shadeAx = 18
@@ -313,6 +314,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   let spotLight: ((x: number, z: number) => boolean) | null = null
   const arsenal = createArsenal()
   const spears = createSunspear(fx, arsenal)
+  spears.see = (x, z) => {
+    aimPoint.set(x, 0.9, z)
+    aimPoint.project(follow.camera)
+    return Math.abs(aimPoint.x) <= 1.05 && Math.abs(aimPoint.y) <= 1.05 && aimPoint.z >= -1 && aimPoint.z <= 1
+  }
   const halo = createHalo(fx, arsenal, (x, z) => mapLit(x, z))
   const flare = createFlare(fx)
   const bell = createBell(fx, arsenal)
@@ -2404,6 +2410,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       packHits,
       spearCd: spears.cooldown,
       spearN: spears.used(),
+      spearAim: { throws: spears.throws, connects: spears.connects },
       halo: { orbit: halo.orbit, period: halo.period, sun: halo.sun, live: halo.live, angle: halo.angle },
       flare: { cooldown: flare.cooldown, spots: flare.spots() },
       bell: bell.pose(),
