@@ -121,9 +121,10 @@ function discArrays(pos: number[], col: number[], emit: number[], parts: number[
     const a1 = ((i + 1) / n) * Math.PI * 2
     const rIn = 0.36
     const y = 0.03
+    const rOut = 0.64
+    const lip = 0.16
     pushTri(part, pos, col, emit, parts, [0, y, 0], [Math.cos(a0) * rIn, y, Math.sin(a0) * rIn], [Math.cos(a1) * rIn, y, Math.sin(a1) * rIn], GOLD, GOLD, GOLD, 1, 0.7, 0.7)
     pushTri(part, pos, col, emit, parts, [0, -y, 0], [Math.cos(a1) * rIn, -y, Math.sin(a1) * rIn], [Math.cos(a0) * rIn, -y, Math.sin(a0) * rIn], BRONZE, BRONZE, BRONZE, 0, 0, 0)
-    const rOut = 0.5
     quad(
       part,
       pos,
@@ -134,6 +135,19 @@ function discArrays(pos: number[], col: number[], emit: number[], parts: number[
       [Math.cos(a1) * rIn, y, Math.sin(a1) * rIn],
       [Math.cos(a1) * rOut, y, Math.sin(a1) * rOut],
       [Math.cos(a0) * rOut, y, Math.sin(a0) * rOut],
+      BRONZE,
+      0,
+    )
+    quad(
+      part,
+      pos,
+      col,
+      emit,
+      parts,
+      [Math.cos(a0) * rOut, y, Math.sin(a0) * rOut],
+      [Math.cos(a1) * rOut, y, Math.sin(a1) * rOut],
+      [Math.cos(a1) * rOut, y + lip, Math.sin(a1) * rOut],
+      [Math.cos(a0) * rOut, y + lip, Math.sin(a0) * rOut],
       BRONZE,
       0,
     )

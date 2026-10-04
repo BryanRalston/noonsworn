@@ -567,7 +567,7 @@ export function createWeaponFx(): WeaponFx {
     },
     band(px, pz, radius, seconds) {
       const d = Math.max(0.8, radius) * 2
-      put(CELL.flareBand, px, 0.12, pz, 0, d, d, seconds, FX.punch, 3, 0, 0)
+      put(CELL.flareBand, px, 0.12, pz, 0, d, d, seconds, FX.punch, 0, 0, 0)
     },
     shock(px, pz, radius) {
       const d = (Math.max(0.4, radius) * 2) / RING

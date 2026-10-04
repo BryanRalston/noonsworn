@@ -120,6 +120,17 @@ function prismPart(): { position: Float32Array; color: Float32Array; emit: Float
     pushTri(pos, col, em, top, a, b, GOLD, 0.85)
     pushTri(pos, col, em, bot, b, a, BRONZE, 0)
     quad(pos, col, em, a, b, [b[0] ?? 0, (b[1] ?? 0) + 0.02, b[2] ?? 0], [a[0] ?? 0, (a[1] ?? 0) + 0.02, a[2] ?? 0], BRONZE, 0)
+    const ox0 = (a[0] ?? 0) * 1.55
+    const oz0 = (a[2] ?? 0) * 1.55
+    const ox1 = (b[0] ?? 0) * 1.55
+    const oz1 = (b[2] ?? 0) * 1.55
+    const ix0 = (a[0] ?? 0) * 0.55
+    const iz0 = (a[2] ?? 0) * 0.55
+    const ix1 = (b[0] ?? 0) * 0.55
+    const iz1 = (b[2] ?? 0) * 0.55
+    quad(pos, col, em, [ix0, -0.02, iz0], [ix1, -0.02, iz1], [ox1, -0.02, oz1], [ox0, -0.02, oz0], BRONZE, 0)
+    quad(pos, col, em, [ix0, 0.03, iz0], [ox0, 0.03, oz0], [ox1, 0.03, oz1], [ix1, 0.03, iz1], BRONZE, 0)
+    quad(pos, col, em, [ox0, -0.02, oz0], [ox1, -0.02, oz1], [ox1, 0.03, oz1], [ox0, 0.03, oz0], BRONZE, 0)
     const ax = (a[0] ?? 0) * 0.9
     const az = (a[2] ?? 0) * 0.9
     const bx = (b[0] ?? 0) * 0.9
@@ -1176,7 +1187,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
           if (!pAlive[i]) continue
           const prismYaw = time * 2 + i
           arsenal.add({ kind: ARSENAL_PART.prism, x: pxA[i] ?? 0, y: 0.9, z: pzA[i] ?? 0, yaw: prismYaw, scale, hot: 1, swing: 0 })
-          const rims = spinRims(pxA[i] ?? 0, 0.9, pzA[i] ?? 0, prismYaw, scale, ringLocal(0.288, 0))
+          const rims = spinRims(pxA[i] ?? 0, 0.9, pzA[i] ?? 0, prismYaw, scale, ringLocal(0.32, 0))
           const rim = rims[0] ?? { x: pxA[i] ?? 0, y: 0.9, z: pzA[i] ?? 0 }
           probeAdd({
             kind: 'prism',

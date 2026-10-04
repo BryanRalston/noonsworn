@@ -205,15 +205,16 @@ export function createFlare(fx: WeaponFx): Flare {
   return flare
 
   function burstVisual(px: number, pz: number, radius: number, big: boolean) {
-    burst = { x: px, z: pz, radius, life: 0.45 }
-    fx.core(px, pz, Math.max(TUNING.flare.band, radius * 0.35))
-    fx.band(px, pz, radius, 0.45)
-    if (big) fx.band(px, pz, radius * 0.62, 0.4)
-    fx.shock(px, pz, radius * 0.85)
+    const shown = radius * TUNING.flare.visual
+    burst = { x: px, z: pz, radius: shown, life: 0.45 }
+    fx.core(px, pz, Math.max(TUNING.flare.band, shown * 0.35))
+    fx.band(px, pz, shown, 0.45)
+    if (big) fx.band(px, pz, shown * 0.62, 0.4)
+    fx.shock(px, pz, shown * 0.85)
     const tongues = 12
     for (let i = 0; i < tongues; i++) {
       const a = (i / tongues) * Math.PI * 2
-      fx.dust(px + Math.cos(a) * radius * 0.72, pz + Math.sin(a) * radius * 0.72)
+      fx.dust(px + Math.cos(a) * shown * 0.72, pz + Math.sin(a) * shown * 0.72)
     }
   }
 

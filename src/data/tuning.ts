@@ -215,6 +215,7 @@ export const TUNING = {
     spotMaxL5: 4,
     stagger: 0.35,
     band: 0.6,
+    visual: 1,
     core: 0.15,
     boss: 0.5,
   },
