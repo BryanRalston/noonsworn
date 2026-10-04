@@ -16,6 +16,7 @@ import {
   Vector2,
 } from 'three'
 import { TUNING, type TierName } from '../../data/tuning'
+import { probeSoloCanon } from './probe'
 import { yawFromDirection } from '../../core/math'
 
 const MAX = TUNING.tiers.high.sparks + TUNING.tiers.high.trails
@@ -32,6 +33,27 @@ const SLOT_GLOW = 24
 const dummy = new Object3D()
 const tint = new Color()
 const RING = 0.86
+
+const SOLO_CELLS: Record<string, readonly number[]> = {
+  sunspear: [0, 1, 22],
+  halo: [29, 30],
+  flare: [16, 17, 18, 19, 29],
+  sunspot: [16, 29],
+  bell: [19, 20, 21],
+  heliograph: [1, 24],
+  scarablight: [15, 25],
+  stakes: [19, 26],
+  prism: [27],
+  obelisk: [26, 28],
+  sunroller: [25],
+}
+
+function soloCell(cellId: number): boolean {
+  const solo = probeSoloCanon()
+  if (!solo) return true
+  const allow = SOLO_CELLS[solo]
+  return !!allow && allow.indexOf(cellId) >= 0
+}
 
 const CELL = {
   spearTrail: 0,
@@ -609,6 +631,7 @@ export function createWeaponFx(): WeaponFx {
           untrack(i)
           continue
         }
+        if (probeSoloCanon() && i !== SLOT_HERO && !soloCell(cell[i] ?? -1)) continue
         if (drawn >= limit) continue
         drawn++
         const k = (life[i] ?? 0) / Math.max(0.05, maxLife[i] ?? 0.2)

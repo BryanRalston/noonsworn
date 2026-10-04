@@ -4,7 +4,7 @@ import { hasteMul } from '../sunClock'
 import { endureMul, reachMul } from './passives'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
-import { probeAdd } from './probe'
+import { probeAdd, ringLocal, spinRims } from './probe'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 
@@ -183,18 +183,22 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
       })
       const lip = 0.4 * scale
       const coreY = y + 0.28 * scale
+      // Upper bronze band: rings y 1.15 r 0.16 and y 0.55 r 0.34.
+      const rims = spinRims(tx, y, tz, 0, scale, ringLocal(0.25, 0.85))
+      const rim = rims[0] ?? { x: tx, y: coreY, z: tz }
       probeAdd({
         kind: 'bell',
         level: shownLevel,
         x: tx + lip,
         y: coreY,
         z: tz,
-        rimX: tx + 0.22 * scale,
-        rimY: y + 0.9 * scale,
-        rimZ: tz,
+        rimX: rim.x,
+        rimY: rim.y,
+        rimZ: rim.z,
         floorX: tx + 0.7 * scale,
         floorY: 0.02,
         floorZ: tz,
+        rims,
       })
     },
     update(dt, px, pz, horde, level, haste, might, mapLit, ctx, onToll) {

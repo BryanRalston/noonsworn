@@ -4,7 +4,7 @@ import { endureMul, reachMul } from './passives'
 import { hashQuery } from '../spatialHash'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
-import { probeAdd } from './probe'
+import { probeAdd, ringRims } from './probe'
 
 const QUERY = new Int16Array(48)
 
@@ -79,10 +79,12 @@ export interface Flare {
 export function createFlare(fx: WeaponFx): Flare {
   const spots: Spot[] = []
   let stamp = 40
+  let burst: { x: number; z: number; radius: number; life: number } | null = null
   const flare: Flare = {
     cooldown: TUNING.flare.cooldown,
     clear() {
       spots.length = 0
+      burst = null
       flare.cooldown = TUNING.flare.cooldown
     },
     lights(x, z) {
@@ -99,21 +101,42 @@ export function createFlare(fx: WeaponFx): Flare {
       return spots.map((s) => ({ x: s.x, z: s.z, r: s.r, life: s.life }))
     },
     mark(level) {
+      if (burst && burst.life > 0) {
+        const rims = ringRims(burst.x, 0.12, burst.z, burst.radius * 0.92)
+        const rim = rims[0] ?? { x: burst.x, y: 0.12, z: burst.z }
+        probeAdd({
+          kind: 'flare',
+          level,
+          x: burst.x,
+          y: 0.2,
+          z: burst.z,
+          rimX: rim.x,
+          rimY: rim.y,
+          rimZ: rim.z,
+          floorX: burst.x + burst.radius + 0.35,
+          floorY: 0.02,
+          floorZ: burst.z,
+          rims,
+        })
+      }
       for (let i = 0; i < spots.length; i++) {
         const s = spots[i]
         if (!s || s.life <= 0) continue
+        const rims = ringRims(s.x, 0.05, s.z, s.r * 0.92)
+        const rim = rims[0] ?? { x: s.x, y: 0.05, z: s.z }
         probeAdd({
           kind: 'sunspot',
           level,
           x: s.x,
           y: 0.05,
           z: s.z,
-          rimX: s.x + s.r * 0.86,
-          rimY: 0.05,
-          rimZ: s.z,
+          rimX: rim.x,
+          rimY: rim.y,
+          rimZ: rim.z,
           floorX: s.x + s.r + 0.35,
           floorY: 0.02,
           floorZ: s.z,
+          rims,
         })
       }
     },
@@ -122,6 +145,10 @@ export function createFlare(fx: WeaponFx): Flare {
       burstVisual(px, pz, stats.sun, level >= 5)
     },
     update(dt, px, pz, horde, level, haste, might, mapLit, ctx) {
+      if (burst) {
+        burst.life -= dt
+        if (burst.life <= 0) burst = null
+      }
       for (let i = spots.length - 1; i >= 0; i--) {
         const s = spots[i]
         if (!s) continue
@@ -171,6 +198,7 @@ export function createFlare(fx: WeaponFx): Flare {
   return flare
 
   function burstVisual(px: number, pz: number, radius: number, big: boolean) {
+    burst = { x: px, z: pz, radius, life: 0.45 }
     fx.core(px, pz, Math.max(TUNING.flare.band, radius * 0.35))
     fx.band(px, pz, radius, 0.45)
     if (big) fx.band(px, pz, radius * 0.62, 0.4)

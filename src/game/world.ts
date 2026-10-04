@@ -69,7 +69,7 @@ import { createFlare } from './weapons/flare'
 import { createHalo } from './weapons/halo'
 import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
-import { probeBodies, probeReset } from './weapons/probe'
+import { probeBodies, probeReset, probeSolo, setProbeSolo } from './weapons/probe'
 import { setWeaponPassives } from './weapons/passives'
 
 interface W2Live {
@@ -2468,11 +2468,17 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     releaseCut: () => {
       frame.cutPressed = false
     },
-    renderNow: (opts?: { hideWeapons?: boolean }) => {
+    renderNow: (opts?: { hideWeapons?: boolean; frozen?: boolean }) => {
       hideWeaponDraw = !!opts?.hideWeapons
-      const frozen = hideWeaponDraw
+      const frozen = hideWeaponDraw || !!opts?.frozen || probeSolo() != null
       loop.render(1, frozen ? 0 : 0.016, frozen ? 0 : 16)
       hideWeaponDraw = false
+    },
+    soloWeapon: (kind: string | null) => {
+      if (!devTools()) return false
+      setProbeSolo(kind)
+      loop.render(1, 0, 0)
+      return true
     },
     pulseMirage: () => {
       frame.miragePressed = true
@@ -2606,29 +2612,42 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           y: (-aimPoint.y * 0.5 + 0.5) * canvas.height,
         }
       }
-      const bodies = probeBodies().map((b) => ({
-        kind: b.kind,
-        level: b.level,
-        x: b.x,
-        y: b.y,
-        z: b.z,
-        core: project(b.x, b.y, b.z),
-        rim: project(b.rimX, b.rimY, b.rimZ),
-        floor: project(b.floorX, b.floorY, b.floorZ),
-      }))
+      const bodies = probeBodies().map((b) => {
+        const pts = b.rims.length > 0 ? b.rims : [{ x: b.rimX, y: b.rimY, z: b.rimZ }]
+        return {
+          kind: b.kind,
+          level: b.level,
+          x: b.x,
+          y: b.y,
+          z: b.z,
+          core: project(b.x, b.y, b.z),
+          rim: project(b.rimX, b.rimY, b.rimZ),
+          rims: pts.map((p) => project(p.x, p.y, p.z)),
+          floor: project(b.floorX, b.floorY, b.floorZ),
+        }
+      })
       const fxRaw: { kind: string; x: number; y: number; z: number; w: number; h: number }[] = []
       fx.cores(fxRaw)
-      const fxCores = fxRaw.map((c) => ({
-        kind: c.kind,
-        x: c.x,
-        y: c.y,
-        z: c.z,
-        w: c.w,
-        h: c.h,
-        core: project(c.x, c.y, c.z),
-        rim: project(c.x + c.w * 0.5, c.y, c.z),
-        floor: project(c.x + c.w * 0.5 + 0.25, 0.02, c.z),
-      }))
+      const fxCores = fxRaw.map((c) => {
+        const rimR = c.w * 0.46
+        const rims = []
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2
+          rims.push(project(c.x + Math.cos(a) * rimR, c.y, c.z + Math.sin(a) * rimR))
+        }
+        return {
+          kind: c.kind,
+          x: c.x,
+          y: c.y,
+          z: c.z,
+          w: c.w,
+          h: c.h,
+          core: project(c.x, c.y, c.z),
+          rim: project(c.x + rimR, c.y, c.z),
+          rims,
+          floor: project(c.x + c.w * 0.5 + 0.25, 0.02, c.z),
+        }
+      })
       return {
         audit,
         packHits,

@@ -7,7 +7,7 @@ import { hasteMul } from '../sunClock'
 import { endureMul, reachMul } from './passives'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
-import { probeAdd } from './probe'
+import { probeAdd, spinRims } from './probe'
 import { type WeaponFx } from './fx'
 
 const HITN = 16
@@ -550,8 +550,19 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
           z: pz + scale * (-lx * s + lz * c),
         })
         const core = to(0, 0.09, 0.2)
-        const rim = to(0.19, 0.02, 0.1)
         const floor = to(0.42, 0, 0.15)
+        // Bronze rails on the lance, local x ±0.14–0.22, z 0.15 to −0.85.
+        const rims = spinRims(px, BODY_Y, pz, yaw, scale, [
+          [-0.22, 0.02, 0.15],
+          [-0.2, 0.02, -0.35],
+          [-0.16, 0.02, -0.85],
+          [-0.14, 0.02, 0.15],
+          [0.22, 0.02, 0.15],
+          [0.2, 0.02, -0.35],
+          [0.16, 0.02, -0.85],
+          [0.14, 0.02, 0.15],
+        ])
+        const rim = rims[0] ?? core
         probeAdd({
           kind: 'sunspear',
           level: spear.rank,
@@ -564,6 +575,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
           floorX: floor.x,
           floorY: 0.02,
           floorZ: floor.z,
+          rims,
         })
       }
     },

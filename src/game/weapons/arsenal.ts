@@ -12,6 +12,7 @@ import {
   type WebGLRenderer,
 } from 'three'
 import { writeInstance } from '../../render/instancing'
+import { probeAllowsPart } from './probe'
 
 /** Part ids. W2 and W3 only append. Empty ids have no vertices yet. */
 export const ARSENAL_PART = {
@@ -295,6 +296,7 @@ export function createArsenal(): Arsenal {
       items.length = 0
     },
     add(item) {
+      if (!probeAllowsPart(item.kind)) return
       if (items.length < CAP) items.push(item)
     },
     append(part, position, color, emit) {

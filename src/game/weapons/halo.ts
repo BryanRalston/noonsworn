@@ -5,7 +5,7 @@ import { reachMul } from './passives'
 import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
-import { probeAdd } from './probe'
+import { probeAdd, ringLocal, spinRims } from './probe'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 
@@ -214,20 +214,24 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
           hot: 0,
           swing: 0,
         })
-        const rim = 0.43 * discScale
         if (!halo.sun && d === 0) fx.ward(px, pz, halo.orbit * (level >= 5 ? 1.18 : 1) * (1 + wardPulse * 0.08))
+        // Bronze annulus is local r 0.36–0.5. 0.47 sits in that band, not on the gold.
+        const rims = spinRims(dx, 1.05, dz, a, discScale, ringLocal(0.47, 0.03))
+        const rim = rims[0] ?? { x: dx, y: 1.05, z: dz }
+        const reach = 0.5 * discScale + 0.2
         probeAdd({
           kind: 'halo',
           level,
           x: dx,
           y: 1.08,
           z: dz,
-          rimX: dx + Math.cos(a) * rim,
-          rimY: 1.05,
-          rimZ: dz + Math.sin(a) * rim,
-          floorX: dx + Math.cos(a) * (rim + 0.2),
+          rimX: rim.x,
+          rimY: rim.y,
+          rimZ: rim.z,
+          floorX: dx + Math.cos(a) * reach,
           floorY: 0.02,
-          floorZ: dz + Math.sin(a) * (rim + 0.2),
+          floorZ: dz + Math.sin(a) * reach,
+          rims,
         })
       }
       halo.live = stats.count
