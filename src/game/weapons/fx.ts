@@ -63,6 +63,9 @@ const CELL = {
   stakeBlade: 26,
   prismStar: 27,
   fence: 28,
+  coreGlow: 29,
+  wardRing: 30,
+  sparkStreak: 31,
 } as const
 
 /** u, v, width, height in three.js UV space (flipY true). */
@@ -114,9 +117,10 @@ export const FX = {
   orange: lin(0xe8671a),
   red: lin(0xc8401e),
   bronze: lin(0x9a6a2e),
-  gold: lin(0xc4922a),
-  goldBlade: lin(0xd9a441),
-  goldHot: lin(0xf0d48a),
+  gold: lin(0xf2b632),
+  goldBlade: lin(0xf2b632),
+  goldHot: lin(0xffe08a),
+  punch: lin(0xf2b632),
   shade: lin(0x6a6578),
   shadePuff: lin(0x8a7aa8),
   white: lin(0xffffff),
@@ -148,6 +152,8 @@ export interface WeaponFx {
   shock: (x: number, z: number, radius: number) => void
   shadowDisc: (x: number, z: number, radius: number, life: number) => void
   gleamMark: (slot: number, x: number, z: number) => void
+  ward: (x: number, z: number, radius: number) => void
+  glow: (x: number, z: number, radius: number) => void
   sunspot: (x: number, z: number, radius: number, life: number) => void
   dust: (x: number, z: number) => void
   tele: (x: number, z: number, yaw: number) => void
@@ -399,7 +405,7 @@ export function createWeaponFx(): WeaponFx {
         'spearTrail', 'spearGlow', 'haloStreak', 'crescent', 'afterimage', 'inkA', 'inkB', 'inkC',
         'goldSpark', 'ember', 'ringThin', 'ringThick', 'hitFlash', 'scorch', 'sunRing', 'puff',
         'sunspot', 'flareBand', 'flareCore', 'shockRing', 'bellShadow', 'gleam', 'lanceRibbon', 'impactStar',
-        'ray', 'scarabDust', 'stakeBlade', 'prismStar', 'fence',
+        'ray', 'scarabDust', 'stakeBlade', 'prismStar', 'fence', 'coreGlow', 'wardRing', 'sparkStreak',
       ]
       out.length = 0
       for (let n = 0; n < nOrder; n++) {
@@ -418,13 +424,13 @@ export function createWeaponFx(): WeaponFx {
     },
     hit(px, pz, lit, scale = 1) {
       const at = toward(px, 0.85, pz, 0.6)
-      put(CELL.hitFlash, at[0], at[1], at[2], TUNING.camera.yaw, 1.1 * scale, 1.1 * scale, 0.16, FX.white, 5, 0)
-      const n = lit ? 6 : 5
+      const rgb = lit ? FX.punch : FX.goldHot
+      put(CELL.impactStar, at[0], at[1], at[2], TUNING.camera.yaw, 1.35 * scale, 1.35 * scale, 0.28, rgb, 5, 0, 1)
+      const budget = TUNING.tiers[tier].sparkHit
+      const n = tier === 'low' ? Math.min(4, budget) : Math.max(4, Math.min(6, budget))
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2
-        const kind = lit ? CELL.goldSpark : CELL.inkA + (i % 3)
-        const rgb = lit ? FX.white : FX.white
-        put(kind, px + Math.cos(a) * 0.22, 0.7, pz + Math.sin(a) * 0.22, a, lit ? 0.5 : 0.4, lit ? 0.2 : 0.4, 0.3, rgb, 5, 0)
+        put(CELL.sparkStreak, px + Math.cos(a) * 0.2, 0.7, pz + Math.sin(a) * 0.2, a, 0.16, 0.95, 0.28, rgb, 5, 0, 1)
       }
     },
     streak(px, py, pz, rot, length, width, seconds, rgb) {
@@ -489,7 +495,7 @@ export function createWeaponFx(): WeaponFx {
       writeSlot(SLOT_HERO, CELL.sunRing, px, 0.07, pz, 0, 2.5, 2.5, 0.25, FX.goldHot, 0, 0, 1)
     },
     ribbon(px, py, pz, rot, length) {
-      put(CELL.lanceRibbon, px, py, pz, rot, 0.28, length, 0.18, FX.goldBlade, 0, 0, 0, 1)
+      put(CELL.lanceRibbon, px, py, pz, rot, 0.42, length, 0.22, FX.punch, 0, 0, 0, 1)
     },
     star(px, pz) {
       const at = toward(px, 0.9, pz, 0.4)
@@ -497,11 +503,12 @@ export function createWeaponFx(): WeaponFx {
     },
     core(px, pz, radius) {
       const d = Math.max(0.4, radius) * 2
-      put(CELL.flareCore, px, 0.2, pz, 0, d, d, TUNING.flare.core, FX.white, 0, 0, 1)
+      put(CELL.coreGlow, px, 0.08, pz, 0, d * 1.35, d * 1.35, TUNING.flare.core, FX.punch, 0, 0, 1)
+      put(CELL.flareCore, px, 0.2, pz, 0, d, d, TUNING.flare.core, FX.punch, 0, 0, 1)
     },
     band(px, pz, radius, seconds) {
       const d = Math.max(0.8, radius) * 2
-      put(CELL.flareBand, px, 0.12, pz, 0, d, d, seconds, FX.white, 3, 0, 0)
+      put(CELL.flareBand, px, 0.12, pz, 0, d, d, seconds, FX.punch, 3, 0, 0)
     },
     shock(px, pz, radius) {
       const d = (Math.max(0.4, radius) * 2) / RING
@@ -515,11 +522,20 @@ export function createWeaponFx(): WeaponFx {
       if (slot < 0 || slot >= TUNING.gleam.glyphs) return
       const at = toward(px, 1.35, pz, 0.35)
       const i = MAX - TUNING.gleam.glyphs + slot
-      writeSlot(i, CELL.gleam, at[0], at[1], at[2], TUNING.camera.yaw, 0.85, 0.85, 0.08, FX.white, 5, 0, 0)
+      writeSlot(i, CELL.gleam, at[0], at[1], at[2], TUNING.camera.yaw, 1.25, 1.25, 0.08, FX.punch, 5, 0, 0)
     },
     sunspot(px, pz, radius, seconds) {
       const d = Math.max(0.4, radius) * 2
-      put(CELL.sunspot, px, 0.05, pz, 0, d, d, seconds, FX.white, 6, 0, 0)
+      put(CELL.coreGlow, px, 0.04, pz, 0, d * 1.15, d * 1.15, seconds, FX.punch, 6, 0, 1)
+      put(CELL.sunspot, px, 0.05, pz, 0, d, d, seconds, FX.punch, 6, 0, 0)
+    },
+    ward(px, pz, radius) {
+      const d = Math.max(0.8, radius) * 2
+      put(CELL.wardRing, px, 0.08, pz, 0, d, d, 0.12, FX.punch, 0, 0)
+    },
+    glow(px, pz, radius) {
+      const d = Math.max(0.4, radius) * 2
+      put(CELL.coreGlow, px, 0.06, pz, 0, d, d, 0.2, FX.punch, 0, 0, 1)
     },
     dust(px, pz) {
       put(CELL.puff, px, 0.35, pz, 0, 1.4, 0.7, 0.35, FX.gold, 5, 0.4)

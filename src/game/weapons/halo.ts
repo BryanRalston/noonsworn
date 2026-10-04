@@ -84,6 +84,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
   let targetOrbit: number = TUNING.halo.sunOrbit
   let targetPeriod: number = TUNING.halo.sunPeriod
   let discScale = 1
+  let wardPulse = 0
   const halo: Halo = {
     mesh,
     angle: 0,
@@ -137,6 +138,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
       halo.period = easePeriod + (targetPeriod - easePeriod) * easeT
       halo.sun = footSun
       halo.angle += dt * ((Math.PI * 2) / Math.max(0.2, halo.period))
+      wardPulse = Math.max(0, wardPulse - dt)
       discScale = (big ? TUNING.halo.discL5 : TUNING.halo.disc) / 0.5
       const damage = stats.damage * (footSun ? TUNING.halo.sunDamage : 1)
       const reach = TUNING.halo.discR + TUNING.halo.reachPad
@@ -154,7 +156,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
         const sx = px + Math.cos(a) * halo.orbit
         const sz = pz + Math.sin(a) * halo.orbit
         const tangent = a + Math.PI / 2
-        fx.ray(sx, 1.05, sz, tangent, 0.9, 0.22, 0.12)
+        fx.ray(sx, 1.05, sz, tangent, 1.4, 0.38, 0.16)
         for (let k = 0; k < n; k++) {
           const slot = QUERY[k] ?? -1
           if (slot < 0 || !horde.alive[slot]) continue
@@ -172,6 +174,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
             const oz = (horde.z[slot] ?? sz) - pz
             const od = Math.hypot(ox, oz) || 1
             horde.nudge(slot, (ox / od) * knock, (oz / od) * knock)
+            wardPulse = 0.2
           }
           const hx = horde.x[slot] ?? sx
           const hz = horde.z[slot] ?? sz
@@ -210,7 +213,8 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
           hot: 0,
           swing: 0,
         })
-        const rim = 0.42 * discScale
+        const rim = 0.5 * discScale
+        if (!halo.sun && d === 0) fx.ward(px, pz, halo.orbit * (1 + wardPulse * 0.08))
         probeAdd({
           kind: 'halo',
           level,

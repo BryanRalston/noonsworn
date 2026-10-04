@@ -46,9 +46,16 @@ export function bellText(level: number): string {
 
 export function bellCandidates(px: number, pz: number): { x: number; z: number }[] {
   const step = TUNING.bell.sample
+  const turn = (15 * Math.PI) / 180
+  const c = Math.cos(turn)
+  const s = Math.sin(turn)
   const out: { x: number; z: number }[] = []
   for (let iz = -1; iz <= 1; iz++) {
-    for (let ix = -1; ix <= 1; ix++) out.push({ x: px + ix * step, z: pz + iz * step })
+    for (let ix = -1; ix <= 1; ix++) {
+      const lx = ix * step
+      const lz = iz * step
+      out.push({ x: px + lx * c - lz * s, z: pz + lx * s + lz * c })
+    }
   }
   return out
 }
@@ -168,7 +175,8 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
     },
     sync() {
       if (phase === 'idle') return
-      const scale = height / TUNING.bell.body
+      const visual = height > TUNING.bell.height + 0.05 ? 3 : 2.6
+      const scale = visual / TUNING.bell.body
       arsenal.add({
         kind: ARSENAL_PART.bell,
         x: tx,

@@ -457,7 +457,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
           const fxDir = (vx[i] ?? 0) / spd
           const fzDir = (vz[i] ?? 0) / spd
           const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1)
-          fx.ribbon(nx - fxDir * 0.7, BODY_Y - 0.15, nz - fzDir * 0.7, yaw, 2)
+          fx.ribbon(nx - fxDir * 0.7, BODY_Y - 0.15, nz - fzDir * 0.7, yaw, 3.5)
           fx.glint(nx + fxDir * 0.45, BODY_Y, nz + fzDir * 0.45, big ? 0.36 : 0.32)
         }
         life[i] = (life[i] ?? 0) - dt
@@ -473,7 +473,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
         const big = spear.rank >= 5
         // Local +Z is the tip. yawFromDirection points local −Z along velocity, so add half a turn.
         const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1) + Math.PI
-        const scale = big ? 1.23 : 1
+        const scale = big ? 1.2 : 1
         const px = x[i] ?? 0
         const pz = z[i] ?? 0
         arsenal.add({
@@ -493,9 +493,9 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
           y: BODY_Y + scale * ly,
           z: pz + scale * (-lx * s + lz * c),
         })
-        const core = to(0, 0.06, 0.15)
-        const rim = to(0.12, 0.04, 0.15)
-        const floor = to(0.28, 0, 0.15)
+        const core = to(0, 0.09, 0.2)
+        const rim = to(0.2, 0.02, 0.15)
+        const floor = to(0.42, 0, 0.15)
         probeAdd({
           kind: 'sunspear',
           level: spear.rank,
