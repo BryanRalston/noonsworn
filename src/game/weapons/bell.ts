@@ -5,6 +5,7 @@ import { endureMul, reachMul } from './passives'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
 import { probeAdd, ringLocal, spinRims } from './probe'
+import { evoDriving } from './evoHook'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 
@@ -158,6 +159,7 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
       fx.shock(px, pz, stats.tollRadius)
     },
     sync() {
+      if (evoDriving('bell')) return
       if (phase === 'idle') return
       const visual = height > TUNING.bell.height + 0.05 ? 3.2 : 2.6
       const scale = visual / TUNING.bell.body
@@ -202,6 +204,7 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
       })
     },
     update(dt, px, pz, horde, level, haste, might, mapLit, ctx, onToll) {
+      if (evoDriving('bell')) return
       shownLevel = level
       if (phase === 'fall') {
         phaseT += dt

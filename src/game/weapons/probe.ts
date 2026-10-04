@@ -83,7 +83,7 @@ export function probeReset(): void {
 
 export function probeAdd(body: ProbeBody): void {
   if (!probeAllows(body.kind)) return
-  if (bodies.length < 64) bodies.push(body)
+  if (bodies.length < 128) bodies.push(body)
 }
 
 export function probeBodies(): readonly ProbeBody[] {

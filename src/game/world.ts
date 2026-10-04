@@ -51,7 +51,7 @@ import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector, latticePlan } from './director'
 import { createHorde, type Horde, type HordeCtx } from './enemies/horde'
-import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBoon, lockW1Pool, openW2Offers, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
+import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBoon, lockW1Pool, openW2Offers, rankOf, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
 import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
@@ -71,6 +71,8 @@ import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
 import { probeBodies, probeReset, probeSolo, setProbeSolo } from './weapons/probe'
 import { setWeaponPassives } from './weapons/passives'
+import { applyEvoAll, createChests } from './weapons/chests'
+import { clearEvos, evoCpu as readEvoCpu, evoDriving, readEvo, resetEvoCpu, setEvoHeal, setEvoSee } from './weapons/evoHook'
 
 interface W2Live {
   update: (
@@ -414,6 +416,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   const halo = createHalo(fx, arsenal, (x, z) => mapLit(x, z))
   const flare = createFlare(fx)
   const bell = createBell(fx, arsenal)
+  const chests = createChests(fx, arsenal, container)
+  setEvoSee((x, z) => spears.see(x, z))
   let w2: W2Live | null = null
   let w2State: 'loading' | 'ready' | 'failed' = 'loading'
   spotLight = (x, z) => flare.lights(x, z)
@@ -424,10 +428,14 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
 
   const bus = createEvents()
   const player = createPlayer()
+  setEvoHeal((n) => {
+    player.hp = Math.min(player.maxHp, player.hp + n)
+  })
   const cut = createCut()
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'splash'
+  let hidLevel = false
   let activeMap: 'sundial' | 'lattice' | 'cloister' | 'stair' = 'sundial'
   let wantMap: 'sundial' | 'lattice' | 'cloister' | 'stair' = 'sundial'
   let lattice: LatticeHandle | null = null
@@ -568,7 +576,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   function loadArsenal() {
     const dev = import.meta.env.DEV || params.get('dev') === '1'
     if (dev && params.get('pool') === 'w1') lockW1Pool()
-    if (dev && params.get('w2block') === '1') return
+    if (dev && params.get('w2block') === '1') {
+      w2State = 'failed'
+      return
+    }
     void import('./weapons/w2')
       .then((mod) => {
         mod.appendParts(arsenal)
@@ -576,6 +587,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         w2 = mod.createW2(fx, arsenal)
         openW2Offers()
         applyArsenalDev()
+        applyEvoAll(build, params.get('evo') === 'all', arsenalParam === 'l5x8')
         w2State = 'ready'
       })
       .catch(() => {
@@ -796,7 +808,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   }
 
   function applyCard(id: number) {
+    const before = rankOf(build, id)
     const kind = applyRank(build, id)
+    if (before <= 0 && rankOf(build, id) > 0) chests.noteAcquire(id)
     if (kind === 'vitality') {
       player.maxHp += TUNING.passive.vitalHp
       player.hp = Math.min(player.maxHp, player.hp + TUNING.passive.vitalHeal)
@@ -1108,8 +1122,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         })
       return
     }
-    rng = mulberry32(queuedSeed ?? forcedSeed ?? (Date.now() >>> 0))
+    const runSeed = queuedSeed ?? forcedSeed ?? (Date.now() >>> 0)
     queuedSeed = null
+    rng = mulberry32(runSeed)
     resetPlayer(player)
     resetCut(cut)
     build = createBuild()
@@ -1133,6 +1148,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     follow.snap(0, 0)
     exposePops = 0
     applyArsenalDev()
+    chests.reset(runSeed)
+    clearEvos()
+    chests.syncAcquire(build)
+    if (w2State === 'ready') applyEvoAll(build, params.get('evo') === 'all', arsenalParam === 'l5x8')
     if (devTools() && !previewWeapon && (arsenalParam === 'l1' || arsenalParam === 'l5' || arsenalParam === 'l5x8')) {
       const requested = Number(params.get('n') ?? '0')
       if (Number.isFinite(requested) && requested > 0) {
@@ -1598,6 +1617,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       flareMs = 0
       bellMs = 0
       w2?.resetCpu()
+      resetEvoCpu()
       follow.basis(basis)
       const front = mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits' || mode === 'paused' || mode === 'dead' || mode === 'clear'
       input.setNavLock(mode !== 'playing')
@@ -1661,7 +1681,23 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
         return false
       }
-      if (mode === 'level') {
+      if (chests.revealUp()) {
+        frame.cutPressed = false
+        queuedCut = false
+        if (chests.canSkip() && (frame.cancelPressed || frame.confirmPressed || frame.pick >= 0 || frame.claimPressed)) chests.skip()
+        frame.pick = -1
+        frame.confirmPressed = false
+        frame.cancelPressed = false
+        frame.pausePressed = false
+        frame.claimPressed = false
+      } else if (chests.swallowing()) {
+        frame.pick = -1
+        frame.confirmPressed = false
+        frame.claimPressed = false
+      }
+      if (chests.revealUp()) {
+        frame.cutPressed = false
+      } else if (mode === 'level') {
         frame.cutPressed = false
         queuedCut = false
         if (frame.pausePressed || frame.cancelPressed) closeOffer()
@@ -1686,11 +1722,14 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         frame.cutPressed = true
         queuedCut = false
       }
+      if ((mode === 'playing' || mode === 'level') && chests.revealUp()) return 1
       if (mode === 'level') return 0.15
       return mode === 'playing' ? 1 : false
     },
     step(dt, first) {
       sparkVis = 0
+      const rawDt = dt
+      if (chests.slowing()) dt *= 0.15
       const state = first ? frame : held
       if (clearedNow()) {
         showMode('clear')
@@ -1829,6 +1868,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (cut.active && !cutWas) tutorial.onCut()
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       if (!slipped) integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
+      if (chests.revealUp()) player.invuln = Math.max(player.invuln, 0.2)
       if (activeMap === 'cloister' && cloister) {
         const carried = cloister.shoveAt(player.x, player.z, player.radius)
         if (carried) {
@@ -2049,6 +2089,49 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       bellMs += performance.now() - bellT
       const multi = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
       w2?.update(dt, player.x, player.z, horde, build.helio, build.scarab, build.stake, build.prism, multi, build.haste, build.might, mapLit, writeShadow, ctx, time)
+      const chestAtRaw = params.get('chestAt')
+      const chestAtNum = chestAtRaw == null ? Number.NaN : Number(chestAtRaw)
+      const wasReveal = chests.revealUp()
+      chests.update({
+        rawDt,
+        time,
+        px: player.x,
+        pz: player.z,
+        map: activeMap,
+        mapLit,
+        floorY: (cx, cz) => (activeMap === 'stair' && stair ? stair.floorY(cx, cz) : 0),
+        w2: w2State,
+        dev: devTools(),
+        chestsOff: !!previewWeapon || (devTools() && params.get('chests') === '0'),
+        chestAt: devTools() && Number.isFinite(chestAtNum) ? chestAtNum : null,
+        rank: (id) => rankOf(build, id),
+        grantTwo: () => {
+          build.pending += 2
+          hud.setCharges(build.pending)
+          chests.holdBank()
+        },
+      })
+      if (!wasReveal && chests.revealUp() && mode === 'level') {
+        levelUp.hide()
+        hidLevel = true
+      }
+      if (chests.revealUp()) player.invuln = Math.max(player.invuln, 0.2)
+      if (evoDriving('scarab')) {
+        let moved = 0
+        const cap = TUNING.evo.sunroller.ferryMax
+        const reach2 = TUNING.evo.sunroller.ferry * TUNING.evo.sunroller.ferry
+        pickups.shove((gx, gz) => {
+          if (moved >= cap) return null
+          const dx = player.x - gx
+          const dz = player.z - gz
+          const d2 = dx * dx + dz * dz
+          if (d2 > reach2 || d2 < 0.16) return null
+          const dist = Math.sqrt(d2)
+          const hop = Math.min(0.45, dist)
+          moved++
+          return { x: gx + (dx / dist) * hop, z: gz + (dz / dist) * hop }
+        })
+      }
       const before = build.pending
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, (value) => {
         xpWindow += value
@@ -2069,7 +2152,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       if (build.pending > before) {
         if (previewWeapon) build.pending = before
+        else if (chests.revealUp()) chests.holdBank()
         else bankCharges()
+      }
+      if (chests.takeHold()) bankCharges()
+      if (wasReveal && !chests.revealUp() && hidLevel) {
+        hidLevel = false
+        if (mode === 'level' && build.pending > 0) levelUp.show(shown.slice(0, offerCount), litAt(player.x, player.z))
       }
       if (previewWeapon && params.get('bench') === '1') {
         const want = Math.max(1, Math.min(400, Number(params.get('n') ?? '400') || 400))
@@ -2230,6 +2319,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       bell.sync()
       w2?.sync(x, z, build.helio, build.scarab, build.stake, build.prism, time)
       flare.mark(build.flare)
+      chests.sync({ camera: follow.camera, canvas, px: x, pz: z, time })
       let gleamSlot = 0
       horde.gleamDraw((gx, gz) => {
         fx.gleamMark(gleamSlot, gx, gz)
@@ -2568,8 +2658,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     },
     weaponCpu: () => {
       const extra = w2?.cpu() ?? { helio: 0, scarab: 0, stake: 0, prism: 0 }
-      return { spear: profSpear, halo: profHalo, flare: flareMs, bell: bellMs, helio: extra.helio, scarab: extra.scarab, stake: extra.stake, prism: extra.prism }
+      return { spear: profSpear, halo: profHalo, flare: flareMs, bell: bellMs, helio: extra.helio, scarab: extra.scarab, stake: extra.stake, prism: extra.prism, ...readEvoCpu() }
     },
+    chestSample: () => chests.sample(),
+    evoSample: () => readEvo(),
+    evoCpu: () => readEvoCpu(),
     w2State: () => w2State,
     w2Sample: () => w2?.sample() ?? null,
     prismPeak: () => w2?.prismPeak() ?? 0,

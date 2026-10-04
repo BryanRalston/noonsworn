@@ -298,6 +298,20 @@ export const TUNING = {
     storageKey: 'noonsworn.quality.v3',
   },
   passive: { might: 0.1, haste: 0.08, swift: 0.07, vitalHp: 20, vitalHeal: 20, lode: 0.25, max: 5 },
+  // Starting evolution numbers. Boss scales stay low so a four-evolution arm
+  // cannot delete a boss under the 45% sanity floor. Reported in the W3 report.
+  evo: {
+    meridian: { fan: 24, count: 5, every: 4, width: 3, damage: 130, seam: 1, gleam: 3, speed: 16, life: 1.15, bigSpeed: 24, bigLife: 1.8, boss: 0.08 },
+    corona: { sun: 3.2, shade: 2.2, band: 0.8, tick: 0.25, wash: 0.3, knock: 1.5, knockGap: 0.5, burst: 2, burstRange: 8, rays: 12, boss: 0.05 },
+    dayburst: { every: 4, tongueDelay: 0.4, tongues: 8, tongueNear: 6.2, tongueFar: 7.8, tongueR: 1.6, tongueMul: 1.2, spotR: 1.5, spotCap: 12, spotLife: 4, boss: 0.08 },
+    twelvefold: { every: 8, tolls: 12, window: 3, r0: 2, r1: 9, mul: 0.6, shove: 0.4, daze: 1, healCap: 25, height: 3.4, boss: 0.06 },
+    solar: { mirrors: 3, radius: 2.2, tick: 0.15, chain: 3, mul: 0.35, retarget: 0.2, boss: 0.1 },
+    sunroller: { scarab: 2.3, ball: 2.2, near: 5, far: 7, damage: 40, knock: 1.5, gap: 0.5, light: 2.5, tail: 1, ferry: 15, ferryMax: 6, boss: 0.08 },
+    obelisk: { max: 4, height: 2.8, life: 12, plant: 3, sweep: 90, damage: 18, gap: 0.5, fence: 9, fenceW: 0.45, fenceDmg: 10, fenceGap: 0.5, boss: 0.08 },
+    mocksun: { dogs: 2, orbit: 4, period: 2.5, split: 3, volley: 16, alive: 32, run: 6, litStep: 1 / 30, boss: 0.06 },
+    chest: { sun: 2, fallback: 25, near: 8, far: 14, wideNear: 6, wideFar: 18 },
+    reveal: { slow: 0.8, total: 2, skip: 0.3, holdMs: 150 },
+  },
   healCard: 30,
   hordeCap: 400,
   adsFakeMs: 1000,

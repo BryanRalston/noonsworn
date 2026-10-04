@@ -35,8 +35,9 @@ const tint = new Color()
 const RING = 0.86
 
 const SOLO_CELLS: Record<string, readonly number[]> = {
-  sunspear: [0, 1, 22],
-  halo: [29, 30],
+  sunspear: [0, 1, 13, 22],
+  halo: [2, 29, 30],
+  chest: [10, 11, 29],
   flare: [16, 17, 18, 19, 29],
   sunspot: [16, 29],
   bell: [19, 20, 21],
@@ -157,6 +158,7 @@ export interface WeaponFx {
   ray: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number) => void
   helioRay: (x: number, y: number, z: number, yaw: number, length: number, width: number, life: number) => void
   stakeLine: (x: number, z: number, yaw: number, length: number, width: number) => void
+  fence: (x: number, z: number, yaw: number, length: number, width: number) => void
   scarabMote: (x: number, z: number) => void
   prismFlash: (x: number, z: number) => void
   blade: (slot: number, x: number, z: number, yaw: number, big: boolean) => void
@@ -486,6 +488,9 @@ export function createWeaponFx(): WeaponFx {
     },
     stakeLine(px, pz, rot, length, width) {
       put(CELL.stakeBlade, px, 0.08, pz, rot, Math.max(0.12, width), length, 0.12, FX.punch, 0, 0, 1)
+    },
+    fence(px, pz, rot, length, width) {
+      put(CELL.fence, px, 0.1, pz, rot, Math.max(0.4, width), length, 0.16, FX.punch, 0, 0, 1)
     },
     scarabMote(px, pz) {
       put(CELL.scarabDust, px, 0.2, pz, 0, 0.4, 0.4, 0.28, FX.punch, 0, 0, 1)

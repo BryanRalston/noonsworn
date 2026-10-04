@@ -6,6 +6,7 @@ import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
 import { probeAdd, ringLocal, spinRims } from './probe'
+import { evoDriving } from './evoHook'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 
@@ -107,6 +108,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
       knockAt.fill(-10)
     },
     update(dt, px, pz, horde, level, might, haste, time, ctx) {
+      if (evoDriving('halo')) return
       const stats = haloStats(level)
       if (!stats) {
         halo.live = 0
@@ -193,6 +195,11 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
       halo.live = stats.count
     },
     sync(px, pz, level) {
+      if (evoDriving('halo')) {
+        mesh.count = 0
+        mesh.visible = false
+        return
+      }
       const stats = haloStats(level)
       mesh.count = 0
       mesh.visible = false

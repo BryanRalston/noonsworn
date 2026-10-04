@@ -26,9 +26,10 @@ export const ARSENAL_PART = {
   prism: 7,
   obelisk: 8,
   sunball: 9,
+  chest: 10,
 } as const
 
-const CAP = 64
+const CAP = 128
 
 export interface ArsenalItem {
   kind: number
@@ -178,6 +179,30 @@ function bellArrays(pos: number[], col: number[], emit: number[], parts: number[
   pushTri(clap, pos, col, emit, parts, [0, 0.05, 0], [0.06, 0.15, 0], [-0.06, 0.15, 0], GOLD, GOLD, BRONZE, 0.5, 0.4, 0)
 }
 
+function chestArrays(pos: number[], col: number[], emit: number[], parts: number[]) {
+  const part = ARSENAL_PART.chest
+  const gold = GOLD
+  const x = 0.8
+  const z = 0.52
+  const y0 = 0.06
+  const y1 = 0.7
+  quad(part, pos, col, emit, parts, [-x, y0, -z], [x, y0, -z], [x, y0, z], [-x, y0, z], BRONZE, 0)
+  quad(part, pos, col, emit, parts, [-x, y1, z], [x, y1, z], [x, y1, -z], [-x, y1, -z], gold, 0.8)
+  quad(part, pos, col, emit, parts, [-x, y0, z], [x, y0, z], [x, y1, z], [-x, y1, z], gold, 0.35)
+  quad(part, pos, col, emit, parts, [x, y0, -z], [-x, y0, -z], [-x, y1, -z], [x, y1, -z], gold, 0.2)
+  quad(part, pos, col, emit, parts, [x, y0, z], [x, y0, -z], [x, y1, -z], [x, y1, z], gold, 0.2)
+  quad(part, pos, col, emit, parts, [-x, y0, -z], [-x, y0, z], [-x, y1, z], [-x, y1, -z], gold, 0.2)
+  const rim = 0.06
+  quad(part, pos, col, emit, parts, [-(x + rim), y0, z + rim], [x + rim, y0, z + rim], [x + rim, y1 + 0.04, z + rim], [-(x + rim), y1 + 0.04, z + rim], BRONZE, 0)
+  quad(part, pos, col, emit, parts, [x + rim, y0, -(z + rim)], [-(x + rim), y0, -(z + rim)], [-(x + rim), y1 + 0.04, -(z + rim)], [x + rim, y1 + 0.04, -(z + rim)], BRONZE, 0)
+  const lid = y1 + 0.16
+  quad(part, pos, col, emit, parts, [-0.72, y1, -0.44], [0.72, y1, -0.44], [0.66, lid, -0.28], [-0.66, lid, -0.28], EDGE, 1)
+  quad(part, pos, col, emit, parts, [-0.66, lid, -0.28], [0.66, lid, -0.28], [0.66, lid, 0.28], [-0.66, lid, 0.28], gold, 1)
+  quad(part, pos, col, emit, parts, [-0.66, lid, 0.28], [0.66, lid, 0.28], [0.72, y1, 0.44], [-0.72, y1, 0.44], EDGE, 0.6)
+  pushTri(part, pos, col, emit, parts, [0, y1 + 0.02, 0.5], [-0.16, y1 + 0.02, 0.28], [0.16, y1 + 0.02, 0.28], gold, gold, EDGE, 1, 0.7, 1)
+  pushTri(part, pos, col, emit, parts, [0, y1 + 0.02, 0.08], [0.16, y1 + 0.02, 0.28], [-0.16, y1 + 0.02, 0.28], BRONZE, gold, gold, 0, 0.5, 0.5)
+}
+
 function buildGeometry(): BufferGeometry {
   const pos: number[] = []
   const col: number[] = []
@@ -186,6 +211,7 @@ function buildGeometry(): BufferGeometry {
   lanceArrays(pos, col, emit, parts)
   discArrays(pos, col, emit, parts)
   bellArrays(pos, col, emit, parts)
+  chestArrays(pos, col, emit, parts)
   const geo = new BufferGeometry()
   geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3))
   geo.setAttribute('aColor', new BufferAttribute(new Float32Array(col), 3))

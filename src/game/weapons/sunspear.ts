@@ -8,6 +8,7 @@ import { endureMul, reachMul } from './passives'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
 import { probeAdd, spinRims } from './probe'
+import { evoDriving } from './evoHook'
 import { type WeaponFx } from './fx'
 
 const HITN = 16
@@ -379,6 +380,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
       spear.connects = 0
     },
     update(dt, px, pz, horde, level, haste, might, cap, ctx) {
+      if (evoDriving('spear')) return
       lastHorde = horde
       spear.rank = level
       spear.cooldown -= dt
@@ -524,6 +526,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
       }
     },
     sync() {
+      if (evoDriving('spear')) return
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
         const big = spear.rank >= 5

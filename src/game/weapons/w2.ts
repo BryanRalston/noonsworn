@@ -11,6 +11,8 @@ import { ARSENAL_PART, type Arsenal } from './arsenal'
 import type { WeaponFx } from './fx'
 import { endureMul, reachMul } from './passives'
 import { probeAdd, ringLocal, spinRims } from './probe'
+import { attachEvolve } from './evolve'
+import { evoDriving, evoLights } from './evoHook'
 
 const GOLD = [1.033, 0.249, 0.0]
 const EDGE = [1.4, 1.05, 0.42]
@@ -242,6 +244,8 @@ function segDist2(ax: number, az: number, bx: number, bz: number, px: number, pz
 }
 
 export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
+  const evo = attachEvolve(fx, arsenal)
+  let litNow: (x: number, z: number) => boolean = () => false
   const shade: ShadowDir = { dirX: 0, dirZ: 1, length: 5 }
   let footSun = false
   let footKnown = false
@@ -1051,23 +1055,26 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
   return {
     mark(mapLit, shadow) {
       refreshStakes(mapLit, shadow)
+      evo.mark()
     },
     update(dt, px, pz, horde, helio, scarab, stake, prism, multitude, haste, might, mapLit, shadow, ctx, time) {
+      litNow = mapLit
       const t0 = performance.now()
-      stepHelio(dt, px, pz, horde, helio, multitude, haste, might, mapLit, ctx, time)
+      if (!evoDriving('helio')) stepHelio(dt, px, pz, horde, helio, multitude, haste, might, mapLit, ctx, time)
       cpuH += performance.now() - t0
       const t1 = performance.now()
       stepScarabs(dt, px, pz, horde, scarab, multitude, haste, might, ctx)
       cpuS += performance.now() - t1
       const t2 = performance.now()
-      stepStakes(dt, px, pz, horde, stake, haste, might, mapLit, shadow, ctx)
+      if (!evoDriving('stake')) stepStakes(dt, px, pz, horde, stake, haste, might, mapLit, shadow, ctx)
       cpuK += performance.now() - t2
       const t3 = performance.now()
-      stepPrisms(dt, px, pz, horde, prism, multitude, haste, might, mapLit, ctx, time)
+      if (!evoDriving('prism')) stepPrisms(dt, px, pz, horde, prism, multitude, haste, might, mapLit, ctx, time)
       cpuP += performance.now() - t3
+      evo.update(dt, px, pz, horde, might, haste, mapLit, shadow, ctx, time)
     },
     sync(px, pz, helio, scarab, stake, prism, time) {
-      if (helio > 0) {
+      if (helio > 0 && !evoDriving('helio')) {
         const mirrorScale = reachMul() * (shownHelio >= 5 ? 1.56 : 1.3)
         arsenal.add({ kind: ARSENAL_PART.mirror, x: mirrorX || px + 0.55, y: 1.7, z: mirrorZ || pz, yaw: mirrorYaw, scale: mirrorScale, hot: bank > 0 ? 1 : 0, swing: 0 })
         for (let i = 0; i < bank; i++) {
@@ -1130,7 +1137,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
           }
         }
       }
-      if (stake > 0) {
+      if (stake > 0 && !evoDriving('stake')) {
         for (let i = 0; i < STAKES; i++) {
           if (!kAlive[i]) continue
           const stakeScale = shownStake >= 5 ? 1.9 : 1.45
@@ -1163,7 +1170,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
           })
         }
       }
-      if (prism > 0) {
+      if (prism > 0 && !evoDriving('prism')) {
         const scale = reachMul() * (shownPrism >= 5 ? 2.6 : 1.5)
         for (let i = 0; i < PRISMS; i++) {
           if (!pAlive[i]) continue
@@ -1187,6 +1194,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
           })
         }
       }
+      evo.sync(px, pz, time, litNow)
     },
     clear() {
       footSun = false
@@ -1219,8 +1227,11 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       prismSpeed = 0
       litHz = 0
       splits = 0
+      evo.clear()
     },
     lights(x, z) {
+      if (evoLights(x, z)) return true
+      if (evoDriving('stake')) return false
       for (let i = 0; i < STAKES; i++) {
         if (!kAlive[i] || !kSun[i]) continue
         const len = kLen[i] ?? 0

@@ -5,6 +5,7 @@ import { hashQuery } from '../spatialHash'
 import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 import { probeAdd, ringRims } from './probe'
+import { evoDriving } from './evoHook'
 
 const QUERY = new Int16Array(48)
 
@@ -101,6 +102,7 @@ export function createFlare(fx: WeaponFx): Flare {
       return spots.map((s) => ({ x: s.x, z: s.z, r: s.r, life: s.life }))
     },
     mark(level) {
+      if (evoDriving('flare')) return
       if (burst && burst.life > 0) {
         const rims = ringRims(burst.x, 0.12, burst.z, burst.radius * 0.92)
         const rim = rims[0] ?? { x: burst.x, y: 0.12, z: burst.z }
@@ -145,6 +147,11 @@ export function createFlare(fx: WeaponFx): Flare {
       burstVisual(px, pz, stats.sun, level >= 5)
     },
     update(dt, px, pz, horde, level, haste, might, mapLit, ctx) {
+      if (evoDriving('flare')) {
+        spots.length = 0
+        burst = null
+        return
+      }
       if (burst) {
         burst.life -= dt
         if (burst.life <= 0) burst = null
