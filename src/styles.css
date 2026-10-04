@@ -329,10 +329,18 @@ h1 { color: var(--goldHot); font-size: 40px; }
   pointer-events: auto;
   overflow: hidden;
 }
-body:has(#level-up:not([hidden])) #touch-root { visibility: hidden; }
+body:has(#level-up:not([hidden])) #touch-root,
+body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
 #level-up .strip.open { transform: translateY(0); }
 #level-up .strip.sunlit { border-top: 2px solid var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.strip-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 0 0 auto; }
 .strip-tag { color: var(--goldHot); font: 700 11px/1 system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; }
+#level-close {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 10px 16px;
+  margin-right: env(safe-area-inset-right);
+}
 #level-up #cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
 #level-up .card { min-height: 0; padding: 6px 8px; gap: 2px; border-radius: 10px; }
 #level-up .card-icon { width: 36px; height: 36px; }

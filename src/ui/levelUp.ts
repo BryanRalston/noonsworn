@@ -8,17 +8,20 @@ export interface LevelUp {
   move: (dir: number) => void
   confirm: () => void
   onPick: ((index: number) => void) | null
+  onClose: (() => void) | null
 }
 
 export function createLevelUp(parent: HTMLElement): LevelUp {
   const root = document.createElement('div')
   root.id = 'level-up'
   root.hidden = true
-  root.innerHTML = `<div class="strip"><div class="strip-tag"></div><div id="cards"></div></div>`
+  root.innerHTML = `<div class="strip"><div class="strip-head"><div class="strip-tag"></div><button type="button" id="level-close">Back</button></div><div id="cards"></div></div>`
   parent.append(root)
   const cards = root.querySelector('#cards') as HTMLElement
   const tag = root.querySelector('.strip-tag') as HTMLElement
   const strip = root.querySelector('.strip') as HTMLElement
+  const close = root.querySelector('#level-close') as HTMLButtonElement
+  close.setAttribute('aria-label', 'Back, keep the charge')
   let atlas = ''
   let focus = 0
   let count = 0
@@ -30,6 +33,7 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
   const ui: LevelUp = {
     root,
     onPick: null,
+    onClose: null,
     arm(url) {
       atlas = url
     },
@@ -50,6 +54,7 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
         btn.innerHTML = `<span class="card-icon" style="--i:${card.id}"></span><strong>${card.name}</strong><span class="card-line">${card.text}</span>${pips}`
         btn.addEventListener('pointerup', (e) => {
           if (e.pointerType !== 'touch') return
+          e.preventDefault()
           touchPick = true
           ui.onPick?.(i)
           requestAnimationFrame(() => {
@@ -86,7 +91,25 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
       ui.onPick?.(focus)
     },
   }
+  bindTouch(close, () => ui.onClose?.())
   return ui
+}
+
+function bindTouch(el: HTMLElement, fn: () => void) {
+  let fromTouch = false
+  el.addEventListener('pointerup', (e) => {
+    if (e.pointerType !== 'touch') return
+    e.preventDefault()
+    fromTouch = true
+    fn()
+    requestAnimationFrame(() => {
+      fromTouch = false
+    })
+  })
+  el.addEventListener('click', () => {
+    if (fromTouch) return
+    fn()
+  })
 }
 
 function pipRow(rank: number, next: number, max: number): string {

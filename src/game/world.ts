@@ -615,9 +615,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     if (mode !== 'level') showMode('level')
   }
 
+  let haloLock = 0
   function closeOffer() {
     levelUp.hide()
     if (mode === 'level') showMode('playing')
+    haloLock = performance.now() + 80
   }
 
   function applyCard(id: number) {
@@ -1246,6 +1248,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     if (pref === 'auto' || pref === 'low' || pref === 'med' || pref === 'high') screens.setQuality(pref)
   }
   hud.onHalo = () => {
+    if (performance.now() < haloLock) return
     audio.ui()
     if (mode === 'playing' && build.pending > 0) openLevel()
   }
@@ -1276,6 +1279,11 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
   }
   levelUp.onPick = (index) => {
     takeCard(index)
+  }
+  levelUp.onClose = () => {
+    if (mode !== 'level') return
+    audio.ui()
+    closeOffer()
   }
   debug.onTier = (tier: TierName) => quality.forceTier(tier)
   debug.onSpawn = () => spawnStress(50)

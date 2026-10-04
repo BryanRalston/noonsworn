@@ -102,6 +102,7 @@ function bindTap(el: Element | null, fn: () => void) {
   let fromTouch = false
   el.addEventListener('pointerup', (e) => {
     if (e.pointerType !== 'touch') return
+    e.preventDefault()
     fromTouch = true
     fn()
     requestAnimationFrame(() => {
