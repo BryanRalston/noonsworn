@@ -2424,7 +2424,8 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
     },
     renderNow: (opts?: { hideWeapons?: boolean }) => {
       hideWeaponDraw = !!opts?.hideWeapons
-      loop.render(1, 0, 0)
+      const frozen = hideWeaponDraw
+      loop.render(1, frozen ? 0 : 0.016, frozen ? 0 : 16)
       hideWeaponDraw = false
     },
     pulseMirage: () => {
