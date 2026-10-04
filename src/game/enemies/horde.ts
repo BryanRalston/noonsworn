@@ -390,8 +390,12 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     ctrlAt[base + 3] = -100
   }
 
+  // Open-field fatigue. A locked boss keeps the add control the TTK baseline measured.
+  let bossFight = false
+
   // The hit that reaches the count still lands. Further control is ignored, not damage.
   function allowControl(i: number, now: number): boolean {
+    if (bossFight) return true
     const row = TUNING.ccFatigue
     if (now < (tired[i] ?? 0)) return false
     const base = i * CTRL_SLOTS
@@ -542,7 +546,12 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     ground: () => 0,
     bossHit: null,
     bossAt: null,
-    bossLock: false,
+    get bossLock() {
+      return bossFight
+    },
+    set bossLock(value: boolean) {
+      bossFight = value
+    },
     annexNear: null,
     radial(cx, cz, radius, amount, hitCtx) {
       if (horde.frozen) return
