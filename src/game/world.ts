@@ -683,6 +683,7 @@ diffuseColor.rgb *= mix(1.0, 0.55, band);`,
       applyCard(card?.id ?? CARD.heal)
     }
     hud.setCharges(build.pending)
+    if (mode === 'level') closeOffer()
   }
 
   function spawnBench() {

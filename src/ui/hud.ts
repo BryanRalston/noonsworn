@@ -91,8 +91,25 @@ export function createHud(parent: HTMLElement): Hud {
       haloBtn.classList.add('glow')
     },
   }
-  root.querySelector('#btn-pause')?.addEventListener('click', () => hud.onPause?.())
-  haloBtn.addEventListener('click', () => hud.onHalo?.())
+  bindTap(root.querySelector('#btn-pause'), () => hud.onPause?.())
+  bindTap(haloBtn, () => hud.onHalo?.())
   haloBtn.addEventListener('animationend', () => haloBtn.classList.remove('glow'))
   return hud
+}
+
+function bindTap(el: Element | null, fn: () => void) {
+  if (!(el instanceof HTMLElement)) return
+  let fromTouch = false
+  el.addEventListener('pointerup', (e) => {
+    if (e.pointerType !== 'touch') return
+    fromTouch = true
+    fn()
+    requestAnimationFrame(() => {
+      fromTouch = false
+    })
+  })
+  el.addEventListener('click', () => {
+    if (fromTouch) return
+    fn()
+  })
 }

@@ -22,6 +22,7 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
   let atlas = ''
   let focus = 0
   let count = 0
+  let touchPick = false
   function paintFocus() {
     const buttons = cards.querySelectorAll('button')
     buttons.forEach((btn, i) => btn.classList.toggle('focus', i === focus))
@@ -47,7 +48,18 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
         btn.className = card.from === 'new' ? 'card new' : 'card'
         const pips = pipRow(card.rank, card.next, card.max)
         btn.innerHTML = `<span class="card-icon" style="--i:${card.id}"></span><strong>${card.name}</strong><span class="card-line">${card.text}</span>${pips}`
-        btn.addEventListener('click', () => ui.onPick?.(i))
+        btn.addEventListener('pointerup', (e) => {
+          if (e.pointerType !== 'touch') return
+          touchPick = true
+          ui.onPick?.(i)
+          requestAnimationFrame(() => {
+            touchPick = false
+          })
+        })
+        btn.addEventListener('click', () => {
+          if (touchPick) return
+          ui.onPick?.(i)
+        })
         btn.addEventListener('pointerenter', () => {
           focus = i
           paintFocus()
