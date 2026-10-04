@@ -1637,6 +1637,8 @@ export function createStair(opts: {
   let camX = 30
   let camZ = 30
   const steer = { x: 0, z: 0 }
+  const steerL = { x: 0, z: 0 }
+  const steerR = { x: 0, z: 0 }
   const spot = { x: 20, z: 0 }
   const hudOut = { elev: 38, countdown: 60 }
   const aim = { x: -12, y: 10, z: 2 }
@@ -2589,9 +2591,11 @@ export function createStair(opts: {
       }
       const c = circles[pick]
       if (!c) return null
-      const left = { x: -(z - c.z), z: x - c.x }
-      const right = { x: z - c.z, z: -(x - c.x) }
-      const use = left.x * dx + left.z * dz >= right.x * dx + right.z * dz ? left : right
+      steerL.x = -(z - c.z)
+      steerL.z = x - c.x
+      steerR.x = z - c.z
+      steerR.z = -(x - c.x)
+      const use = steerL.x * dx + steerL.z * dz >= steerR.x * dx + steerR.z * dz ? steerL : steerR
       const len = Math.hypot(use.x, use.z) || 1
       steer.x = use.x / len
       steer.z = use.z / len

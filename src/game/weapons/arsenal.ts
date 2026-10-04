@@ -112,8 +112,7 @@ function lanceArrays(pos: number[], col: number[], emit: number[], parts: number
   quad(part, pos, col, emit, parts, [-0.07, 0.07, 0.55], [0.07, 0.07, 0.55], [0.05, 0.07, -0.7], [-0.05, 0.07, -0.7], SPINE, 0)
   quad(part, pos, col, emit, parts, [-0.12, 0.09, -0.15], [0.12, 0.09, -0.15], [0.1, 0.09, 0.62], [-0.1, 0.09, 0.62], GOLD, 1)
   quad(part, pos, col, emit, parts, [-0.16, 0.05, 0.7], [0.16, 0.05, 0.7], [0.04, 0.05, 1.02], [-0.04, 0.05, 1.02], EDGE, 1)
-  // One top face. Two strips left a gap, so the size sample counted a single strip.
-  quad(part, pos, col, emit, parts, [-0.36, 0.14, 1.05], [0.36, 0.14, 1.05], [0.36, 0.14, -1.0], [-0.36, 0.14, -1.0], BRONZE, 0)
+  // No wide top plate. Meridian stretch 12 turned a 0.72-wide bronze quad into a floor-sized black trapezoid.
 }
 
 function discArrays(pos: number[], col: number[], emit: number[], parts: number[]) {
@@ -303,6 +302,18 @@ export interface Arsenal {
   mesh: InstancedMesh
   clear: () => void
   add: (item: ArsenalItem) => void
+  place: (
+    kind: number,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    scale: number,
+    hot: number,
+    swing: number,
+    sy?: number,
+    sz?: number,
+  ) => void
   append: (part: number, position: Float32Array, color: Float32Array, emit: Float32Array) => void
   flush: () => void
   prewarm: (renderer: WebGLRenderer, camera: Camera) => void
@@ -334,15 +345,48 @@ export function createArsenal(): Arsenal {
   geo.setAttribute('iHot', hot)
   geo.setAttribute('iSwing', swing)
   const items: ArsenalItem[] = []
+  let n = 0
+  const place = (
+    kind: number,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    scale: number,
+    hot: number,
+    swing: number,
+    sy?: number,
+    sz?: number,
+  ) => {
+    if (!probeAllowsPart(kind)) return
+    if (n >= CAP) return
+    let it = items[n]
+    if (!it) {
+      it = { kind, x, y, z, yaw, scale, hot, swing, sy, sz }
+      items[n] = it
+    } else {
+      it.kind = kind
+      it.x = x
+      it.y = y
+      it.z = z
+      it.yaw = yaw
+      it.scale = scale
+      it.hot = hot
+      it.swing = swing
+      it.sy = sy
+      it.sz = sz
+    }
+    n++
+  }
   return {
     mesh,
     clear() {
-      items.length = 0
+      n = 0
     },
     add(item) {
-      if (!probeAllowsPart(item.kind)) return
-      if (items.length < CAP) items.push(item)
+      place(item.kind, item.x, item.y, item.z, item.yaw, item.scale, item.hot, item.swing, item.sy, item.sz)
     },
+    place,
     append(part, position, color, emit) {
       const old = mesh.geometry
       const pos = old.getAttribute('position')
@@ -378,8 +422,8 @@ export function createArsenal(): Arsenal {
       old.dispose()
     },
     flush() {
-      const n = items.length
-      for (let i = 0; i < n; i++) {
+      const count = n
+      for (let i = 0; i < count; i++) {
         const it = items[i]
         if (!it) continue
         writeInstance(mesh, i, it.x, it.y, it.z, it.yaw, it.scale, it.sy, 0, it.sz)
@@ -387,18 +431,18 @@ export function createArsenal(): Arsenal {
         hot.setX(i, it.hot)
         swing.setX(i, it.swing)
       }
-      mesh.count = n
-      mesh.visible = n > 0
+      mesh.count = count
+      mesh.visible = count > 0
       const matrices = mesh.instanceMatrix
       matrices.clearUpdateRanges()
       kind.clearUpdateRanges()
       hot.clearUpdateRanges()
       swing.clearUpdateRanges()
-      if (n > 0) {
-        matrices.addUpdateRange(0, n * 16)
-        kind.addUpdateRange(0, n)
-        hot.addUpdateRange(0, n)
-        swing.addUpdateRange(0, n)
+      if (count > 0) {
+        matrices.addUpdateRange(0, count * 16)
+        kind.addUpdateRange(0, count)
+        hot.addUpdateRange(0, count)
+        swing.addUpdateRange(0, count)
         matrices.needsUpdate = true
         kind.needsUpdate = true
         hot.needsUpdate = true

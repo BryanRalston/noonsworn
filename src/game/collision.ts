@@ -417,7 +417,12 @@ export function resolveCircle(x0: number, z0: number, radius: number): { x: numb
     cx = p.x
     cz = p.z
   }
-  const kept = BEDS.length > 0 ? containCourt(cx, cz, radius) : { x: cx, z: cz }
+  if (BEDS.length === 0) {
+    resolved.x = cx
+    resolved.z = cz
+    return resolved
+  }
+  const kept = containCourt(cx, cz, radius)
   resolved.x = kept.x
   resolved.z = kept.z
   return resolved

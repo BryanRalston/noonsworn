@@ -3,7 +3,7 @@ import { mulberry32, type Rng } from '../../core/rng'
 import { TUNING } from '../../data/tuning'
 import { CARD, rankOf, type Build } from '../leveling'
 import { insideArena, octDist, resolveCircle, segmentBlocked } from '../collision'
-import { probeAdd, spinRims } from './probe'
+import { probePut, rimAt, spinRims } from './probe'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
 import type { WeaponFx } from './fx'
 import {
@@ -67,6 +67,8 @@ export interface ChestView {
 }
 
 const aim = new Vector3()
+const RING_GOLD: readonly number[] = [1.033, 0.249, 0]
+const RING_EDGE: readonly number[] = [1.4, 1.05, 0.42]
 const RIM: readonly (readonly [number, number, number])[] = [
   [0, 0.74, 0.61], [0.35, 0.74, 0.61], [-0.35, 0.74, 0.61], [0.6, 0.74, 0.58],
   [-0.6, 0.74, 0.58], [0.2, 0.74, 0.66], [-0.2, 0.74, 0.66], [0, 0.74, 0.55],
@@ -104,9 +106,10 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
     if (reduced()) return
     if (simTime - lastFlash < 2) return
     lastFlash = simTime
-    flashEl.classList.remove('on')
-    void flashEl.offsetWidth
-    flashEl.classList.add('on')
+    // Toggling the animation name restarts the flash. Reading offsetWidth here
+    // forced a synchronous layout of the whole page inside the frame.
+    if (!flashEl.classList.contains('on')) flashEl.classList.add('on')
+    else flashEl.classList.toggle('alt')
   })
 
   let placeRng: Rng = mulberry32(1)
@@ -336,7 +339,7 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
         if (chest.fill + 1e-3 < ROW.chest.sun) {
           if (chest.flash <= 0) {
             chest.flash = 0.45
-            fx.ring(chest.x, chest.z, 1.4, [1.033, 0.249, 0], 0.25)
+            fx.ring(chest.x, chest.z, 1.4, RING_GOLD, 0.25)
           }
           continue
         }
@@ -367,34 +370,12 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
         if (!chest) continue
         const pulse = 0.65 + 0.35 * Math.sin(view.time * 6)
         const charged = chest.fill + 1e-3 >= ROW.chest.sun
-        arsenal.add({
-          kind: ARSENAL_PART.chest,
-          x: chest.x,
-          y: 0,
-          z: chest.z,
-          yaw: 0.4,
-          scale: 1.15,
-          hot: charged ? pulse : 0.15,
-          swing: 0,
-        })
+        arsenal.place(ARSENAL_PART.chest, chest.x, 0, chest.z, 0.4, 1.15, charged ? pulse : 0.15, 0)
         const rims = spinRims(chest.x, 0, chest.z, 0.4, 1.15, RIM)
-        const rim = rims[0] ?? { x: chest.x, y: 0.4, z: chest.z }
-        probeAdd({
-          kind: 'chest',
-          level: charged ? 5 : 1,
-          x: chest.x,
-          y: 0.55,
-          z: chest.z,
-          rimX: rim.x,
-          rimY: rim.y,
-          rimZ: rim.z,
-          floorX: chest.x + 1.5,
-          floorY: 0.02,
-          floorZ: chest.z,
-          rims,
-        })
+        const rim = rimAt(rims, 0, chest.x, 0.4, chest.z)
+        probePut('chest', charged ? 5 : 1, chest.x, 0.55, chest.z, rim.x, rim.y, rim.z, chest.x + 1.5, 0.02, chest.z, rims)
         const span = 0.7 + 1.5 * (chest.fill / ROW.chest.sun)
-        fx.ring(chest.x, chest.z, span, charged ? [1.4, 1.05, 0.42] : [1.033, 0.249, 0], 0.16)
+        fx.ring(chest.x, chest.z, span, charged ? RING_EDGE : RING_GOLD, 0.16)
         fx.glow(chest.x, chest.z, charged ? 1.3 : 0.8)
         aim.set(chest.x, 0.8, chest.z)
         aim.project(view.camera)
@@ -413,8 +394,8 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
         const m = Math.max(Math.abs(nx), Math.abs(ny), 0.001)
         nx /= m
         ny /= m
-        const w = view.canvas.clientWidth || 1
-        const h = view.canvas.clientHeight || 1
+        const w = window.innerWidth || 1
+        const h = window.innerHeight || 1
         px = (nx * 0.5 + 0.5) * w
         py = (-ny * 0.5 + 0.5) * h
         pointed = true
@@ -422,8 +403,8 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
       }
       pointer.hidden = !pointed
       if (pointed) {
-        const w = view.canvas.clientWidth || 1
-        const h = view.canvas.clientHeight || 1
+        const w = window.innerWidth || 1
+        const h = window.innerHeight || 1
         pointer.style.left = `${Math.max(16, Math.min(w - 16, px))}px`
         pointer.style.top = `${Math.max(16, Math.min(h - 16, py))}px`
       }

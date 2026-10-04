@@ -57,55 +57,98 @@ export function createSundial(parent: HTMLElement): Sundial {
   const deepArc = root.querySelector('#water-deep') as SVGPathElement
   const stairArc = root.querySelector('#stair-arc') as SVGPathElement
   const stairElev = root.querySelector('#stair-elev') as SVGCircleElement
+  let gateOn = false
+  let waterOn = false
+  let waterDir = 99
+  let dotCx = ''
+  let dotCy = ''
+  let shownSec = -1
+  let stairOn = false
+  let stairStep = -1
+  let elevShown = 999
+  let terraceMask = -2
   return {
     root,
     set(angle, seconds, gate = false, terraces?: number, water?: { dir: number } | null, stair?: { elev: number; countdown: number } | null) {
-      root.classList.toggle('gate', gate)
+      if (gateOn !== gate) {
+        gateOn = gate
+        root.classList.toggle('gate', gate)
+      }
       const showWater = !!water
-      brimArc.toggleAttribute('hidden', !showWater)
-      deepArc.toggleAttribute('hidden', !showWater)
+      if (waterOn !== showWater) {
+        waterOn = showWater
+        brimArc.toggleAttribute('hidden', !showWater)
+        deepArc.toggleAttribute('hidden', !showWater)
+      }
       if (water) {
         const dir = water.dir < 0 ? -1 : 1
-        brimArc.setAttribute('d', dialArc(thetaAt(8, dir), thetaAt(26, dir)))
-        deepArc.setAttribute('d', dialArc(thetaAt(34, dir), thetaAt(60, dir)))
-      }
-      const c = Math.cos(angle)
-      const s = Math.sin(angle)
-      dot.setAttribute('cx', `${36 + c * 28}`)
-      dot.setAttribute('cy', `${36 + s * 28}`)
-      const clamped = Math.max(0, Math.floor(seconds))
-      const m = Math.floor(clamped / 60)
-      const sec = clamped % 60
-      clock.textContent = `${m}:${sec < 10 ? '0' : ''}${sec}`
-      const showStair = !!stair
-      stairArc.toggleAttribute('hidden', !showStair)
-      stairElev.toggleAttribute('hidden', !showStair)
-      if (stair) {
-        const sweep = Math.min(1.98 * Math.PI, (Math.max(0, Math.min(60, stair.countdown)) / 60) * Math.PI * 2)
-        const a0 = -Math.PI / 2
-        if (sweep < 0.05) stairArc.setAttribute('d', '')
-        else {
-          const r = 30
-          const a1 = a0 + sweep
-          const x0 = 36 + Math.cos(a0) * r
-          const y0 = 36 + Math.sin(a0) * r
-          const x1 = 36 + Math.cos(a1) * r
-          const y1 = 36 + Math.sin(a1) * r
-          const large = sweep > Math.PI ? 1 : 0
-          stairArc.setAttribute('d', `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`)
+        if (waterDir !== dir) {
+          waterDir = dir
+          brimArc.setAttribute('d', dialArc(thetaAt(8, dir), thetaAt(26, dir)))
+          deepArc.setAttribute('d', dialArc(thetaAt(34, dir), thetaAt(60, dir)))
         }
-        const elevAng = -Math.PI / 2 + ((38 - stair.elev) / 34.5) * Math.PI * 0.85
-        stairElev.setAttribute('cx', `${36 + Math.cos(elevAng) * 28}`)
-        stairElev.setAttribute('cy', `${36 + Math.sin(elevAng) * 28}`)
       }
-      if (terraces == null) ticks.setAttribute('visibility', 'hidden')
-      else {
-        ticks.setAttribute('visibility', 'visible')
-        for (let i = 0; i < marks.length; i++) {
-          const mark = marks[i]
-          if (!mark) continue
-          const bit = Number(mark.getAttribute('data-bit'))
-          mark.classList.toggle('on', (terraces & bit) !== 0)
+      const cx = String(Math.round(36 + Math.cos(angle) * 28))
+      const cy = String(Math.round(36 + Math.sin(angle) * 28))
+      if (cx !== dotCx) {
+        dotCx = cx
+        dot.setAttribute('cx', cx)
+      }
+      if (cy !== dotCy) {
+        dotCy = cy
+        dot.setAttribute('cy', cy)
+      }
+      const clamped = Math.max(0, Math.floor(seconds))
+      if (clamped !== shownSec) {
+        shownSec = clamped
+        const m = Math.floor(clamped / 60)
+        const sec = clamped % 60
+        clock.textContent = `${m}:${sec < 10 ? '0' : ''}${sec}`
+      }
+      const showStair = !!stair
+      if (stairOn !== showStair) {
+        stairOn = showStair
+        stairArc.toggleAttribute('hidden', !showStair)
+        stairElev.toggleAttribute('hidden', !showStair)
+      }
+      if (stair) {
+        const step = Math.round(Math.max(0, Math.min(60, stair.countdown)) * 4)
+        if (step !== stairStep) {
+          stairStep = step
+          const sweep = Math.min(1.98 * Math.PI, (step / 240) * Math.PI * 2)
+          const a0 = -Math.PI / 2
+          if (sweep < 0.05) stairArc.setAttribute('d', '')
+          else {
+            const r = 30
+            const a1 = a0 + sweep
+            const x0 = 36 + Math.cos(a0) * r
+            const y0 = 36 + Math.sin(a0) * r
+            const x1 = 36 + Math.cos(a1) * r
+            const y1 = 36 + Math.sin(a1) * r
+            const large = sweep > Math.PI ? 1 : 0
+            stairArc.setAttribute('d', `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`)
+          }
+        }
+        const elev = Math.round(stair.elev)
+        if (elev !== elevShown) {
+          elevShown = elev
+          const elevAng = -Math.PI / 2 + ((38 - elev) / 34.5) * Math.PI * 0.85
+          stairElev.setAttribute('cx', String(Math.round(36 + Math.cos(elevAng) * 28)))
+          stairElev.setAttribute('cy', String(Math.round(36 + Math.sin(elevAng) * 28)))
+        }
+      }
+      const mask = terraces == null ? -1 : terraces
+      if (mask !== terraceMask) {
+        terraceMask = mask
+        if (terraces == null) ticks.setAttribute('visibility', 'hidden')
+        else {
+          ticks.setAttribute('visibility', 'visible')
+          for (let i = 0; i < marks.length; i++) {
+            const mark = marks[i]
+            if (!mark) continue
+            const bit = Number(mark.getAttribute('data-bit'))
+            mark.classList.toggle('on', (terraces & bit) !== 0)
+          }
         }
       }
     },

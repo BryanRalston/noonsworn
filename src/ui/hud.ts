@@ -42,6 +42,15 @@ export function createHud(parent: HTMLElement): Hud {
   ring.style.strokeDasharray = `${RING}`
   let touch = false
   let charges = -1
+  let hpShown = -1
+  let hpBar = -1
+  let hpLow = false
+  let xpBar = -1
+  let lvShown = -1
+  let killsShown = -1
+  let dashShown = ''
+  let mirageOwned = false
+  let mirageOp = ''
   const hud: Hud = {
     root,
     onPause: null,
@@ -56,28 +65,57 @@ export function createHud(parent: HTMLElement): Hud {
     },
     setHp(hp, max) {
       const pct = max > 0 ? (Math.max(0, hp) / max) * 100 : 0
-      hpFill.style.width = `${pct}%`
-      hpFill.classList.toggle('low', pct <= 30)
-      hpNum.textContent = `${Math.ceil(Math.max(0, hp))}`
+      const bar = Math.round(pct)
+      const shown = Math.ceil(Math.max(0, hp))
+      const low = pct <= 30
+      if (bar !== hpBar) {
+        hpBar = bar
+        hpFill.style.width = `${bar}%`
+      }
+      if (low !== hpLow) {
+        hpLow = low
+        hpFill.classList.toggle('low', low)
+      }
+      if (shown !== hpShown) {
+        hpShown = shown
+        hpNum.textContent = `${shown}`
+      }
     },
     setXp(xp, next, lv) {
-      const pct = next > 0 ? Math.min(100, (xp / next) * 100) : 0
-      xpFill.style.width = `${pct}%`
-      level.textContent = `Lv ${lv}`
+      const bar = next > 0 ? Math.min(100, Math.round((xp / next) * 100)) : 0
+      if (bar !== xpBar) {
+        xpBar = bar
+        xpFill.style.width = `${bar}%`
+      }
+      if (lv !== lvShown) {
+        lvShown = lv
+        level.textContent = `Lv ${lv}`
+      }
     },
     setKills(n) {
+      if (n === killsShown) return
+      killsShown = n
       kills.textContent = `${n}`
     },
     setCooldown(ready) {
       if (touch) return
       const t = ready < 0 ? 0 : ready > 1 ? 1 : ready
-      ring.style.strokeDashoffset = `${RING * (1 - t)}`
+      const dash = (RING * (1 - t)).toFixed(1)
+      if (dash === dashShown) return
+      dashShown = dash
+      ring.style.strokeDashoffset = dash
     },
     setMirage(owned, ready) {
-      miragePip.hidden = !owned
+      if (owned !== mirageOwned) {
+        mirageOwned = owned
+        miragePip.hidden = !owned
+      }
       if (!owned) return
       const t = ready < 0 ? 0 : ready > 1 ? 1 : ready
-      miragePip.style.opacity = `${0.35 + 0.65 * t}`
+      const op = (0.35 + 0.65 * t).toFixed(2)
+      if (op === mirageOp) return
+      mirageOp = op
+      miragePip.style.opacity = op
     },
     setCharges(n) {
       if (n === charges) return

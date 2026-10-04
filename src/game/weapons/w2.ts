@@ -10,7 +10,7 @@ import { CARD, registerCard } from '../leveling'
 import { ARSENAL_PART, type Arsenal } from './arsenal'
 import type { WeaponFx } from './fx'
 import { endureMul, reachMul } from './passives'
-import { probeAdd, ringLocal, spinRims } from './probe'
+import { probePut, rimAt, ringLocal, spinRims } from './probe'
 import { attachEvolve } from './evolve'
 import { evoDriving, evoLights } from './evoHook'
 
@@ -18,6 +18,14 @@ const GOLD = [1.033, 0.249, 0.0]
 const EDGE = [1.4, 1.05, 0.42]
 const BRONZE = [0.03, 0.016, 0.0]
 const QH = new Int16Array(48)
+const SCARAB_RIM: readonly (readonly [number, number, number])[] = [
+  [-0.26, 0.08, -0.04], [0.26, 0.08, -0.04], [-0.22, 0.08, -0.12], [0.22, 0.08, -0.12],
+  [-0.18, 0.08, 0.02], [0.18, 0.08, 0.02], [0, 0.08, -0.08], [0, 0.1, 0.02],
+]
+const STAKE_RIM: readonly (readonly [number, number, number])[] = [
+  [0.08, 0.4, 0.08], [-0.08, 0.4, 0.08], [0.08, 0.4, -0.08], [-0.08, 0.4, -0.08],
+  [0.08, 1.2, 0.08], [-0.08, 1.2, 0.08], [0.08, 1.2, -0.08], [-0.08, 1.2, -0.08],
+]
 const QS = new Int16Array(48)
 const QK = new Int16Array(48)
 const QP = new Int16Array(32)
@@ -1101,7 +1109,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
     sync(px, pz, helio, scarab, stake, prism, time) {
       if (helio > 0 && !evoDriving('helio')) {
         const mirrorScale = reachMul() * (shownHelio >= 5 ? 1.56 : 1.3)
-        arsenal.add({ kind: ARSENAL_PART.mirror, x: mirrorX || px + 0.55, y: 1.7, z: mirrorZ || pz, yaw: mirrorYaw, scale: mirrorScale, hot: bank > 0 ? 1 : 0, swing: 0 })
+        arsenal.place(ARSENAL_PART.mirror, mirrorX || px + 0.55, 1.7, mirrorZ || pz, mirrorYaw, mirrorScale, bank > 0 ? 1 : 0, 0)
         for (let i = 0; i < bank; i++) {
           const a = (i / Math.max(1, bank)) * Math.PI * 2
           fx.glint((mirrorX || px) + Math.cos(a) * 0.42, 1.75, (mirrorZ || pz) + Math.sin(a) * 0.42, 0.18)
@@ -1109,56 +1117,21 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         const mx = mirrorX || px + 0.55
         const mz = mirrorZ || pz
         const rims = spinRims(mx, 1.7, mz, mirrorYaw, mirrorScale, ringLocal(0.52, 0.05))
-        const rim = rims[0] ?? { x: mx, y: 1.7, z: mz }
-        probeAdd({
-          kind: 'heliograph',
-          level: shownHelio,
-          x: mx,
-          y: 1.7,
-          z: mz,
-          rimX: rim.x,
-          rimY: rim.y,
-          rimZ: rim.z,
-          floorX: mx + 1.8,
-          floorY: 0.02,
-          floorZ: mz,
-          rims,
-        })
+        const rim = rimAt(rims, 0, mx, 1.7, mz)
+        probePut('heliograph', shownHelio, mx, 1.7, mz, rim.x, rim.y, rim.z, mx + 1.8, 0.02, mz, rims)
       }
       if (scarab > 0) {
         for (let i = 0; i < SCARABS; i++) {
           if (!sAlive[i]) continue
           const yaw = yawFromDirection(svx[i] ?? 0, svz[i] ?? 1) + Math.PI
           const scarabScale = shownScarab >= 5 ? 2.6 : 2.2
-          arsenal.add({ kind: ARSENAL_PART.scarab, x: sx[i] ?? 0, y: 0.45, z: sz[i] ?? 0, yaw, scale: scarabScale, hot: 0, swing: time * 14 })
+          arsenal.place(ARSENAL_PART.scarab, sx[i] ?? 0, 0.45, sz[i] ?? 0, yaw, scarabScale, 0, time * 14)
           if (i === 0 || (sMode[i] ?? 0) === 0) {
             const bx = sx[i] ?? 0
             const bz = sz[i] ?? 0
-            const rims = spinRims(bx, 0.45, bz, yaw, scarabScale, [
-              [-0.26, 0.08, -0.04],
-              [0.26, 0.08, -0.04],
-              [-0.22, 0.08, -0.12],
-              [0.22, 0.08, -0.12],
-              [-0.18, 0.08, 0.02],
-              [0.18, 0.08, 0.02],
-              [0, 0.08, -0.08],
-              [0, 0.1, 0.02],
-            ])
-            const rim = rims[0] ?? { x: bx, y: 0.5, z: bz }
-            probeAdd({
-              kind: 'scarablight',
-              level: shownScarab,
-              x: bx,
-              y: 0.55,
-              z: bz + 0.1,
-              rimX: rim.x,
-              rimY: rim.y,
-              rimZ: rim.z,
-              floorX: bx + 0.55 * scarabScale,
-              floorY: 0.02,
-              floorZ: bz,
-              rims,
-            })
+            const rims = spinRims(bx, 0.45, bz, yaw, scarabScale, SCARAB_RIM)
+            const rim = rimAt(rims, 0, bx, 0.5, bz)
+            probePut('scarablight', shownScarab, bx, 0.55, bz + 0.1, rim.x, rim.y, rim.z, bx + 0.55 * scarabScale, 0.02, bz, rims)
           }
         }
       }
@@ -1167,32 +1140,10 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
           if (!kAlive[i]) continue
           const stakeScale = shownStake >= 5 ? 1.9 : 1.45
           const stakeYaw = yawFromDirection(kDx[i] ?? 0, kDz[i] ?? 1)
-          arsenal.add({ kind: ARSENAL_PART.stake, x: kx[i] ?? 0, y: 0, z: kz[i] ?? 0, yaw: stakeYaw, scale: stakeScale, hot: kSun[i] ? 1 : 0, swing: 0 })
-          const rims = spinRims(kx[i] ?? 0, 0, kz[i] ?? 0, stakeYaw, stakeScale, [
-            [0.08, 0.4, 0.08],
-            [-0.08, 0.4, 0.08],
-            [0.08, 0.4, -0.08],
-            [-0.08, 0.4, -0.08],
-            [0.08, 1.2, 0.08],
-            [-0.08, 1.2, 0.08],
-            [0.08, 1.2, -0.08],
-            [-0.08, 1.2, -0.08],
-          ])
-          const rim = rims[0] ?? { x: kx[i] ?? 0, y: 1, z: kz[i] ?? 0 }
-          probeAdd({
-            kind: 'stakes',
-            level: shownStake,
-            x: kx[i] ?? 0,
-            y: 1.98 * stakeScale,
-            z: kz[i] ?? 0,
-            rimX: rim.x,
-            rimY: rim.y,
-            rimZ: rim.z,
-            floorX: (kx[i] ?? 0) + 0.45,
-            floorY: 0.02,
-            floorZ: kz[i] ?? 0,
-            rims,
-          })
+          arsenal.place(ARSENAL_PART.stake, kx[i] ?? 0, 0, kz[i] ?? 0, stakeYaw, stakeScale, kSun[i] ? 1 : 0, 0)
+          const rims = spinRims(kx[i] ?? 0, 0, kz[i] ?? 0, stakeYaw, stakeScale, STAKE_RIM)
+          const rim = rimAt(rims, 0, kx[i] ?? 0, 1, kz[i] ?? 0)
+          probePut('stakes', shownStake, kx[i] ?? 0, 1.98 * stakeScale, kz[i] ?? 0, rim.x, rim.y, rim.z, (kx[i] ?? 0) + 0.45, 0.02, kz[i] ?? 0, rims)
         }
       }
       if (prism > 0 && !evoDriving('prism')) {
@@ -1200,23 +1151,23 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
         for (let i = 0; i < PRISMS; i++) {
           if (!pAlive[i]) continue
           const prismYaw = time * 2 + i
-          arsenal.add({ kind: ARSENAL_PART.prism, x: pxA[i] ?? 0, y: 0.9, z: pzA[i] ?? 0, yaw: prismYaw, scale, hot: 1, swing: 0 })
+          arsenal.place(ARSENAL_PART.prism, pxA[i] ?? 0, 0.9, pzA[i] ?? 0, prismYaw, scale, 1, 0)
           const rims = spinRims(pxA[i] ?? 0, 0.9, pzA[i] ?? 0, prismYaw, scale, ringLocal(0.32, 0))
-          const rim = rims[0] ?? { x: pxA[i] ?? 0, y: 0.9, z: pzA[i] ?? 0 }
-          probeAdd({
-            kind: 'prism',
-            level: shownPrism,
-            x: pxA[i] ?? 0,
-            y: 0.9,
-            z: pzA[i] ?? 0,
-            rimX: rim.x,
-            rimY: rim.y,
-            rimZ: rim.z,
-            floorX: (pxA[i] ?? 0) + 0.55 * scale + 1.6,
-            floorY: 0.02,
-            floorZ: pzA[i] ?? 0,
+          const rim = rimAt(rims, 0, pxA[i] ?? 0, 0.9, pzA[i] ?? 0)
+          probePut(
+            'prism',
+            shownPrism,
+            pxA[i] ?? 0,
+            0.9,
+            pzA[i] ?? 0,
+            rim.x,
+            rim.y,
+            rim.z,
+            (pxA[i] ?? 0) + 0.55 * scale + 1.6,
+            0.02,
+            pzA[i] ?? 0,
             rims,
-          })
+          )
         }
       }
       evo.sync(px, pz, time, litNow)

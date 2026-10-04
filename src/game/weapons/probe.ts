@@ -21,7 +21,6 @@ export interface ProbeBody {
   rims: readonly ProbePoint[]
 }
 
-const bodies: ProbeBody[] = []
 let solo: string | null = null
 
 /** Evolution names share the base mesh until they grow their own part. */
@@ -78,17 +77,87 @@ export function probeAllowsPart(part: number): boolean {
   return PART_OF[part] === canon(solo)
 }
 
+const points: ProbePoint[] = []
+let pointCursor = 0
+const lists: ProbePoint[][] = []
+let listCursor = 0
+const owned: ProbeBody[] = []
+let bodyCursor = 0
+const ringCache = new Map<number, [number, number, number][]>()
+const miss: ProbePoint = { x: 0, y: 0, z: 0 }
+
 export function probeReset(): void {
-  bodies.length = 0
+  pointCursor = 0
+  listCursor = 0
+  bodyCursor = 0
+}
+
+/** First rim, or a reused stand-in. Read the coordinates before the next call. */
+export function rimAt(rims: readonly ProbePoint[], index: number, x: number, y: number, z: number): ProbePoint {
+  const hit = rims[index]
+  if (hit) return hit
+  miss.x = x
+  miss.y = y
+  miss.z = z
+  return miss
+}
+
+export function probePut(
+  kind: string,
+  level: number,
+  x: number,
+  y: number,
+  z: number,
+  rimX: number,
+  rimY: number,
+  rimZ: number,
+  floorX: number,
+  floorY: number,
+  floorZ: number,
+  rims: readonly ProbePoint[],
+): void {
+  if (!probeAllows(kind)) return
+  if (bodyCursor >= 128) return
+  let row = owned[bodyCursor]
+  if (!row) {
+    row = { kind, level, x, y, z, rimX, rimY, rimZ, floorX, floorY, floorZ, rims }
+    owned[bodyCursor] = row
+  } else {
+    row.kind = kind
+    row.level = level
+    row.x = x
+    row.y = y
+    row.z = z
+    row.rimX = rimX
+    row.rimY = rimY
+    row.rimZ = rimZ
+    row.floorX = floorX
+    row.floorY = floorY
+    row.floorZ = floorZ
+    row.rims = rims
+  }
+  bodyCursor++
 }
 
 export function probeAdd(body: ProbeBody): void {
-  if (!probeAllows(body.kind)) return
-  if (bodies.length < 128) bodies.push(body)
+  probePut(
+    body.kind,
+    body.level,
+    body.x,
+    body.y,
+    body.z,
+    body.rimX,
+    body.rimY,
+    body.rimZ,
+    body.floorX,
+    body.floorY,
+    body.floorZ,
+    body.rims,
+  )
 }
 
 export function probeBodies(): readonly ProbeBody[] {
-  return bodies
+  return owned.slice(0, bodyCursor)
 }
 
 /** Local points through the same yaw and scale as writeInstance. */
@@ -104,28 +173,38 @@ export function spinRims(
 ): ProbePoint[] {
   const c = Math.cos(yaw)
   const s = Math.sin(yaw)
-  const out: ProbePoint[] = []
+  const out = lists[listCursor] ?? (lists[listCursor] = [])
+  listCursor++
+  let n = 0
   for (let i = 0; i < local.length; i++) {
     const p = local[i]
     if (!p) continue
     const lx = p[0]
     const ly = p[1]
     const lz = p[2]
-    out.push({
-      x: px + scale * lx * c + sz * lz * s,
-      y: py + sy * ly,
-      z: pz - scale * lx * s + sz * lz * c,
-    })
+    let at = points[pointCursor]
+    if (!at) points[pointCursor] = at = { x: 0, y: 0, z: 0 }
+    at.x = px + scale * lx * c + sz * lz * s
+    at.y = py + sy * ly
+    at.z = pz - scale * lx * s + sz * lz * c
+    out[n] = at
+    n++
+    pointCursor++
   }
+  out.length = n
   return out
 }
 
 export function ringLocal(radius: number, y: number): [number, number, number][] {
+  const key = Math.round(radius * 10000) * 100000 + Math.round(y * 10000)
+  const hit = ringCache.get(key)
+  if (hit) return hit
   const local: [number, number, number][] = []
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2
     local.push([Math.cos(a) * radius, y, Math.sin(a) * radius])
   }
+  ringCache.set(key, local)
   return local
 }
 

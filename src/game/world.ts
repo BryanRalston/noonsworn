@@ -71,7 +71,7 @@ import { createSunspear } from './weapons/sunspear'
 import { FX, createWeaponFx } from './weapons/fx'
 import { probeBodies, probeReset, probeSolo, setProbeSolo } from './weapons/probe'
 import { setWeaponPassives } from './weapons/passives'
-import { applyEvoAll, createChests } from './weapons/chests'
+import { applyEvoAll, createChests, type ChestEnv, type ChestView } from './weapons/chests'
 import { clearEvos, evoCpu as readEvoCpu, evoDriving, readEvo, resetEvoCpu, setEvo, setEvoHeal, setEvoSee, type EvoKind } from './weapons/evoHook'
 
 interface W2Live {
@@ -1045,8 +1045,110 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   }
 
   const stairLift = (x: number, z: number) => (stair ? stair.floorY(x, z) + 0.35 : 0.35)
-  // One function for the whole stair run. A fresh closure every frame deopts the mite sync.
+  // One function per map for the whole run. A fresh closure every frame deopts the mite sync.
   const stairGround = (z: number, x = 0) => (stair ? stair.floorY(x, z) : 0)
+  const groundZero = () => 0
+  const groundCloister = (z: number, x = 0) => (cloister ? cloister.floorY(x, z) : 0)
+  const groundLattice = (z: number) => (lattice ? lattice.floorY(z) : 0)
+  const stairHold = { x: 0, z: 0 }
+  const ferryAt = { x: 0, z: 0 }
+  let ferryMoved = 0
+  let gleamSlot = 0
+  let drawX = 0
+  let drawZ = 0
+  let cssW = 1
+  let cssH = 1
+  function stairCrowd(x: number, z: number, radius: number) {
+    if (radius > 0.4) return null
+    const dx = x - player.x
+    const dz = z - player.z
+    const d = Math.hypot(dx, dz)
+    if (d > 1.45 || d < 0.72) return null
+    const k = 0.72 / d
+    stairHold.x = player.x + dx * k
+    stairHold.z = player.z + dz * k
+    return stairHold
+  }
+  function ferryOne(gx: number, gz: number) {
+    if (ferryMoved >= TUNING.evo.sunroller.ferryMax) return null
+    const dx = player.x - gx
+    const dz = player.z - gz
+    const d2 = dx * dx + dz * dz
+    const reach2 = TUNING.evo.sunroller.ferry * TUNING.evo.sunroller.ferry
+    if (d2 > reach2 || d2 < 0.16) return null
+    const dist = Math.sqrt(d2)
+    const hop = Math.min(0.45, dist)
+    ferryMoved++
+    ferryAt.x = gx + (dx / dist) * hop
+    ferryAt.z = gz + (dz / dist) * hop
+    return ferryAt
+  }
+  function cloisterShove(x: number, z: number, radius: number) {
+    return cloister ? cloister.shoveAt(x, z, radius) : null
+  }
+  function cloisterGem(x: number, z: number) {
+    return cloister ? cloister.shoveAt(x, z, 0) : null
+  }
+  function onGem(value: number) {
+    xpWindow += value
+    xpStep = (xpStep + 1) % 8
+    audio.xp(xpStep)
+    grantXp(build, value)
+    tutorial.onCollect()
+  }
+  function playBell() {
+    audio.bell()
+  }
+  function markGleam(gx: number, gz: number) {
+    fx.gleamMark(gleamSlot, gx, gz)
+    gleamSlot++
+  }
+  function shadowEnemy(ex: number, ez: number, kind: number) {
+    if (activeMap === 'lattice') {
+      const dx = ex - drawX
+      const dz = ez - drawZ
+      if (dx * dx + dz * dz > 225) return
+    }
+    shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3)
+  }
+  function shadowGem(gx: number, gz: number) {
+    shadows.put(gx, gz, 0.6 * 1.3)
+  }
+  function chestFloor(cx: number, cz: number) {
+    return activeMap === 'stair' && stair ? stair.floorY(cx, cz) : 0
+  }
+  function chestRank(id: number) {
+    return rankOf(build, id)
+  }
+  function chestGrant() {
+    build.pending += 2
+    hud.setCharges(build.pending)
+    chests.holdBank()
+  }
+  const chestAtRaw = params.get('chestAt')
+  const chestAtFixed = chestAtRaw == null ? Number.NaN : Number(chestAtRaw)
+  const chestEnv: ChestEnv = {
+    rawDt: 0,
+    time: 0,
+    px: 0,
+    pz: 0,
+    map: 'sundial',
+    mapLit,
+    floorY: chestFloor,
+    w2: 'loading',
+    dev: devTools(),
+    chestsOff: !!previewWeapon || (devTools() && params.get('chests') === '0'),
+    chestAt: devTools() && Number.isFinite(chestAtFixed) ? chestAtFixed : null,
+    rank: chestRank,
+    grantTwo: chestGrant,
+  }
+  const chestView: ChestView = {
+    camera: follow.camera,
+    canvas,
+    px: 0,
+    pz: 0,
+    time: 0,
+  }
 
   function waterCode(name: string | null): number | null {
     if (name === 'fill') return 4
@@ -2050,19 +2152,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         // an open terrace they never touch her. Hounds, which do connect, are
         // held until 0:30. Pull the inner ring into reach once the opening has
         // had time to close, or an idle Sela outlasts 35 s.
-        horde.shove((x, z, radius) => {
-          if (radius > 0.4) return null
-          const dx = x - player.x
-          const dz = z - player.z
-          const d = Math.hypot(dx, dz)
-          if (d > 1.45 || d < 0.72) return null
-          const k = 0.72 / d
-          return { x: player.x + dx * k, z: player.z + dz * k }
-        })
+        horde.shove(stairCrowd)
       }
       if (activeMap === 'cloister' && cloister) {
-        horde.shove((x, z, radius) => cloister?.shoveAt(x, z, radius) ?? null)
-        pickups.shove((x, z) => cloister?.shoveAt(x, z, 0) ?? null)
+        horde.shove(cloisterShove)
+        pickups.shove(cloisterGem)
         const touch = cloister.touch(player.x, player.z)
         if (touch > 0) ctx.onHurt(touch)
       }
@@ -2095,34 +2189,20 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       flareMs += performance.now() - flareT
       const bellT = performance.now()
       if (!(previewShow && previewWeapon === 'bell')) {
-        bell.update(dt, player.x, player.z, horde, build.bell, build.haste, build.might, mapLit, ctx, () => audio.bell())
+        bell.update(dt, player.x, player.z, horde, build.bell, build.haste, build.might, mapLit, ctx, playBell)
       }
       bellMs += performance.now() - bellT
       const multi = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
       w2?.update(dt, player.x, player.z, horde, build.helio, build.scarab, build.stake, build.prism, multi, build.haste, build.might, mapLit, writeShadow, ctx, time)
-      const chestAtRaw = params.get('chestAt')
-      const chestAtNum = chestAtRaw == null ? Number.NaN : Number(chestAtRaw)
       const wasReveal = chests.revealUp()
       const chestT = performance.now()
-      chests.update({
-        rawDt,
-        time,
-        px: player.x,
-        pz: player.z,
-        map: activeMap,
-        mapLit,
-        floorY: (cx, cz) => (activeMap === 'stair' && stair ? stair.floorY(cx, cz) : 0),
-        w2: w2State,
-        dev: devTools(),
-        chestsOff: !!previewWeapon || (devTools() && params.get('chests') === '0'),
-        chestAt: devTools() && Number.isFinite(chestAtNum) ? chestAtNum : null,
-        rank: (id) => rankOf(build, id),
-        grantTwo: () => {
-          build.pending += 2
-          hud.setCharges(build.pending)
-          chests.holdBank()
-        },
-      })
+      chestEnv.rawDt = rawDt
+      chestEnv.time = time
+      chestEnv.px = player.x
+      chestEnv.pz = player.z
+      chestEnv.map = activeMap
+      chestEnv.w2 = w2State
+      chests.update(chestEnv)
       chestMs += performance.now() - chestT
       if (!wasReveal && chests.revealUp() && mode === 'level') {
         levelUp.hide()
@@ -2130,29 +2210,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       if (chests.revealUp()) player.invuln = Math.max(player.invuln, 0.2)
       if (evoDriving('scarab')) {
-        let moved = 0
-        const cap = TUNING.evo.sunroller.ferryMax
-        const reach2 = TUNING.evo.sunroller.ferry * TUNING.evo.sunroller.ferry
-        pickups.shove((gx, gz) => {
-          if (moved >= cap) return null
-          const dx = player.x - gx
-          const dz = player.z - gz
-          const d2 = dx * dx + dz * dz
-          if (d2 > reach2 || d2 < 0.16) return null
-          const dist = Math.sqrt(d2)
-          const hop = Math.min(0.45, dist)
-          moved++
-          return { x: gx + (dx / dist) * hop, z: gz + (dz / dist) * hop }
-        })
+        ferryMoved = 0
+        pickups.shove(ferryOne)
       }
       const before = build.pending
-      pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, (value) => {
-        xpWindow += value
-        xpStep = (xpStep + 1) % 8
-        audio.xp(xpStep)
-        grantXp(build, value)
-        tutorial.onCollect()
-      })
+      pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, onGem)
       if (player.hp <= 0) {
         showMode('dead')
         bus.emit('runEnd', { victory: false, time, kills, level: build.level })
@@ -2198,6 +2260,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       return hitStop <= 0
     },
     render(alpha, frameSec, frameMs) {
+      cssW = window.innerWidth || 1
+      cssH = window.innerHeight || 1
       if (presentationDue) {
         presentationDue = false
         applyPresentation()
@@ -2279,8 +2343,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         dead: player.hp <= 0,
         aspect: follow.camera.aspect,
         camera: follow.camera,
-        viewW: canvas.clientWidth,
-        viewH: canvas.clientHeight,
+        viewW: cssW,
+        viewH: cssH,
         hold: import.meta.env.DEV ? params.get('clip') : null,
         holdAt: import.meta.env.DEV && params.get('clipAt') ? Number(params.get('clipAt')) : undefined,
         sparse: quality.tier !== 'high',
@@ -2308,13 +2372,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (activeMap === 'stair' && stair) {
         if (horde.ground !== stairGround) horde.ground = stairGround
       } else if (activeMap === 'cloister' && cloister) {
-        const court = cloister
-        horde.ground = (z, x = 0) => court.floorY(x, z)
+        if (horde.ground !== groundCloister) horde.ground = groundCloister
       } else if (activeMap === 'lattice' && lattice) {
-        const terrace = lattice
-        horde.ground = (z) => terrace.floorY(z)
-      } else {
-        horde.ground = () => 0
+        if (horde.ground !== groundLattice) horde.ground = groundLattice
+      } else if (horde.ground !== groundZero) {
+        horde.ground = groundZero
       }
       horde.sync(follow.camera.position.x, follow.camera.position.z, quality.tier === 'high')
       profSync = performance.now() - syncT
@@ -2336,14 +2398,14 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       bell.sync()
       w2?.sync(x, z, build.helio, build.scarab, build.stake, build.prism, time)
       flare.mark(build.flare)
-      chests.sync({ camera: follow.camera, canvas, px: x, pz: z, time })
-      let gleamSlot = 0
-      horde.gleamDraw((gx, gz) => {
-        fx.gleamMark(gleamSlot, gx, gz)
-        gleamSlot++
-      }, TUNING.gleam.glyphs)
+      chestView.px = x
+      chestView.pz = z
+      chestView.time = time
+      chests.sync(chestView)
+      gleamSlot = 0
+      horde.gleamDraw(markGleam, TUNING.gleam.glyphs)
       arsenal.flush()
-      pickups.sync((gx, gz) => litAt(gx, gz))
+      pickups.sync(litAt)
       shards.update(frameSec)
       const fxT = performance.now()
       fx.update(frameSec)
@@ -2359,16 +2421,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           const blob = marks[i]
           if (blob) shadows.put(blob.x, blob.z, blob.scale)
         }
-        const blobReach = activeMap === 'lattice' ? 15 * 15 : 1e12
-        horde.visit((ex, ez, kind) => {
-          if (activeMap === 'lattice') {
-            const dx = ex - x
-            const dz = ez - z
-            if (dx * dx + dz * dz > blobReach) return
-          }
-          shadows.put(ex, ez, kind === 0 ? 1.5 * 1.3 : 2.2 * 1.3)
-        })
-        pickups.visit((gx, gz) => shadows.put(gx, gz, 0.6 * 1.3))
+        drawX = x
+        drawZ = z
+        horde.visit(shadowEnemy)
+        pickups.visit(shadowGem)
         shadows.end()
       }
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
@@ -2384,7 +2440,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         fx.unmask()
       }
       profBloom = performance.now() - bloomT
-      if (activeMap !== 'stair') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, canvas.clientHeight || window.innerHeight)
+      if (activeMap !== 'stair') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, cssH)
       stats = gpu.readStats()
       pushFrameSample(frameMs)
       xpWindowT += frameSec
@@ -2398,13 +2454,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         toastTimer -= frameSec
         if (toastTimer <= 0) toast.hidden = true
       }
-      floats.sync(follow.camera, canvas.clientWidth, canvas.clientHeight, frameSec)
+      floats.sync(follow.camera, cssW, cssH, frameSec)
       if ((mode === 'playing' || mode === 'level') && !previewWeapon && !turnWho) {
         const bossFight =
           (activeMap === 'lattice' && (lattice?.bossing() ?? false)) ||
           (activeMap === 'cloister' && (cloister?.bossing() ?? false))
         if (activeMap === 'sundial' && !bossFight) {
-          tutorial.update(frameSec, player.x, player.z, follow.camera, canvas.clientWidth, canvas.clientHeight, {
+          tutorial.update(frameSec, player.x, player.z, follow.camera, cssW, cssH, {
             moving: Math.hypot(frame.moveX, frame.moveY) > 0.2,
             litNear: tutorial.active() ? enemyLitNear() : false,
             inLight: litAt(player.x, player.z),
@@ -2441,8 +2497,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         if (off) {
           const ax = Math.max(-0.86, Math.min(0.86, arrowPoint.x))
           const ay = Math.max(-0.82, Math.min(0.82, arrowPoint.y))
-          gateArrow.style.left = `${(ax * 0.5 + 0.5) * (canvas.clientWidth || 1)}px`
-          gateArrow.style.top = `${(-ay * 0.5 + 0.5) * (canvas.clientHeight || 1)}px`
+          gateArrow.style.left = `${(ax * 0.5 + 0.5) * cssW}px`
+          gateArrow.style.top = `${(-ay * 0.5 + 0.5) * cssH}px`
           gateArrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(-ay, ax)}rad)`
         }
       }

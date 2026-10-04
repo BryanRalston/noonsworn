@@ -12,7 +12,7 @@ import { spearStats } from './sunspear'
 import { haloStats } from './halo'
 import { flareStats } from './flare'
 import { bellStats } from './bell'
-import { probeAdd, ringLocal, ringRims, spinRims } from './probe'
+import { probePut, rimAt, ringLocal, ringRims, spinRims } from './probe'
 import {
   addEvoCpu,
   dayburstFlash,
@@ -27,6 +27,18 @@ import {
 } from './evoHook'
 
 const Q = new Int16Array(160)
+const STREAK_RGB: [number, number, number] = [1.033, 0.249, 0]
+const DOG_X = [0, 0]
+const DOG_Z = [0, 0]
+const LANCE_RIM: readonly (readonly [number, number, number])[] = [
+  [0.27, 0.14, 0.2], [-0.27, 0.14, 0.2], [0.27, 0.14, -0.3], [-0.27, 0.14, -0.3],
+  [0.27, 0.14, -0.7], [-0.27, 0.14, -0.7], [0.27, 0.14, 0.4], [-0.27, 0.14, 0.4],
+]
+const LANCE_BESIDE: readonly (readonly [number, number, number])[] = [[0.42, 0, 0.2]]
+const OBELISK_RIM: readonly (readonly [number, number, number])[] = [
+  [0.22, 1.2, 0.22], [-0.22, 1.2, 0.22], [0.22, 1.2, -0.22], [-0.22, 1.2, -0.22],
+  [0.34, 2.6, 0.34], [-0.34, 2.6, 0.34], [0.34, 2.6, -0.34], [-0.34, 2.6, -0.34],
+]
 const LEAD = { x: 0, z: 0 }
 const SHADE: ShadowDir = { dirX: 0, dirZ: 1, length: 6 }
 const ROW = TUNING.evo
@@ -343,6 +355,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   tollAt.fill(-10)
 
   let chainCd = 0
+  let solarBossCd = 0
   let retarget = 0
   let chainN = 0
   const chainS = new Int16Array(3)
@@ -656,6 +669,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
       healed = 0
       tollAt.fill(-10)
       chainCd = 0
+      solarBossCd = 0
       retarget = 0
       chainN = 0
       bank = 0
@@ -911,7 +925,6 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               prevX = hx
               prevZ = hz
             }
-            bossTouch(horde, px, pz, 2, helioDmg, might, ROW.solar.boss, stamp++)
           }
         } else {
           triAx = px + Math.cos(mirrorA[0] ?? 0) * ROW.solar.radius
@@ -949,6 +962,15 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
                 fx.helioRay((mx + hx) * 0.5, 1.3, (mz + hz) * 0.5, Math.atan2(hz - mz, hx - mx), Math.hypot(hx - mx, hz - mz), 0.42, 0.18)
               }
             }
+          }
+        }
+        // Same 12 m pulse in shade. A ring hold spends most of the fight off the sun patch.
+        solarBossCd -= dt
+        if (solarBossCd <= 0) {
+          solarBossCd = ROW.solar.tick
+          const sunBoss = horde.bossAt
+          if (sunBoss && (sunBoss.x - px) * (sunBoss.x - px) + (sunBoss.z - pz) * (sunBoss.z - pz) <= 144) {
+            bossTouch(horde, sunBoss.x, sunBoss.z, 0, helioDmg, might, ROW.solar.boss, stamp++)
           }
         }
       }
@@ -1035,9 +1057,9 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             continue
           }
           oAng[i] = (oAng[i] ?? 0) + (ROW.obelisk.sweep * Math.PI) / 180 * dt
+          const x1 = (ox[i] ?? 0) + Math.cos(oAng[i] ?? 0) * len
+          const z1 = (oz[i] ?? 0) + Math.sin(oAng[i] ?? 0) * len
           if (mapLit(px, pz)) {
-            const x1 = (ox[i] ?? 0) + Math.cos(oAng[i] ?? 0) * len
-            const z1 = (oz[i] ?? 0) + Math.sin(oAng[i] ?? 0) * len
             const n = hashQuery(((ox[i] ?? 0) + x1) * 0.5, ((oz[i] ?? 0) + z1) * 0.5, len * 0.5 + 1, Q)
             for (let k = 0; k < n; k++) {
               const s = Q[k] ?? -1
@@ -1046,7 +1068,11 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               if (!due(obAt, s, time, ROW.obelisk.gap)) continue
               horde.damage(s, ROW.obelisk.damage, 'weapon', might)
             }
-            if (time - (obBoss[i] ?? -10) >= ROW.obelisk.gap && bossTouch(horde, x1, z1, 0.6, ROW.obelisk.damage, might, ROW.obelisk.boss, stamp++)) obBoss[i] = time
+          }
+          if (time - (obBoss[i] ?? -10) >= ROW.obelisk.gap) {
+            const beamBoss = horde.bossAt
+            const beamNear = !!beamBoss && segDist2(ox[i] ?? 0, oz[i] ?? 0, x1, z1, beamBoss.x, beamBoss.z) <= (0.6 + beamBoss.r) * (0.6 + beamBoss.r)
+            if (beamNear && bossTouch(horde, beamBoss.x, beamBoss.z, 0, ROW.obelisk.damage, might, ROW.obelisk.boss, stamp++)) obBoss[i] = time
           }
         }
         for (let i = 0; i < obN; i++) {
@@ -1112,10 +1138,11 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           launchPrism(px, pz, time * 0.8, volleyId, mapLit)
         }
         const dogA = (time / ROW.mocksun.period) * Math.PI * 2
-        const dogs = [
-          { x: px + Math.cos(dogA) * ROW.mocksun.orbit, z: pz + Math.sin(dogA) * ROW.mocksun.orbit },
-          { x: px + Math.cos(dogA + Math.PI) * ROW.mocksun.orbit, z: pz + Math.sin(dogA + Math.PI) * ROW.mocksun.orbit },
-        ]
+        const orbit = ROW.mocksun.orbit
+        DOG_X[0] = px + Math.cos(dogA) * orbit
+        DOG_Z[0] = pz + Math.sin(dogA) * orbit
+        DOG_X[1] = px + Math.cos(dogA + Math.PI) * orbit
+        DOG_Z[1] = pz + Math.sin(dogA + Math.PI) * orbit
         dogCount = 2
         const dmg = TUNING.prism.damage + TUNING.prism.levelDamage + TUNING.prism.masterDamage
         for (let i = 0; i < prismN; i++) {
@@ -1131,11 +1158,9 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           pxA[i] = (pxA[i] ?? 0) + (pvx[i] ?? 0) * dt
           pzA[i] = (pzA[i] ?? 0) + (pvz[i] ?? 0) * dt
           let near = false
-          for (let d = 0; d < dogs.length; d++) {
-            const dog = dogs[d]
-            if (!dog) continue
-            const dx = (pxA[i] ?? 0) - dog.x
-            const dz = (pzA[i] ?? 0) - dog.z
+          for (let d = 0; d < 2; d++) {
+            const dx = (pxA[i] ?? 0) - (DOG_X[d] ?? 0)
+            const dz = (pzA[i] ?? 0) - (DOG_Z[d] ?? 0)
             if (dx * dx + dz * dz < 0.49) near = true
           }
           if (near && !pWasDog[i]) trySplit(i, mapLit)
@@ -1176,32 +1201,24 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           // 24 m along the flight line so a broadside still covers 70% of 1280 px.
           const stretch = big ? 12 : scale
           const ang = yawFromDirection(lvx[i] ?? 0, lvz[i] ?? 1) + Math.PI
-          arsenal.add({ kind: ARSENAL_PART.lance, x: lx[i] ?? 0, y: big ? 1.2 : 0.9, z: lz[i] ?? 0, yaw: ang, scale, sz: stretch, hot: big ? 1 : 0.4, swing: 0 })
-          const rims = spinRims(lx[i] ?? 0, big ? 1.2 : 0.9, lz[i] ?? 0, ang, scale, [
-            [0.27, 0.14, 0.2], [-0.27, 0.14, 0.2], [0.27, 0.14, -0.3], [-0.27, 0.14, -0.3],
-            [0.27, 0.14, -0.7], [-0.27, 0.14, -0.7], [0.27, 0.14, 0.4], [-0.27, 0.14, 0.4],
-          ], scale, stretch)
-          const rim = rims[0] ?? { x: lx[i] ?? 0, y: 1, z: lz[i] ?? 0 }
-          const beside = spinRims(lx[i] ?? 0, 0.02, lz[i] ?? 0, ang, scale, [[0.42, 0, 0.2]], scale, stretch)
-          const floorPt = beside[0] ?? { x: (lx[i] ?? 0) + 1.2, y: 0.02, z: lz[i] ?? 0 }
-          probeAdd({
-            kind: big ? 'meridian' : 'sunspear', level: 5, x: lx[i] ?? 0, y: big ? 1.2 : 0.9, z: lz[i] ?? 0,
-            rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: floorPt.x, floorY: 0.02, floorZ: floorPt.z, rims,
-          })
-          if (big) fx.streak(lx[i] ?? 0, 0.4, lz[i] ?? 0, ang, 40, ROW.meridian.width, 0.12, [1.033, 0.249, 0])
+          const ly = big ? 1.2 : 0.9
+          arsenal.place(ARSENAL_PART.lance, lx[i] ?? 0, ly, lz[i] ?? 0, ang, scale, big ? 1 : 0.4, 0, undefined, stretch)
+          const rims = spinRims(lx[i] ?? 0, ly, lz[i] ?? 0, ang, scale, LANCE_RIM, scale, stretch)
+          const rim = rimAt(rims, 0, lx[i] ?? 0, 1, lz[i] ?? 0)
+          const beside = spinRims(lx[i] ?? 0, 0.02, lz[i] ?? 0, ang, scale, LANCE_BESIDE, scale, stretch)
+          const floorPt = rimAt(beside, 0, (lx[i] ?? 0) + 1.2, 0.02, lz[i] ?? 0)
+          probePut(big ? 'meridian' : 'sunspear', 5, lx[i] ?? 0, ly, lz[i] ?? 0, rim.x, rim.y, rim.z, floorPt.x, 0.02, floorPt.z, rims)
+          if (big) fx.streak(lx[i] ?? 0, 0.4, lz[i] ?? 0, ang, 40, ROW.meridian.width, 0.12, STREAK_RGB)
         }
       }
       if (evoDriving('halo')) {
         const sun = mapLit(px, pz)
         const radius = sun ? ROW.corona.sun : ROW.corona.shade
         const scale = radius / 0.5
-        arsenal.add({ kind: ARSENAL_PART.disc, x: px, y: 1.05, z: pz, yaw: time, scale, hot: 1, swing: 0 })
+        arsenal.place(ARSENAL_PART.disc, px, 1.05, pz, time, scale, 1, 0)
         const rims = spinRims(px, 1.05, pz, time, scale, ringLocal(0.5, 0.03))
-        const rim = rims[0] ?? { x: px + radius, y: 1.05, z: pz }
-        probeAdd({
-          kind: 'corona', level: 5, x: px, y: 1.05, z: pz,
-          rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: px + radius + 0.4, floorY: 0.02, floorZ: pz, rims,
-        })
+        const rim = rimAt(rims, 0, px + radius, 1.05, pz)
+        probePut('corona', 5, px, 1.05, pz, rim.x, rim.y, rim.z, px + radius + 0.4, 0.02, pz, rims)
         for (let i = 0; i < 12; i++) {
           const a = time * 0.5 + (i / 12) * Math.PI * 2
           fx.ray(px + Math.cos(a) * radius, 1.05, pz + Math.sin(a) * radius, a, sun ? 1.6 : 2.2, 0.28, 0.12)
@@ -1209,26 +1226,20 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
       }
       if (evoDriving('bell') && tolling) {
         const sy = ROW.twelvefold.height / 1.15
-        arsenal.add({ kind: ARSENAL_PART.bell, x: px, y: 0, z: pz, yaw: 0, scale: sy * 0.72, sy, hot: 0.8, swing: 0 })
+        arsenal.place(ARSENAL_PART.bell, px, 0, pz, 0, sy * 0.72, 0.8, 0, sy)
         const rims = spinRims(px, 0, pz, 0, sy * 0.72, ringLocal(0.25, 0.85), sy)
-        const rim = rims[0] ?? { x: px, y: 2, z: pz }
-        probeAdd({
-          kind: 'twelvefold', level: 5, x: px, y: ROW.twelvefold.height * 0.5, z: pz,
-          rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: px + 1.4, floorY: 0.02, floorZ: pz, rims,
-        })
+        const rim = rimAt(rims, 0, px, 2, pz)
+        probePut('twelvefold', 5, px, ROW.twelvefold.height * 0.5, pz, rim.x, rim.y, rim.z, px + 1.4, 0.02, pz, rims)
       }
       if (evoDriving('helio')) {
         for (let i = 0; i < 3; i++) {
           const a = mirrorA[i] ?? 0
           const mx = px + Math.cos(a) * ROW.solar.radius
           const mz = pz + Math.sin(a) * ROW.solar.radius
-          arsenal.add({ kind: ARSENAL_PART.mirror, x: mx, y: 1.7, z: mz, yaw: a, scale: 2.1, hot: 1, swing: 0 })
+          arsenal.place(ARSENAL_PART.mirror, mx, 1.7, mz, a, 2.1, 1, 0)
           const rims = spinRims(mx, 1.7, mz, a, 2.1, ringLocal(0.52, 0.03))
-          const rim = rims[0] ?? { x: mx, y: 1.7, z: mz }
-          probeAdd({
-            kind: 'solar', level: 5, x: mx, y: 1.7, z: mz,
-            rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: mx + 0.8, floorY: 0.02, floorZ: mz, rims,
-          })
+          const rim = rimAt(rims, 0, mx, 1.7, mz)
+          probePut('solar', 5, mx, 1.7, mz, rim.x, rim.y, rim.z, mx + 0.8, 0.02, mz, rims)
         }
       }
       if (evoDriving('scarab')) {
@@ -1237,30 +1248,21 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
         const bx = px + Math.cos(ang) * radius
         const bz = pz + Math.sin(ang) * radius
         const scarabScale = ROW.sunroller.scarab / 0.64
-        arsenal.add({ kind: ARSENAL_PART.scarab, x: bx + Math.cos(ang) * 0.9, y: 0.45, z: bz + Math.sin(ang) * 0.9, yaw: ang, scale: scarabScale, hot: 1, swing: time * 8 })
+        arsenal.place(ARSENAL_PART.scarab, bx + Math.cos(ang) * 0.9, 0.45, bz + Math.sin(ang) * 0.9, ang, scarabScale, 1, time * 8)
         const ballScale = ROW.sunroller.ball / 1.6
-        arsenal.add({ kind: ARSENAL_PART.sunball, x: bx, y: 0.9, z: bz, yaw: ang, scale: ballScale, hot: 1, swing: 0 })
+        arsenal.place(ARSENAL_PART.sunball, bx, 0.9, bz, ang, ballScale, 1, 0)
         const rims = ringRims(bx, 0.9 + 0.74 * ballScale, bz, 0.38 * ballScale)
-        const rim = rims[0] ?? { x: bx, y: 0.9, z: bz }
-        probeAdd({
-          kind: 'sunroller', level: 5, x: bx, y: 0.9, z: bz,
-          rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: bx + 1.4, floorY: 0.02, floorZ: bz, rims,
-        })
+        const rim = rimAt(rims, 0, bx, 0.9, bz)
+        probePut('sunroller', 5, bx, 0.9, bz, rim.x, rim.y, rim.z, bx + 1.4, 0.02, bz, rims)
       }
       if (evoDriving('stake')) {
         const len = bladeLen
         for (let i = 0; i < obN; i++) {
           if (!oAlive[i]) continue
-          arsenal.add({ kind: ARSENAL_PART.obelisk, x: ox[i] ?? 0, y: 0, z: oz[i] ?? 0, yaw: oAng[i] ?? 0, scale: 1, hot: 0.6, swing: 0 })
-          const rims = spinRims(ox[i] ?? 0, 0, oz[i] ?? 0, oAng[i] ?? 0, 1, [
-            [0.22, 1.2, 0.22], [-0.22, 1.2, 0.22], [0.22, 1.2, -0.22], [-0.22, 1.2, -0.22],
-            [0.34, 2.6, 0.34], [-0.34, 2.6, 0.34], [0.34, 2.6, -0.34], [-0.34, 2.6, -0.34],
-          ])
-          const rim = rims[4] ?? { x: ox[i] ?? 0, y: 2.6, z: oz[i] ?? 0 }
-          probeAdd({
-            kind: 'obelisk', level: 5, x: ox[i] ?? 0, y: 1.4, z: oz[i] ?? 0,
-            rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: (ox[i] ?? 0) + 1.2, floorY: 0.02, floorZ: oz[i] ?? 0, rims,
-          })
+          arsenal.place(ARSENAL_PART.obelisk, ox[i] ?? 0, 0, oz[i] ?? 0, oAng[i] ?? 0, 1, 0.6, 0)
+          const rims = spinRims(ox[i] ?? 0, 0, oz[i] ?? 0, oAng[i] ?? 0, 1, OBELISK_RIM)
+          const rim = rimAt(rims, 4, ox[i] ?? 0, 2.6, oz[i] ?? 0)
+          probePut('obelisk', 5, ox[i] ?? 0, 1.4, oz[i] ?? 0, rim.x, rim.y, rim.z, (ox[i] ?? 0) + 1.2, 0.02, oz[i] ?? 0, rims)
           const x1 = (ox[i] ?? 0) + Math.cos(oAng[i] ?? 0) * len
           const z1 = (oz[i] ?? 0) + Math.sin(oAng[i] ?? 0) * len
           fx.stakeLine(((ox[i] ?? 0) + x1) * 0.5, ((oz[i] ?? 0) + z1) * 0.5, oAng[i] ?? 0, len, 0.35)
@@ -1284,43 +1286,32 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           const a = dogA + d * Math.PI
           const x = px + Math.cos(a) * ROW.mocksun.orbit
           const z = pz + Math.sin(a) * ROW.mocksun.orbit
-          arsenal.add({ kind: ARSENAL_PART.prism, x, y: 1.4, z, yaw: a, scale: 3.4, hot: 0, swing: 0 })
+          arsenal.place(ARSENAL_PART.prism, x, 1.4, z, a, 3.4, 0, 0)
           const rims = spinRims(x, 1.4, z, a, 3.4, ringLocal(0.14, 0.42))
-          const rim = rims[0] ?? { x, y: 1.4, z }
-          probeAdd({
-            kind: 'mocksun', level: 5, x, y: 1.4, z,
-            rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: x + 1.3, floorY: 0.02, floorZ: z, rims,
-          })
+          const rim = rimAt(rims, 0, x, 1.4, z)
+          probePut('mocksun', 5, x, 1.4, z, rim.x, rim.y, rim.z, x + 1.3, 0.02, z, rims)
         }
         for (let i = 0; i < prismN; i++) {
           if (!pAlive[i]) continue
           const scale = 1.8
           const yaw = Math.atan2(pvz[i] ?? 0, pvx[i] ?? 1)
-          arsenal.add({ kind: ARSENAL_PART.prism, x: pxA[i] ?? 0, y: 0.9, z: pzA[i] ?? 0, yaw, scale, hot: 1, swing: 0 })
+          arsenal.place(ARSENAL_PART.prism, pxA[i] ?? 0, 0.9, pzA[i] ?? 0, yaw, scale, 1, 0)
         }
       }
       if (evoDriving('flare')) {
         for (let i = 0; i < tongueLife.length; i++) {
           if ((tongueLife[i] ?? 0) <= 0) continue
-          arsenal.add({ kind: ARSENAL_PART.tongue, x: tongueX[i] ?? 0, y: 0, z: tongueZ[i] ?? 0, yaw: 0, scale: 1, hot: 0, swing: 0 })
+          arsenal.place(ARSENAL_PART.tongue, tongueX[i] ?? 0, 0, tongueZ[i] ?? 0, 0, 1, 0, 0)
           const rims = ringRims(tongueX[i] ?? 0, 0.16, tongueZ[i] ?? 0, 1.3)
-          const rim = rims[0] ?? { x: tongueX[i] ?? 0, y: 0.16, z: tongueZ[i] ?? 0 }
-          probeAdd({
-            kind: 'dayburst', level: 5, x: tongueX[i] ?? 0, y: 0.22, z: tongueZ[i] ?? 0,
-            rimX: rim.x, rimY: rim.y, rimZ: rim.z,
-            floorX: (tongueX[i] ?? 0) + 1.9, floorY: 0.02, floorZ: tongueZ[i] ?? 0,
-            rims,
-          })
+          const rim = rimAt(rims, 0, tongueX[i] ?? 0, 0.16, tongueZ[i] ?? 0)
+          probePut('dayburst', 5, tongueX[i] ?? 0, 0.22, tongueZ[i] ?? 0, rim.x, rim.y, rim.z, (tongueX[i] ?? 0) + 1.9, 0.02, tongueZ[i] ?? 0, rims)
         }
         for (let i = 0; i < ROW.dayburst.spotCap; i++) {
           if ((spotsLife[i] ?? 0) <= 0) continue
           fx.sunspot(spotsX[i] ?? 0, spotsZ[i] ?? 0, ROW.dayburst.spotR, 0.16)
           const rims = ringRims(spotsX[i] ?? 0, 0.08, spotsZ[i] ?? 0, ROW.dayburst.spotR * 0.92)
-          const rim = rims[0] ?? { x: spotsX[i] ?? 0, y: 0.08, z: spotsZ[i] ?? 0 }
-          probeAdd({
-            kind: 'sunspot', level: 5, x: spotsX[i] ?? 0, y: 0.08, z: spotsZ[i] ?? 0,
-            rimX: rim.x, rimY: rim.y, rimZ: rim.z, floorX: (spotsX[i] ?? 0) + ROW.dayburst.spotR + 0.3, floorY: 0.02, floorZ: spotsZ[i] ?? 0, rims,
-          })
+          const rim = rimAt(rims, 0, spotsX[i] ?? 0, 0.08, spotsZ[i] ?? 0)
+          probePut('sunspot', 5, spotsX[i] ?? 0, 0.08, spotsZ[i] ?? 0, rim.x, rim.y, rim.z, (spotsX[i] ?? 0) + ROW.dayburst.spotR + 0.3, 0.02, spotsZ[i] ?? 0, rims)
         }
       }
     },
