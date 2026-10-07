@@ -71,7 +71,13 @@ function dressEnemy(root: Object3D, nodeName: string): { geometry: BufferGeometr
       .replace(
         '#include <opaque_fragment>',
         `outgoingLight = mix(outgoingLight, vec3(1.0, 0.93, 0.75), clamp(vFlash, 0.0, 1.0));
-        if (vLit < 0.5) outgoingLight *= 0.72;
+        float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.0);
+        if (vLit < 0.5) {
+          outgoingLight *= vec3(0.62, 0.72, 0.88);
+          outgoingLight += vec3(0.42, 0.58, 0.74) * fres * 0.42;
+        } else {
+          outgoingLight += vec3(1.0, 0.78, 0.28) * fres * 1.05;
+        }
         #include <opaque_fragment>`,
       )
   }

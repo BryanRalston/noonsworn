@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { writeArtManifest } from './manifest.mjs'
+import { EXTRA, badgeSvg } from './cardMarks.mjs'
 
 const root = process.cwd()
 const srcDir = join(root, 'art-src')
@@ -78,15 +79,26 @@ const iconFiles = icons
 if (iconFiles.length > 0) {
   const cell = 64
   const composites = []
+  const cells = []
   for (let i = 0; i < iconFiles.length; i++) {
     const input = await sharp(iconFiles[i]).resize(cell, cell, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+    cells.push(input)
     composites.push({ input, left: i * cell, top: 0 })
+  }
+  if (cells.length >= 13) {
+    for (let i = 0; i < EXTRA.length; i++) {
+      const row = EXTRA[i]
+      const from = cells[row[1]]
+      if (!from) continue
+      const input = await sharp(from).composite([{ input: badgeSvg(row[0]), left: 0, top: 0 }]).png().toBuffer()
+      composites.push({ input, left: composites.length * cell, top: 0 })
+    }
   }
   let quality = 72
   const dest = join(outDir, 'cards_atlas.webp')
   while (quality >= 36) {
     await sharp({
-      create: { width: iconFiles.length * cell, height: cell, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      create: { width: composites.length * cell, height: cell, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
     })
       .composite(composites)
       .webp({ quality })

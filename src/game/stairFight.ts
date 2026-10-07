@@ -152,6 +152,10 @@ export interface FightInfo {
   feedKills: number
   feedTries: number
   phases: { wake: number; p2: number; p3: number; dead: number }
+  /** Readout of the unchanged boss pool. Not a second hit-point stat. */
+  max: number
+  x: number
+  z: number
   scale: number
   hitScale: number
   clipT: number
@@ -1330,7 +1334,7 @@ export function createStairFight(scene: Object3D, u: FightUniforms, host: FightH
         cleared, sunE: sun.e, courserN, hushN: hushCount,
         shadowT, lightT, shadowD, lightD, pounceShade, pounceLight, teleMin, newelTele,
         sealTraps, sealTries, hushPicks, hushMiss, drains, feedKills, feedTries,
-        phases, scale: root?.scale.x ?? 1, hitScale: HIT_SCALE,
+        phases, max: BOSS_HP, x: bossX, z: bossZ, scale: root?.scale.x ?? 1, hitScale: HIT_SCALE,
         clipT: current?.time ?? 0, slow: slowMul,
         lane: laneOn ? { ox: laneOx, oz: laneOz, dx: laneDx, dz: laneDz, half: 1.2 } : null,
       }

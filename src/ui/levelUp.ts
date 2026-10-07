@@ -1,8 +1,32 @@
 import type { Card } from '../game/leveling'
 
+/** Weapon id, then the passive that completes it. Kept here so the strip does not import the chest table. */
+const PAIRS: readonly [number, number][] = [
+  [0, 18],
+  [1, 19],
+  [9, 2],
+  [10, 5],
+  [14, 3],
+  [15, 6],
+  [16, 20],
+  [17, 4],
+]
+
+function completesPair(id: number, rank: (id: number) => number): boolean {
+  for (let i = 0; i < PAIRS.length; i++) {
+    const row = PAIRS[i]
+    if (!row) continue
+    const weapon = row[0]
+    const passive = row[1]
+    if (id === weapon && rank(weapon) === 4 && rank(passive) >= 1) return true
+    if (id === passive && rank(passive) === 0 && rank(weapon) >= 5) return true
+  }
+  return false
+}
+
 export interface LevelUp {
   root: HTMLElement
-  show: (cards: Card[], sunlit: boolean) => void
+  show: (cards: Card[], sunlit: boolean, rank?: (id: number) => number) => void
   hide: () => void
   arm: (url: string) => void
   move: (dir: number) => void
@@ -37,11 +61,21 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
     arm(url) {
       atlas = url
     },
-    show(list, sunlit) {
-      if (atlas) root.style.setProperty('--card-atlas', `url("${atlas}")`)
+    show(list, sunlit, rank) {
+      if (atlas) {
+        root.style.setProperty('--card-atlas', `url("${atlas}")`)
+        document.documentElement.style.setProperty('--card-atlas', `url("${atlas}")`)
+      }
       count = list.length
       focus = 0
-      tag.textContent = sunlit ? 'Sunlit' : '1  2  3   ·   Esc keeps the charge'
+      const touch = window.matchMedia('(pointer: coarse)').matches || document.getElementById('touch-root')?.classList.contains('touch-off') === false
+      tag.textContent = sunlit
+        ? touch
+          ? 'Sunlit · tap a card'
+          : 'Sunlit'
+        : touch
+          ? 'Tap a card · Back keeps the charge'
+          : '1  2  3   ·   Esc keeps the charge'
       strip.classList.toggle('sunlit', sunlit)
       cards.replaceChildren()
       for (let i = 0; i < list.length; i++) {
@@ -50,8 +84,9 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
         const btn = document.createElement('button')
         btn.type = 'button'
         btn.className = card.from === 'new' ? 'card new' : 'card'
+        const pair = rank ? completesPair(card.id, rank) : false
         const pips = pipRow(card.rank, card.next, card.max)
-        btn.innerHTML = `<span class="card-icon" style="--i:${card.id}"></span><strong>${card.name}</strong><span class="card-line">${card.text}</span>${pips}`
+        btn.innerHTML = `<span class="card-icon" style="--i:${card.id}"></span><strong>${card.name}</strong>${pair ? '<i class="pair-mark">pair</i>' : ''}<span class="card-line">${card.text}</span>${pips}`
         btn.addEventListener('pointerup', (e) => {
           if (e.pointerType !== 'touch') return
           e.preventDefault()

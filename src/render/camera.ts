@@ -67,13 +67,30 @@ export function createFollowCamera(): FollowCamera {
     const fov = portrait ? 42 : TUNING.camera.fov
     let dist = portrait ? 40 : TUNING.camera.distance
     for (let i = 0; i < 14 && groundShort(dist, fov, aspect) < TUNING.camera.shortSpan; i++) dist += 3
+    // Portrait only: about 15% closer than the fitted rig. Desktop distance stays TUNING.camera.distance.
+    if (portrait) dist *= 0.85
     camera.fov = portrait ? TUNING.camera.fovPortrait : TUNING.camera.fov
     placeRig(dist)
     camera.updateProjectionMatrix()
   }
 
+  const clampOut = { x: 0, z: 0 }
   function slide(x: number, z: number) {
-    return slideFocus(x, z)
+    const slid = slideFocus(x, z)
+    if (!portrait) return slid
+    // Keep the camera inside the court so the dune ring barely shows. Desktop returns slideFocus unchanged.
+    const lim = TUNING.arena.size / 2 - 1.2
+    let fx = slid.x
+    let fz = slid.z
+    const cx = fx + offX
+    const cz = fz + offZ
+    if (cx > lim) fx -= cx - lim
+    if (cx < -lim) fx -= cx + lim
+    if (cz > lim) fz -= cz - lim
+    if (cz < -lim) fz -= cz + lim
+    clampOut.x = fx
+    clampOut.z = fz
+    return clampOut
   }
 
   function snap(x: number, z: number) {

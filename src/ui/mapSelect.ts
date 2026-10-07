@@ -12,7 +12,7 @@ export interface MapSelect {
 
 function lockLine(id: string, playable: boolean, open: boolean): string {
   if (!playable && open) return 'Coming soon'
-  if (id === 'lattice') return 'Survive Sundial Court to open'
+  if (id === 'lattice') return 'Hold Sundial Court for 5:00'
   if (id === 'cloister') return 'Clear Lattice Terraces to open'
   if (id === 'stair') return 'Clear the Brimming Cloister to open'
   return 'Sealed'
@@ -87,7 +87,13 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
         const hook = document.createElement('span')
         hook.textContent = def.hook
         const time = document.createElement('em')
-        time.textContent = best ? `Best ${clock(best.time)} · ${best.kills} kills` : 'Best —'
+        time.textContent = best?.clear != null
+          ? `Clear ${clock(best.clear)} · ${best.clearKills ?? best.kills} kills`
+          : best?.survived != null
+            ? `Survived ${clock(best.survived)}`
+            : best
+              ? `Survived ${clock(best.time)}`
+              : 'Best —'
         btn.append(title, hook, time)
         btn.addEventListener('click', () => choose(def.id as MapChoice))
       }

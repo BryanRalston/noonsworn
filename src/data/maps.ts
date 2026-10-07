@@ -87,6 +87,12 @@ const KEY = 'noonsworn.maps.v1'
 export interface MapBest {
   time: number
   kills: number
+  /** Best clear. Lower is better. A death never writes this. */
+  clear?: number
+  clearKills?: number
+  /** Longest survival. A clear never replaces this, and this never replaces a clear. */
+  survived?: number
+  survivedKills?: number
 }
 
 export interface MapRecord {
@@ -108,7 +114,16 @@ function cleanBest(value: unknown): Record<string, MapBest> {
     const time = (row as { time?: unknown }).time
     const kills = (row as { kills?: unknown }).kills
     if (typeof time === 'number' && Number.isFinite(time) && typeof kills === 'number' && Number.isFinite(kills)) {
-      out[key] = { time, kills }
+      const best: MapBest = { time, kills }
+      const clear = (row as { clear?: unknown }).clear
+      const clearKills = (row as { clearKills?: unknown }).clearKills
+      const survived = (row as { survived?: unknown }).survived
+      const survivedKills = (row as { survivedKills?: unknown }).survivedKills
+      if (typeof clear === 'number' && Number.isFinite(clear)) best.clear = clear
+      if (typeof clearKills === 'number' && Number.isFinite(clearKills)) best.clearKills = clearKills
+      if (typeof survived === 'number' && Number.isFinite(survived)) best.survived = survived
+      if (typeof survivedKills === 'number' && Number.isFinite(survivedKills)) best.survivedKills = survivedKills
+      out[key] = best
     }
   }
   return out
@@ -139,11 +154,32 @@ export function rememberMap(id: string) {
   saveMaps(rec)
 }
 
-/** Updates the best time. A Sundial clear unlocks Lattice. A Lattice clear already unlocks the Cloister. */
+/** A clear keeps the faster clear. A death keeps the longer survival and never replaces a clear. */
 export function noteRun(mapId: string, time: number, kills: number, cleared: boolean): boolean {
   const rec = loadMaps()
   const prev = rec.best[mapId]
-  if (!prev || time > prev.time) rec.best[mapId] = { time, kills }
+  if (!prev) {
+    rec.best[mapId] = cleared
+      ? { time, kills, clear: time, clearKills: kills }
+      : { time, kills, survived: time, survivedKills: kills }
+  } else if (cleared) {
+    if (prev.clear == null || time < prev.clear) {
+      prev.clear = time
+      prev.clearKills = kills
+      prev.time = time
+      prev.kills = kills
+    }
+  } else {
+    const lived = prev.survived ?? (prev.clear == null ? prev.time : 0)
+    if (time > lived) {
+      prev.survived = time
+      prev.survivedKills = kills
+      if (prev.clear == null) {
+        prev.time = time
+        prev.kills = kills
+      }
+    }
+  }
   let opened = false
   if (cleared && mapId === 'sundial' && !rec.unlocked.includes('lattice')) {
     rec.unlocked.push('lattice')

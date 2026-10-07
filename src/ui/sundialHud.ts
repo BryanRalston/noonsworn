@@ -7,6 +7,7 @@ export interface Sundial {
     terraces?: number,
     water?: { dir: number } | null,
     stair?: { elev: number; countdown: number } | null,
+    clock?: { down: boolean; length: number } | null,
   ) => void
 }
 
@@ -41,6 +42,12 @@ export function createSundial(parent: HTMLElement): Sundial {
       <circle id="sun-dot" cx="36" cy="8" r="4"></circle>
       <path id="stair-arc" hidden></path>
       <circle id="stair-elev" r="2.2" cx="36" cy="12" hidden></circle>
+      <g id="rim-marks">
+        <circle class="rim" data-t="105" r="1.5"></circle>
+        <circle class="rim" data-t="180" r="1.5"></circle>
+        <circle class="rim" data-t="255" r="1.5"></circle>
+        <circle class="rim boss" data-t="270" r="1.8"></circle>
+      </g>
       <g id="terrace-ticks" visibility="hidden">
         <circle class="terrace" data-bit="1" cx="22" cy="58" r="2.1"></circle>
         <circle class="terrace" data-bit="2" cx="36" cy="58" r="2.1"></circle>
@@ -63,13 +70,23 @@ export function createSundial(parent: HTMLElement): Sundial {
   let dotCx = ''
   let dotCy = ''
   let shownSec = -1
+  let shownText = ''
+  const rims = [...root.querySelectorAll<SVGCircleElement>('#rim-marks circle')]
+  for (let i = 0; i < rims.length; i++) {
+    const mark = rims[i]
+    if (!mark) continue
+    const t = Number(mark.getAttribute('data-t'))
+    const a = -Math.PI / 2 + (t / 300) * Math.PI * 2
+    mark.setAttribute('cx', String(Math.round(36 + Math.cos(a) * 30)))
+    mark.setAttribute('cy', String(Math.round(36 + Math.sin(a) * 30)))
+  }
   let stairOn = false
   let stairStep = -1
   let elevShown = 999
   let terraceMask = -2
   return {
     root,
-    set(angle, seconds, gate = false, terraces?: number, water?: { dir: number } | null, stair?: { elev: number; countdown: number } | null) {
+    set(angle, seconds, gate = false, terraces?: number, water?: { dir: number } | null, stair?: { elev: number; countdown: number } | null, countDown?: { down: boolean; length: number } | null) {
       if (gateOn !== gate) {
         gateOn = gate
         root.classList.toggle('gate', gate)
@@ -98,12 +115,14 @@ export function createSundial(parent: HTMLElement): Sundial {
         dotCy = cy
         dot.setAttribute('cy', cy)
       }
-      const clamped = Math.max(0, Math.floor(seconds))
-      if (clamped !== shownSec) {
-        shownSec = clamped
-        const m = Math.floor(clamped / 60)
-        const sec = clamped % 60
-        clock.textContent = `${m}:${sec < 10 ? '0' : ''}${sec}`
+      const shown = countDown?.down ? Math.max(0, Math.ceil(countDown.length - seconds - 1e-4)) : Math.max(0, Math.floor(seconds))
+      const m = Math.floor(shown / 60)
+      const sec = shown % 60
+      const text = `${m}:${sec < 10 ? '0' : ''}${sec}`
+      if (text !== shownText || shown !== shownSec) {
+        shownSec = shown
+        shownText = text
+        clock.textContent = text
       }
       const showStair = !!stair
       if (stairOn !== showStair) {

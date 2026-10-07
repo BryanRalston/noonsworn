@@ -40,6 +40,12 @@ export interface Director {
       hushmaw?: number
       onShade?: (kind: 3 | 4, x: number, z: number) => boolean
     },
+    opts?: {
+      strength?: number
+      lit?: (x: number, z: number) => boolean
+      mark?: (x: number, z: number) => void
+      clock?: boolean
+    },
   ) => void
 }
 
@@ -51,9 +57,16 @@ export function latticePlan(time: number, boss: boolean): { darter: number; boss
   return { darter, boss }
 }
 
+const RING_AT = 40
+const ringX = new Float32Array(12)
+const ringZ = new Float32Array(12)
+
 export function createDirector(): Director {
   let forcedHound = false
   let forcedRing = false
+  let ringMarked = false
+  let ringN = 0
+  let eliteMinute = 0
   const director: Director = {
     acc: 0,
     hour: 0,
@@ -62,8 +75,11 @@ export function createDirector(): Director {
       director.hour = 0
       forcedHound = false
       forcedRing = false
+      ringMarked = false
+      ringN = 0
+      eliteMinute = 0
     },
-    update(dt, time, horde, px, pz, cap, rng, camX, camZ, pour, wingPick, lattice) {
+    update(dt, time, horde, px, pz, cap, rng, camX, camZ, pour, wingPick, lattice, opts) {
       const boss = lattice?.boss === true
       if (!boss && time >= TUNING.runLength) return
       if (!boss && pour) {
@@ -74,7 +90,8 @@ export function createDirector(): Director {
         }
       }
       const wave = waveAt(time)
-      const rate = wave.rate * (lattice?.rateMul ?? 1)
+      const strength = !boss && time < 270 ? Math.max(1, opts?.strength ?? 1) : 1
+      const rate = wave.rate * (lattice?.rateMul ?? 1) * strength
       const minCount = boss ? 0 : Math.min(wave.min, TUNING.designCap)
       director.acc += rate * dt
       const hour = Math.floor(time / TUNING.packEvery)
@@ -93,31 +110,52 @@ export function createDirector(): Director {
           horde.spawn(0, packX, packZ, false, cap, px, pz)
         }
       }
-      if (!boss && !forcedHound && time >= (lattice?.houndFrom ?? 18)) {
+      const houndAt = lattice?.houndFrom ?? TUNING.houndAt
+      if (!boss && !forcedHound && time >= houndAt) {
         forcedHound = true
-        const spot = pickSpawn(px, pz, TUNING.hound.radius, rng, camX, camZ)
+        const opening = lattice?.houndFrom == null && time < houndAt + 8
+        const spot = opening
+          ? pickShadeHound(px, pz, opts?.lit)
+          : pickSpawn(px, pz, TUNING.hound.radius, rng, camX, camZ)
         const parked = lattice?.relocate ? lattice.relocate(spot.x, spot.z, rng) : spot
         horde.spawn(1, parked.x, parked.z, false, cap, px, pz)
       }
-      if (!boss && !forcedRing && time >= 25) {
+      if (!boss && time < 270 && !ringMarked && time >= RING_AT - 1.5) {
+        ringMarked = true
+        ringN = layRing(px, pz, opts?.lit, ringX, ringZ)
+        for (let i = 0; i < ringN; i++) {
+          const spot = placeRing(ringX[i] ?? px, ringZ[i] ?? pz, lattice, rng)
+          ringX[i] = spot.x
+          ringZ[i] = spot.z
+          opts?.mark?.(spot.x, spot.z)
+        }
+      }
+      if (!boss && !forcedRing && time >= RING_AT && time < 270) {
         forcedRing = true
-        const base = rng() * Math.PI * 2
-        for (let i = 0; i < 12; i++) {
-          const a = base + (i / 12) * Math.PI * 2
-          let ringX = px + Math.cos(a) * 8
-          let ringZ = pz + Math.sin(a) * 8
-          if (lattice?.relocate) {
-            const parked = lattice.relocate(ringX, ringZ, rng)
-            ringX = parked.x
-            ringZ = parked.z
+        if (!ringMarked) {
+          ringMarked = true
+          ringN = layRing(px, pz, opts?.lit, ringX, ringZ)
+          for (let i = 0; i < ringN; i++) {
+            const spot = placeRing(ringX[i] ?? px, ringZ[i] ?? pz, lattice, rng)
+            ringX[i] = spot.x
+            ringZ[i] = spot.z
           }
-          horde.spawn(0, ringX, ringZ, false, cap, px, pz)
+        }
+        for (let i = 0; i < ringN; i++) horde.spawn(0, ringX[i] ?? px, ringZ[i] ?? pz, false, cap, px, pz)
+      }
+      if (opts?.clock && !boss && time >= 60 && time < 270) {
+        const minute = Math.floor(time / 60)
+        if (minute > eliteMinute && minute <= 4) {
+          eliteMinute = minute
+          const spot = pickSpawn(px, pz, TUNING.hound.radius, rng, camX, camZ)
+          const parked = lattice?.relocate ? lattice.relocate(spot.x, spot.z, rng) : spot
+          horde.spawn(1, parked.x, parked.z, false, cap, px, pz)
         }
       }
       let spawned = 0
       while ((director.acc >= 1 || horde.count() < minCount) && spawned < TUNING.spawnBurst && (boss || time < TUNING.runLength)) {
         if (director.acc >= 1) director.acc -= 1
-        const houndChance = time < (lattice?.houndFrom ?? 0) ? 0 : wave.hound
+        const houndChance = time < houndAt ? 0 : wave.hound
         const darterP = lattice?.darter ?? 0
         let kind: 0 | 1 | 2 = 0
         if (boss) kind = lattice?.onVotary ? 0 : rng() < darterP ? 2 : 0
@@ -175,6 +213,65 @@ export function createDirector(): Director {
     },
   }
   return director
+}
+
+function placeRing(
+  x: number,
+  z: number,
+  lattice: { relocate?: (x: number, z: number, rng: Rng) => { x: number; z: number } } | undefined,
+  rng: Rng,
+): { x: number; z: number } {
+  return lattice?.relocate ? lattice.relocate(x, z, rng) : { x, z }
+}
+
+/** Twelve mites on a 10 m ring, half in sun and half in shade when the beam allows it. */
+function layRing(px: number, pz: number, lit: ((x: number, z: number) => boolean) | undefined, xs: Float32Array, zs: Float32Array): number {
+  let litN = 0
+  let shadeN = 0
+  let n = 0
+  const radius = 10
+  for (let i = 0; i < 24 && n < 12; i++) {
+    const a = (i / 24) * Math.PI * 2
+    const x = px + Math.cos(a) * radius
+    const z = pz + Math.sin(a) * radius
+    const sun = lit ? lit(x, z) : i % 2 === 0
+    if (sun && litN >= 6) continue
+    if (!sun && shadeN >= 6) continue
+    if (sun) litN++
+    else shadeN++
+    xs[n] = x
+    zs[n] = z
+    n++
+  }
+  for (let i = 0; n < 12 && i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2
+    xs[n] = px + Math.cos(a) * radius
+    zs[n] = pz + Math.sin(a) * radius
+    n++
+  }
+  return n
+}
+
+/** First sundial hound. Fixed range, on the shaded side, so the walk-in does not depend on the roll. */
+function pickShadeHound(px: number, pz: number, lit?: (x: number, z: number) => boolean): { x: number; z: number } {
+  const dist = TUNING.houndFirstDist
+  const limit = TUNING.arena.size / 2 - 2
+  let fallback = { x: px, z: Math.min(limit, pz + dist) }
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2
+    let x = px + Math.cos(ang) * dist
+    let z = pz + Math.sin(ang) * dist
+    if (x > limit) x = limit
+    if (x < -limit) x = -limit
+    if (z > limit) z = limit
+    if (z < -limit) z = -limit
+    let aim = Math.atan2(z - pz, x - px) % (Math.PI / 2)
+    if (aim < 0) aim += Math.PI / 2
+    if (Math.abs(aim - Math.PI / 4) < 0.35) continue
+    fallback = { x, z }
+    if (lit && !lit(x, z)) return fallback
+  }
+  return fallback
 }
 
 function pickSpawn(px: number, pz: number, radius: number, rng: Rng, camX: number, camZ: number): { x: number; z: number } {

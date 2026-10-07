@@ -18,8 +18,8 @@ export const TUNING = {
   staggerTime: 0.35,
   staggerGap: 2.5,
   ccFatigue: { hits: 4, window: 6, ignore: 2 },
-  // While Sela is below this level, a weapon hit cannot exceed this much damage.
-  // Idle card-1 otherwise one-shots the ring and never takes a touch. Boss hits are separate.
+  // While Sela is below this level, weapon base damage is clamped before sunlight.
+  // A lit hit stays louder than shade. Idle card-1 otherwise one-shots the ring. Boss hits are separate.
   earlyLevel: 6,
   earlyWeaponCap: 3,
   exposedDamage: 2,
@@ -35,7 +35,10 @@ export const TUNING = {
   packEvery: 60,
   packRadius: 20,
   packArc: 1.4,
-  houndAt: 45,
+  houndAt: 40,
+  // Random hounds share the 40s floor. A 45s start left a still player alive past a minute.
+  houndChanceAt: 40,
+  houndFirstDist: 14,
   houndLate: 180,
   houndChance: 0.2,
   houndChanceLate: 0.3,
@@ -143,6 +146,9 @@ export const TUNING = {
     recover: 1.5,
     maxActive: 6,
     line: 5,
+    // Opening bites only. Boss time is past this, so the TTK hounds stay on contact 8.
+    openingBite: 1.65,
+    openingBiteUntil: 80,
   },
   darter: { hp: 30, speed: 3.4, radius: 0.32, contact: 7, xp: 3, dart: 9, dartDist: 3, dartCd: 0.6 },
   espalier: {
@@ -270,7 +276,7 @@ export const TUNING = {
     cooldown: 1.6, damage: 12, bounces: 3, sunSpeed: 20, shadeSpeed: 11, turn: 90, split: 8, alive: 24, levelDamage: 3,
     bouncesL3: 4, cooldownL4: 1.3, masterDamage: 4, splitL5: 10, litStep: 1 / 30, boss: 0.24,
   },
-  xp: { fly: 12, collect: 0.45, base: 5, lin: 6, quad: 0.9, merge: 3, early1: 1, early2: 12, early3: 18, early4: 56, early5: 75 },
+  xp: { fly: 12, collect: 0.45, base: 5, lin: 6, quad: 0.9, merge: 3, early1: 1, early2: 12, early3: 18, early4: 56, early5: 40 },
   touch: { stick: 60, deadzone: 0.12, cut: 96, left: 0.6, flickPx: 40, flickMs: 180, recenter: 1.5 },
   designCap: 240,
   openSeconds: 30,

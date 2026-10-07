@@ -469,13 +469,23 @@ export function createWeaponFx(): WeaponFx {
     },
     hit(px, pz, lit, scale = 1) {
       const at = toward(px, 0.85, pz, 0.6)
-      const rgb = lit ? FX.punch : FX.goldHot
-      put(CELL.impactStar, at[0], at[1], at[2], TUNING.camera.yaw, 1.35 * scale, 1.35 * scale, 0.28, rgb, 5, 0, 1)
       const budget = TUNING.tiers[tier].sparkHit
       const n = tier === 'low' ? Math.min(4, budget) : Math.max(4, Math.min(6, budget))
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2
-        put(CELL.sparkStreak, px + Math.cos(a) * 0.2, 0.7, pz + Math.sin(a) * 0.2, a, 0.16, 0.95, 0.28, rgb, 5, 0, 1)
+      if (lit) {
+        const rgb = FX.goldHot
+        put(CELL.impactStar, at[0], at[1], at[2], TUNING.camera.yaw, 1.15 * scale, 1.15 * scale, 0.22, rgb, 5, 0, 1)
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2
+          put(CELL.sparkStreak, px + Math.cos(a) * 0.2, 0.7, pz + Math.sin(a) * 0.2, a, 0.14, 0.85, 0.22, rgb, 5, 0, 1)
+        }
+        return
+      }
+      const chip: [number, number, number] = [0.62, 0.66, 0.74]
+      put(CELL.puff, at[0], at[1], at[2], TUNING.camera.yaw, 0.42 * scale, 0.28 * scale, 0.16, chip, 5, 0, 1)
+      const chips = Math.max(3, Math.min(n, 4))
+      for (let i = 0; i < chips; i++) {
+        const a = (i / chips) * Math.PI * 2
+        put(CELL.sparkStreak, px + Math.cos(a) * 0.15, 0.55, pz + Math.sin(a) * 0.15, a, 0.08, 0.35, 0.14, chip, 5, 0, 1)
       }
     },
     streak(px, py, pz, rot, length, width, seconds, rgb) {

@@ -40,7 +40,7 @@ import { createAudio } from '../audio/audio'
 import { loadArt } from '../render/art'
 import { createBloom } from '../render/bloom'
 import { toonMap } from '../render/toon'
-import { loadMaps, markSeen, noteRun, rememberMap } from '../data/maps'
+import { loadMaps, markSeen, noteRun, rememberMap, type MapBest } from '../data/maps'
 import { storageGet, storageSet } from '../platform/storage'
 import { createMapSelect } from '../ui/mapSelect'
 import { createTouchControls } from '../ui/touchControls'
@@ -57,7 +57,7 @@ import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
 import { createSunClock, damageAmount } from './sunClock'
 import { clockShadow, stairShadow, type ShadowDir } from './shadowDir'
-import { cellBlocked, resetHomePillars, setBeds } from './collision'
+import { cellBlocked, PILLARS, resetHomePillars, setBeds } from './collision'
 import type { CloisterHandle } from './cloister'
 import type { LatticeHandle } from './lattice'
 import type { StairHandle } from './stair'
@@ -171,7 +171,6 @@ export async function boot(container: HTMLElement) {
   const previewWeapon = import.meta.env.DEV ? params.get('m25a') : null
   const previewRank = Number(params.get('rank') ?? '1')
   const previewTier = params.get('tier')
-  const previewHold = params.get('hold') === '1'
   const previewShow = import.meta.env.DEV && params.get('show') === '1'
   const turnWho = import.meta.env.DEV ? params.get('turn') : null
   let previewCutIn = 0.4
@@ -243,6 +242,34 @@ export async function boot(container: HTMLElement) {
   gateArrow.id = 'gate-arrow'
   gateArrow.hidden = true
   ui.append(gateArrow)
+  const bossCard = document.createElement('div')
+  bossCard.id = 'boss-card'
+  bossCard.hidden = true
+  bossCard.innerHTML = '<h2 id="boss-name"></h2><p id="boss-hint"></p><div id="boss-bar"><i></i></div><p id="boss-phase"></p>'
+  ui.append(bossCard)
+  const bossNameEl = bossCard.querySelector('#boss-name') as HTMLElement
+  const bossHintEl = bossCard.querySelector('#boss-hint') as HTMLElement
+  const bossBarEl = bossCard.querySelector('#boss-bar') as HTMLElement
+  const bossFill = bossCard.querySelector('#boss-bar i') as HTMLElement
+  const bossPhaseEl = bossCard.querySelector('#boss-phase') as HTMLElement
+  const bossArrow = document.createElement('div')
+  bossArrow.id = 'boss-arrow'
+  bossArrow.hidden = true
+  ui.append(bossArrow)
+  const objective = document.createElement('div')
+  objective.id = 'objective'
+  objective.hidden = true
+  objective.textContent = 'Hold the court until noon.'
+  ui.append(objective)
+  const THREAT_N = 8
+  const threats: HTMLElement[] = []
+  for (let i = 0; i < THREAT_N; i++) {
+    const el = document.createElement('div')
+    el.className = 'threat-arrow'
+    el.hidden = true
+    ui.append(el)
+    threats.push(el)
+  }
   const arrowPoint = new Vector3()
   const debug = createDebugOverlay(ui)
   const touchView = createTouchControls(container)
@@ -287,13 +314,15 @@ float n1 = duneNoise(vDune / 1.2);
 float dune = n12 * 0.20 + n40 * 0.10 + n3 * 0.35 + n1 * 0.35;
 float wall = 25.0;
 float band = smoothstep(wall - 1.0, wall + 2.0, length(vDune)) * (1.0 - smoothstep(wall + 5.0, wall + 12.0, length(vDune)));
-vec3 duneLo = vec3(0.38, 0.24, 0.12);
-vec3 duneHi = vec3(0.95, 0.72, 0.42);
+vec3 duneLo = vec3(0.08, 0.06, 0.04);
+vec3 duneHi = vec3(0.02, 0.015, 0.012);
 diffuseColor.rgb *= mix(duneLo, duneHi, dune);
+float fade = smoothstep(18.0, 42.0, length(vDune));
+diffuseColor.rgb *= mix(1.0, 0.0, fade);
 float ripNear = abs(fract(vDune.x * 0.55 + vDune.y * 0.31) - 0.5);
 float ripFar = abs(fract(vDune.x * 0.16 + vDune.y * 0.09) - 0.5);
-diffuseColor.rgb *= mix(0.68, 1.28, ripNear * 0.62 + ripFar * 0.38);
-diffuseColor.rgb *= mix(1.0, 0.55, band);`,
+diffuseColor.rgb *= mix(0.85, 1.05, ripNear * 0.62 + ripFar * 0.38);
+diffuseColor.rgb *= mix(1.0, 0.35, band);`,
       )
   }
   const skyMat = new MeshBasicMaterial({ color: 0xffffff, side: BackSide, depthWrite: false, fog: false })
@@ -461,6 +490,29 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let kills = 0
   let tick = 0
   let hitStop = 0
+  let dying = false
+  let deathHold = 0
+  let firstOffer = true
+  let lastHurt = 'the shade'
+  let bossWas = false
+  let bossBeat = 0
+  let bossCardT = 0
+  let prevSun = 0
+  let sundialDay = false
+  let bossShown = ''
+  let bossBar = ''
+  let bossPhaseText = ''
+  interface BossRead {
+    name: string
+    hint: string
+    hp: number
+    max: number
+    phase: number
+    lit: boolean
+    x: number
+    z: number
+  }
+  let bossView: BossRead | null = null
   let shakeT = 0
   let shakeAmp = 0
   let swallow = false
@@ -623,7 +675,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     lureR2: 0,
     pass: false,
     onHit(x, z, amount, lit, killed, index) {
-      audio.hit()
+      if (lit) audio.hit()
       const bigHit = amount >= TUNING.cut.damage
       const crit = killed && lit
       if (lit) audio.exposed()
@@ -650,7 +702,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         floats.push(x, z, 'EXPOSED!', 'pop')
       }
     },
-    onHurt(amount) {
+    onHurt(amount, reason) {
+      if (reason) lastHurt = reason
       if (!hurtPlayer(player, amount)) return
       animHurt = true
       if (storageGet('noonsworn.shake') !== '0') {
@@ -707,6 +760,246 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     return `${m}:${s < 10 ? '0' : ''}${s}   ${kills} kills   level ${build.level}`
   }
 
+  function clockText(seconds: number): string {
+    const whole = Math.max(0, Math.floor(seconds))
+    const m = Math.floor(whole / 60)
+    const s = whole % 60
+    return `${m}:${s < 10 ? '0' : ''}${s}`
+  }
+
+  const NEXT_TEMPLE: Record<string, { id: 'lattice' | 'cloister' | 'stair'; name: string } | undefined> = {
+    sundial: { id: 'lattice', name: 'Lattice Terraces' },
+    lattice: { id: 'cloister', name: 'The Brimming Cloister' },
+    cloister: { id: 'stair', name: 'The Westering Stair' },
+  }
+
+  function goNext() {
+    const nxt = NEXT_TEMPLE[activeMap]
+    if (!nxt) {
+      showMode('menu')
+      ads.gameplayStop()
+      return
+    }
+    wantMap = nxt.id
+    mapSelect.close()
+    startRun()
+  }
+
+  function fillEnd(cleared: boolean, before: MapBest | undefined) {
+    const nxt = NEXT_TEMPLE[activeMap]
+    const icons: { id: number; name: string }[] = []
+    const ids = [
+      CARD.spear, CARD.halo, CARD.might, CARD.haste, CARD.swift, CARD.vitality, CARD.lodestone, CARD.wide,
+      CARD.flare, CARD.bell, CARD.longday, CARD.searing, CARD.mirage, CARD.helio, CARD.scarab, CARD.stake,
+      CARD.prism, CARD.multitude, CARD.reach, CARD.endurance,
+    ]
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i]
+      if (id == null || rankOf(build, id) <= 0) continue
+      const card = describe(build, id)
+      if (card.id !== id) continue
+      icons.push({ id, name: card.name })
+    }
+    let record = ''
+    if (cleared) {
+      const prev = before?.clear
+      record = prev == null
+        ? `Clear ${clockText(time)}`
+        : time < prev
+          ? `Clear ${clockText(time)} · ${Math.round(prev - time)}s faster`
+          : `Clear ${clockText(time)} · best ${clockText(prev)}`
+    } else {
+      const prev = before?.survived ?? (before?.clear == null ? before?.time : undefined)
+      if (prev == null) record = `Survived ${clockText(time)}`
+      else if (time > prev) record = `Survived ${clockText(time)} · +${Math.round(time - prev)}s`
+      else record = `Survived ${clockText(time)} · best ${clockText(prev)}`
+    }
+    let progress = ''
+    if (cleared && nxt) progress = `${nxt.name} opened`
+    else if (cleared) progress = 'All four temples held'
+    else if (activeMap === 'sundial') progress = `Lattice Terraces · ${Math.min(100, Math.floor((time / TUNING.runLength) * 100))}% of 5:00`
+    else if (time < 270) progress = `Boss in ${clockText(270 - time)}`
+    else progress = 'The boss still stands'
+    screens.setEnd({
+      title: cleared ? 'THE DAY IS HELD' : 'THE LIGHT FAILS',
+      detail: endDetail(),
+      cause: cleared ? '' : `Fell to ${lastHurt}`,
+      record,
+      progress,
+      icons,
+      primary: cleared ? (nxt ? `Enter ${nxt.name}` : 'Menu') : 'Retry',
+      primaryAction: cleared ? (nxt ? 'next' : 'menu') : 'retry',
+      retry: cleared,
+      temple: true,
+      revive: !cleared,
+    })
+  }
+
+  function readBoss(): BossRead | null {
+    if (activeMap === 'lattice' && lattice) {
+      const info = lattice.bossInfo()
+      if (info && !info.dead) {
+        return {
+          name: 'THE ESPALIER',
+          hint: 'Strike from the upper terrace',
+          hp: info.hp,
+          max: Math.max(1, info.max),
+          phase: info.phase,
+          lit: info.exposed,
+          x: info.x,
+          z: info.z,
+        }
+      }
+    }
+    if (activeMap === 'cloister' && cloister?.bossing()) {
+      const boss = cloister.peek().boss
+      if (!boss.dead) {
+        return {
+          name: 'THE COMPLINE',
+          hint: 'Hit the Compline where the sun reaches.',
+          hp: boss.hp,
+          max: Math.max(1, boss.max),
+          phase: boss.phase,
+          lit: litAt(boss.x, boss.z),
+          x: boss.x,
+          z: boss.z,
+        }
+      }
+    }
+    if (activeMap === 'stair' && stair) {
+      const info = stair.fightInfo()
+      if (info.awake && !info.cleared && info.hp > 0) {
+        return {
+          name: 'THE NEWEL',
+          hint: 'The sun is going down. Climb with it.',
+          hp: info.hp,
+          max: Math.max(1, info.max),
+          phase: info.phase,
+          lit: litAt(info.x, info.z),
+          x: info.x,
+          z: info.z,
+        }
+      }
+    }
+    return null
+  }
+
+  function noteBoss(rawDt: number) {
+    const live = readBoss()
+    if (live && !bossWas) {
+      bossWas = true
+      bossBeat = 0.6
+      bossCardT = 2.5
+      bossShown = ''
+    }
+    bossView = live
+    if (bossCardT > 0) bossCardT = Math.max(0, bossCardT - rawDt)
+  }
+
+  function angleCrossed(a0: number, a1: number, target: number): boolean {
+    let sweep = a1 - a0
+    while (sweep > Math.PI) sweep -= Math.PI * 2
+    while (sweep < -Math.PI) sweep += Math.PI * 2
+    if (Math.abs(sweep) < 1e-6) return false
+    let rel = target - a0
+    while (rel > Math.PI) rel -= Math.PI * 2
+    while (rel < -Math.PI) rel += Math.PI * 2
+    if (sweep > 0) return rel >= 0 && rel <= sweep
+    return rel <= 0 && rel >= sweep
+  }
+
+  function clockPacks() {
+    const angle = sun.angle
+    const prev = prevSun
+    prevSun = angle
+    if (activeMap !== 'sundial' || time < 75 || time >= 270) return
+    for (let i = 0; i < 4; i++) {
+      const p = PILLARS[i]
+      if (!p || !angleCrossed(prev, angle, Math.atan2(p.z, p.x))) continue
+      const sx = p.x - sun.x
+      const sz = p.z - sun.z
+      const len = Math.hypot(sx, sz) || 1
+      const ox = p.x + (sx / len) * 3.2
+      const oz = p.z + (sz / len) * 3.2
+      fx.ring(ox, oz, 2.4, FX.gold, 0.9)
+      for (let n = 0; n < 6; n++) {
+        const a = (n / 6) * Math.PI * 2
+        horde.spawn(0, ox + Math.cos(a) * 1.3, oz + Math.sin(a) * 1.3, false, TUNING.hordeCap, player.x, player.z)
+      }
+    }
+  }
+
+  function placeEdge(el: HTMLElement, x: number, z: number): boolean {
+    arrowPoint.set(x, 1.2, z).project(follow.camera)
+    const behind = arrowPoint.z > 1
+    const off = behind || Math.abs(arrowPoint.x) > 0.92 || Math.abs(arrowPoint.y) > 0.92
+    if (!off) {
+      if (!el.hidden) el.hidden = true
+      return false
+    }
+    let ax = arrowPoint.x
+    let ay = arrowPoint.y
+    if (behind) {
+      ax = -ax
+      ay = -ay
+    }
+    const mag = Math.hypot(ax, ay) || 1
+    const ux = ax / mag
+    const uy = ay / mag
+    if (el.hidden) el.hidden = false
+    el.style.left = `${(ux * 0.42 + 0.5) * cssW}px`
+    el.style.top = `${(-uy * 0.42 + 0.5) * cssH}px`
+    el.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(-uy, ux)}rad)`
+    return true
+  }
+
+  function paintThreats() {
+    let n = 0
+    if (mode === 'playing' || mode === 'level') {
+      horde.visit((ex, ez, kind) => {
+        if (kind !== 1 || n >= THREAT_N) return
+        const el = threats[n]
+        if (!el) return
+        if (placeEdge(el, ex, ez)) n++
+      })
+    }
+    for (let i = n; i < THREAT_N; i++) {
+      const el = threats[i]
+      if (el && !el.hidden) el.hidden = true
+    }
+  }
+
+  function paintBoss() {
+    const live = bossView
+    if (!live || (mode !== 'playing' && mode !== 'level')) {
+      if (!bossCard.hidden) bossCard.hidden = true
+      if (!bossArrow.hidden) bossArrow.hidden = true
+      return
+    }
+    if (bossCard.hidden) bossCard.hidden = false
+    const showName = bossCardT > 0
+    if (bossNameEl.hidden === showName) bossNameEl.hidden = !showName
+    if (bossHintEl.hidden === showName) bossHintEl.hidden = !showName
+    if (showName && bossShown !== live.name) {
+      bossShown = live.name
+      bossNameEl.textContent = live.name
+      bossHintEl.textContent = live.hint
+    }
+    const pct = Math.max(0, Math.min(100, Math.round((live.hp / live.max) * 100)))
+    const barKey = `${pct}${live.lit ? 'L' : 'S'}`
+    if (barKey !== bossBar) {
+      bossBar = barKey
+      bossFill.style.width = `${pct}%`
+      bossBarEl.classList.toggle('shade', !live.lit)
+    }
+    const phase = `Phase ${live.phase} · ${live.lit ? 'Lit' : 'Shade'}`
+    if (phase !== bossPhaseText) {
+      bossPhaseText = phase
+      bossPhaseEl.textContent = phase
+    }
+    placeEdge(bossArrow, live.x, live.z)
+  }
+
   // setSize clears the drawing buffer. Auto-resolution used to do that after
   // the draw, so the browser painted one black frame. Hold the resize and
   // apply it at the start of the next frame, before that frame draws.
@@ -717,7 +1010,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     const fog = quality.tier !== 'low'
     gpu.setFog(fog)
     sun.pushUniforms(floor.uniforms, fog)
-    if (!(previewWeapon && previewHold)) horde.cullTo(quality.cap, player.x, player.z)
+    // Population stays on hordeCap. quality.cap still bounds shots, sparks, and shadows.
     featureMap.refresh()
   }
   quality.onChange = () => {
@@ -734,20 +1027,20 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     if (!playUi) touchView.hide()
     if (next === 'dead' || next === 'clear') {
       endAt = performance.now()
+      if (next === 'clear') canvas.classList.remove('fade-death')
       if (next === 'dead') audio.death()
       else audio.win()
+      const before = loadMaps().best[activeMap]
       const opened = noteRun(activeMap, time, kills, next === 'clear')
+      fillEnd(next === 'clear', before)
       if (activeMap === 'stair' && next === 'clear') {
         screens.setToast('All four temples held')
         showToast('All four temples held', 4.2)
-      } else if (opened && activeMap === 'cloister') {
-        screens.setToast('New temple opened')
-        showToast('New temple opened', 4.2)
-        markSeen('stair')
       } else if (opened) {
         screens.setToast('New temple opened')
-        if (activeMap === 'lattice') markSeen('cloister')
-        else if (activeMap === 'sundial') markSeen('lattice')
+        showToast('New temple opened', 4.2)
+      } else {
+        hideToast()
       }
     } else {
       screens.setToast(null)
@@ -802,16 +1095,23 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     const sunlit = litAt(player.x, player.z)
     offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
     noteOffer(offerCount)
-    levelUp.show(shown.slice(0, offerCount), sunlit)
+    levelUp.show(shown.slice(0, offerCount), sunlit, (id) => rankOf(build, id))
     buzz(18)
     if (mode !== 'level') showMode('level')
   }
 
   let haloLock = 0
+  function offerFirst() {
+    firstOffer = false
+    openLevel()
+    hitStop = Math.max(hitStop, 0.4)
+    showToast('Later picks bank on the halo.', 3.4)
+  }
   function closeOffer() {
     levelUp.hide()
     if (mode === 'level') showMode('playing')
     haloLock = performance.now() + 80
+    if (!toast.hidden) parkToast()
   }
 
   function applyCard(id: number) {
@@ -891,10 +1191,38 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     return time >= TUNING.runLength
   }
 
+  // One layout read when a toast is shown. The phone 2×2 strip is taller than the
+  // default 18% seat, and the result card owns the lower center.
+  function parkToast() {
+    toast.style.top = ''
+    toast.style.bottom = ''
+    const offer = document.getElementById('level-up')
+    const strip = offer?.querySelector('.strip')
+    if (offer && !offer.hidden && strip instanceof HTMLElement && strip.offsetHeight > 0) {
+      const inset = Number.parseFloat(getComputedStyle(strip).bottom) || 0
+      toast.style.bottom = `${Math.round(strip.offsetHeight + inset + 12)}px`
+      return
+    }
+    const end = document.getElementById('end-screen')
+    if (end && !end.hidden) {
+      const above = end.getBoundingClientRect().top - toast.offsetHeight - 10
+      toast.style.top = `${Math.max(8, Math.round(above))}px`
+      toast.style.bottom = 'auto'
+    }
+  }
+
   function showToast(text: string, seconds = 3.2) {
     toast.textContent = text
     toast.hidden = false
     toastTimer = seconds
+    parkToast()
+  }
+
+  function hideToast() {
+    toast.hidden = true
+    toastTimer = 0
+    toast.style.top = ''
+    toast.style.bottom = ''
   }
 
   function ensureLattice(): Promise<void> {
@@ -917,7 +1245,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
               horde.spawn(kind, x, z, false, 56, player.x, player.z)
             },
             cull: (n) => horde.cullTo(n, player.x, player.z),
-            hurt: (amount) => ctx.onHurt(amount),
+            hurt: (amount) => ctx.onHurt(amount, 'The Espalier'),
             mark: (x, z, radius, seconds) => fx.ring(x, z, radius, FX.gold, seconds),
             expose: (x, z, half, freeze) => horde.exposeBox(x, z, half, freeze),
             track: (at) => {
@@ -961,7 +1289,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
                   player.invuln = Math.max(player.invuln, TUNING.player.invuln)
                   return
                 }
-                ctx.onHurt(amount)
+                ctx.onHurt(amount, floorHp ? 'the brim' : 'The Compline')
               },
               slow: (seconds) => {
                 washSlow = Math.max(washSlow, seconds)
@@ -1020,7 +1348,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
                 player.hp = Math.max(1, player.hp - amount)
                 return
               }
-              ctx.onHurt(amount)
+              ctx.onHurt(amount, 'The Newel')
             },
             vulnerable: () => player.iframe <= 0 && player.invuln <= 0 && !cut.active,
             cutting: () => cut.active,
@@ -1254,6 +1582,20 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     kills = 0
     tick = 0
     hitStop = 0
+    dying = false
+    deathHold = 0
+    firstOffer = true
+    lastHurt = 'the shade'
+    bossWas = false
+    bossBeat = 0
+    bossCardT = 0
+    bossView = null
+    bossShown = ''
+    bossBar = ''
+    bossPhaseText = ''
+    prevSun = sun.angle
+    canvas.classList.remove('fade-death')
+    if (!bossCard.hidden) bossCard.hidden = true
     shakeT = 0
     follow.snap(0, 0)
     exposePops = 0
@@ -1451,7 +1793,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     for (let i = 0; i < n; i++) {
       const ang = rng() * Math.PI * 2
       const dist = 16 + rng() * 6
-      horde.spawn(0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, quality.cap, player.x, player.z)
+      horde.spawn(0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, TUNING.hordeCap, player.x, player.z)
     }
   }
 
@@ -1503,6 +1845,14 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     audio.ui()
     mapSelect.close()
     startRun()
+  }
+  screens.onNext = () => {
+    audio.ui()
+    goNext()
+  }
+  screens.onTemple = () => {
+    audio.ui()
+    mapSelect.open(loadMaps())
   }
   screens.onResume = () => {
     if (mode === 'paused') {
@@ -1762,6 +2112,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (frame.debugToggle) debug.toggle()
       if (frame.featureToggle && devTools()) featureMap.toggle()
       if (mapSelect.isOpen()) {
+        touchView.hide()
         const pick = mapSelect.read(frame.navX, frame.navY, frame.confirmPressed, frame.cancelPressed || frame.pausePressed)
         if (pick === 'back') {
           mapSelect.close()
@@ -1770,7 +2121,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
         return false
       }
-      if (frame.usingTouch) touchView.show()
+      if (mode === 'playing' && frame.usingTouch) touchView.show()
       else touchView.hide()
       hud.setTouchMode(touchView.visible)
       if (mode === 'splash') {
@@ -1785,7 +2136,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (front) {
         const ended = mode === 'dead' || mode === 'clear'
         screens.navigate(frame.navX, frame.navY, frame.confirmPressed && !ended)
-        if (ended && frame.restartPressed) startRun()
+        if (ended && frame.restartPressed) {
+          if (mode === 'clear') goNext()
+          else startRun()
+        }
         if ((mode === 'howto' || mode === 'settings' || mode === 'credits') && (frame.pausePressed || frame.cancelPressed)) screens.back()
         if (mode === 'paused' && (frame.pausePressed || frame.cancelPressed)) {
           showMode('playing')
@@ -1841,6 +2195,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     step(dt, first) {
       sparkVis = 0
       const rawDt = dt
+      if (dying) dt *= 0.25
+      else if (bossBeat > 0) {
+        dt *= 0.35
+        bossBeat = Math.max(0, bossBeat - rawDt)
+      }
       if (chests.slowing()) dt *= 0.15
       const state = first ? frame : held
       if (clearedNow()) {
@@ -1850,6 +2209,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       sun.timeScale = activeMap === 'stair' ? 1 : Math.max(0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen) sun.advance(dt)
+      clockPacks()
       if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
       if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high', time)
       temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
@@ -2129,19 +2489,29 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         const poured = temple.takeSpawns()
         const bossUp = activeMap === 'lattice' && (lattice?.bossing() ?? false)
         const cloisterBoss = activeMap === 'cloister' && (cloister?.bossing() ?? false)
+        const playCap = TUNING.hordeCap
+        const sundialRun = activeMap === 'sundial'
         director.update(
           dt,
           time,
           horde,
           player.x,
           player.z,
-          bossUp ? Math.min(quality.cap, 56) : cloisterBoss ? Math.min(quality.cap, 40) : quality.cap,
+          bossUp ? Math.min(playCap, 56) : cloisterBoss ? Math.min(playCap, 40) : playCap,
           rng,
           cam.x,
           cam.z,
           poured,
           temple.pickWing,
           activeMap === 'lattice' ? latticePlan(time, bossUp) : activeMap === 'cloister' && cloister ? cloister.plan(time) : activeMap === 'stair' && stair ? stair.plan(time) : undefined,
+          {
+            strength: sundialRun ? Math.min(1.35, 1 + 0.03 * Math.max(0, build.level - 1)) : 1,
+            lit: litAt,
+            mark: (x, z) => {
+              fx.ring(x, z, 1.15, FX.gold, 1.5)
+            },
+            clock: sundialRun,
+          },
         )
       }
       w2?.mark(mapLit, writeShadow)
@@ -2158,7 +2528,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         horde.shove(cloisterShove)
         pickups.shove(cloisterGem)
         const touch = cloister.touch(player.x, player.z)
-        if (touch > 0) ctx.onHurt(touch)
+        if (touch > 0) ctx.onHurt(touch, 'the brim')
       }
       profHorde += performance.now() - hordeT
       if (!previewShow && previewWeapon === 'hits') {
@@ -2215,25 +2585,38 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       const before = build.pending
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, onGem)
-      if (player.hp <= 0) {
-        showMode('dead')
-        bus.emit('runEnd', { victory: false, time, kills, level: build.level })
-        return false
-      }
+      noteBoss(rawDt)
       if (clearedNow()) {
         showMode('clear')
         bus.emit('runEnd', { victory: true, time, kills, level: build.level })
         return false
       }
+      if (player.hp <= 0 && !dying) {
+        dying = true
+        deathHold = 0.6
+        hitStop = 0
+        canvas.classList.add('fade-death')
+      }
+      if (dying) {
+        deathHold -= rawDt
+        if (deathHold > 0) return true
+        showMode('dead')
+        bus.emit('runEnd', { victory: false, time, kills, level: build.level })
+        return false
+      }
       if (build.pending > before) {
         if (previewWeapon) build.pending = before
         else if (chests.revealUp()) chests.holdBank()
+        else if (firstOffer) offerFirst()
         else bankCharges()
       }
-      if (chests.takeHold()) bankCharges()
+      if (chests.takeHold()) {
+        if (firstOffer) offerFirst()
+        else bankCharges()
+      }
       if (wasReveal && !chests.revealUp() && hidLevel) {
         hidLevel = false
-        if (mode === 'level' && build.pending > 0) levelUp.show(shown.slice(0, offerCount), litAt(player.x, player.z))
+        if (mode === 'level' && build.pending > 0) levelUp.show(shown.slice(0, offerCount), litAt(player.x, player.z), (id) => rankOf(build, id))
       }
       if (previewWeapon && params.get('bench') === '1') {
         const want = Math.max(1, Math.min(400, Number(params.get('n') ?? '400') || 400))
@@ -2452,7 +2835,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       quality.sample(frameMs, frameSec, mode === 'playing')
       if (toastTimer > 0) {
         toastTimer -= frameSec
-        if (toastTimer <= 0) toast.hidden = true
+        if (toastTimer <= 0) hideToast()
       }
       floats.sync(follow.camera, cssW, cssH, frameSec)
       if ((mode === 'playing' || mode === 'level') && !previewWeapon && !turnWho) {
@@ -2480,6 +2863,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       touchView.setCooldown(ready)
       hud.setMirage(build.mirage > 0, traps.ready())
       touchView.setOwned(build.mirage > 0)
+      const dayClock = activeMap === 'sundial'
+      if (sundialDay !== dayClock) {
+        sundialDay = dayClock
+        sundial.root.classList.toggle('day', dayClock)
+      }
       sundial.set(
         sun.angle,
         mode === 'playing' || mode === 'level' ? time : sun.time,
@@ -2487,6 +2875,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         activeMap === 'lattice' && lattice ? lattice.terraceMask() : undefined,
         activeMap === 'cloister' ? { dir: sun.dir } : null,
         activeMap === 'stair' && stair ? stair.hud() : null,
+        dayClock ? { down: true, length: TUNING.runLength } : { down: true, length: 270 },
       )
       const aim = temple.arrow()
       if (!aim || (mode !== 'playing' && mode !== 'level')) gateArrow.hidden = true
@@ -2502,6 +2891,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           gateArrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(-ay, ax)}rad)`
         }
       }
+      const showLine = dayClock && mode === 'playing' && time < 4.5
+      if (objective.hidden === showLine) objective.hidden = !showLine
+      paintBoss()
+      paintThreats()
       if (debug.visible) {
         debugClock += frameSec
         if (debugClock >= 0.25) {
@@ -2963,6 +3356,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       return buf.slice(0, n).map((c) => c.name)
     },
   }
-  window.__noonsworn = api
-  window.__nw = api
+  if (devTools()) {
+    window.__noonsworn = api
+    window.__nw = api
+  }
 }

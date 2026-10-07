@@ -223,7 +223,7 @@ export interface HordeCtx {
   lureZ: number
   lureR2: number
   pass: boolean
-  onHurt: (amount: number) => void
+  onHurt: (amount: number, reason?: string) => void
   onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
   onExpose: ((x: number, z: number) => void) | null
   onXp: (x: number, z: number, value: number) => void
@@ -800,9 +800,10 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       if (!alive[index] || state[index] === DYING || bench[index]) return 0
       const darting = type[index] === 2 && state[index] === DART
       const inDeep = lit[index] !== 1 && !darting && (deepFn?.(x[index] ?? 0, z[index] ?? 0) ?? false)
-      let amount = raw ? base * (1 + TUNING.passive.might * might) : damageAmount(base, lit[index] === 1 || darting, source, might, inDeep)
+      let baseHit = base
+      if (!raw && source === 'weapon' && horde.dmgCap > 0 && baseHit > horde.dmgCap) baseHit = horde.dmgCap
+      let amount = raw ? base * (1 + TUNING.passive.might * might) : damageAmount(baseHit, lit[index] === 1 || darting, source, might, inDeep)
       if (darting && source === 'cut') amount *= 1.5
-      if (!raw && source === 'weapon' && horde.dmgCap > 0 && amount > horde.dmgCap) amount = horde.dmgCap
       hp[index] = (hp[index] ?? 0) - amount
       sting(index)
       const killed = (hp[index] ?? 0) <= 0
@@ -1129,7 +1130,9 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if (state[i] !== CHASE && state[i] !== LUNGE && state[i] !== RECOVER && state[i] !== TELE && state[i] !== DART) continue
         contact[i] = TUNING.contactGap
         const open = ctx.time < TUNING.openSeconds ? TUNING.openContact : 1
-        ctx.onHurt(spec.contact * open)
+        const kind = type[i] ?? 0
+        const bite = kind === 1 && ctx.time < TUNING.hound.openingBiteUntil ? TUNING.hound.openingBite : 1
+        ctx.onHurt(spec.contact * open * bite, kind === 1 ? 'a Shade Hound' : kind === 2 ? 'a Shade Darter' : 'a Dusk Mite')
         if (!ctx.vulnerable()) return
       }
     },

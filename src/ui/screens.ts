@@ -21,7 +21,7 @@ function pages(device: HintDevice) {
   const halo = device === 'touch' ? 'A level-up banks a charge. Tap the halo.' : device === 'pad' ? 'A level-up banks a charge. Press LB.' : 'A level-up banks a charge. Press Tab.'
   return [
     { title: 'Move', text: move, icon: 'icon_swift.webp' },
-    { title: 'Auto-weapons', text: 'Spears and discs fire on their own. You only have to move.', icon: 'icon_spear.webp' },
+    { title: 'Auto-weapons', text: 'Lances and discs fire on their own. You still move, dash, and choose upgrades.', icon: 'icon_spear.webp' },
     { title: 'Sunlight', text: 'Enemies standing in the sun take double damage. Fight in the light.', icon: 'icon_wide.webp' },
     { title: 'Noon Cut', text: dash, icon: 'icon_flare.webp' },
     { title: 'Halo power-ups', text: halo, icon: 'icon_halo.webp' },
@@ -37,6 +37,8 @@ export interface Screens {
   setDevice: (device: 'keyboard' | 'touch' | 'pad') => void
   onPlay: (() => void) | null
   onRestart: (() => void) | null
+  onNext: (() => void) | null
+  onTemple: (() => void) | null
   onResume: (() => void) | null
   onFeature: (() => void) | null
   onQuit: (() => void) | null
@@ -48,6 +50,21 @@ export interface Screens {
   onResetTutorial: (() => void) | null
   onHover: (() => void) | null
   setToast: (text: string | null) => void
+  setEnd: (view: EndView) => void
+}
+
+export interface EndView {
+  title: string
+  detail: string
+  cause: string
+  record: string
+  progress: string
+  icons: { id: number; name: string }[]
+  primary: string
+  primaryAction: 'retry' | 'next' | 'menu'
+  retry: boolean
+  temple: boolean
+  revive: boolean
 }
 
 export function tipsEnabled(): boolean {
@@ -130,9 +147,17 @@ export function createScreens(parent: HTMLElement): Screens {
     </section>
     <section id="end-screen" hidden>
       <h2 id="end-title">THE LIGHT FAILS</h2>
+      <p id="end-cause"></p>
       <p id="end-detail"></p>
+      <p id="end-record"></p>
+      <div id="end-icons"></div>
+      <p id="end-progress"></p>
       <p id="map-toast" hidden>New temple opened</p>
-      <button type="button" class="menu-item primary" id="btn-end">Restart</button>
+      <button type="button" class="menu-item primary" id="btn-end">Retry</button>
+      <button type="button" class="menu-item" id="btn-end-retry" hidden>Retry</button>
+      <button type="button" class="menu-item" id="btn-end-temple" hidden>Change Temple</button>
+      <button type="button" class="menu-item" id="btn-end-menu">Menu</button>
+      <button type="button" class="menu-item" id="btn-revive" disabled hidden>Revive — coming soon</button>
     </section>`
   parent.append(root)
   const sections = new Map<ScreenMode, HTMLElement>()
@@ -150,6 +175,14 @@ export function createScreens(parent: HTMLElement): Screens {
   const endTitle = root.querySelector('#end-title') as HTMLElement
   const endDetail = root.querySelector('#end-detail') as HTMLElement
   const endBtn = root.querySelector('#btn-end') as HTMLButtonElement
+  const endCause = root.querySelector('#end-cause') as HTMLElement
+  const endRecord = root.querySelector('#end-record') as HTMLElement
+  const endIcons = root.querySelector('#end-icons') as HTMLElement
+  const endProgress = root.querySelector('#end-progress') as HTMLElement
+  const endRetry = root.querySelector('#btn-end-retry') as HTMLButtonElement
+  const endTemple = root.querySelector('#btn-end-temple') as HTMLButtonElement
+  const endMenu = root.querySelector('#btn-end-menu') as HTMLButtonElement
+  const endRevive = root.querySelector('#btn-revive') as HTMLButtonElement
   const mapToast = root.querySelector('#map-toast') as HTMLElement
   const boxes = root.querySelectorAll<HTMLInputElement>('input[data-setting]')
   const sliders = root.querySelectorAll<HTMLInputElement>('input[data-audio]')
@@ -202,7 +235,7 @@ export function createScreens(parent: HTMLElement): Screens {
   function focusables(): HTMLElement[] {
     const host = mode === 'dead' || mode === 'clear' ? end : sections.get(mode)
     if (!host) return []
-    return [...host.querySelectorAll<HTMLElement>('button, input, select')].filter((el) => !el.hidden)
+    return [...host.querySelectorAll<HTMLElement>('button, input, select')].filter((el) => !el.hidden && !(el instanceof HTMLButtonElement && el.disabled))
   }
   function paintFocus() {
     const list = focusables()
@@ -218,6 +251,8 @@ export function createScreens(parent: HTMLElement): Screens {
   const screens: Screens = {
     onPlay: null,
     onRestart: null,
+    onNext: null,
+    onTemple: null,
     onResume: null,
     onFeature: null,
     onQuit: null,
@@ -228,6 +263,35 @@ export function createScreens(parent: HTMLElement): Screens {
     onAutopick: null,
     onResetTutorial: null,
     onHover: null,
+    setEnd(view) {
+      end.hidden = false
+      endTitle.textContent = view.title
+      endCause.textContent = view.cause
+      endDetail.textContent = view.detail
+      endRecord.textContent = view.record
+      endProgress.textContent = view.progress
+      endBtn.textContent = view.primary
+      endBtn.onclick = () => {
+        if (view.primaryAction === 'next') screens.onNext?.()
+        else if (view.primaryAction === 'menu') screens.onQuit?.()
+        else screens.onRestart?.()
+      }
+      endRetry.hidden = !view.retry
+      endTemple.hidden = !view.temple
+      endRevive.hidden = !view.revive
+      endIcons.replaceChildren()
+      for (let i = 0; i < view.icons.length; i++) {
+        const icon = view.icons[i]
+        if (!icon) continue
+        const span = document.createElement('span')
+        span.className = 'end-icon'
+        span.style.setProperty('--i', String(icon.id))
+        span.title = icon.name
+        endIcons.append(span)
+      }
+      focus = 0
+      paintFocus()
+    },
     setToast(text) {
       mapToast.hidden = !text
       if (text) mapToast.textContent = text
@@ -252,7 +316,6 @@ export function createScreens(parent: HTMLElement): Screens {
       if (next === 'dead' || next === 'clear') {
         end.hidden = false
         endTitle.textContent = next === 'clear' ? 'THE DAY IS HELD' : 'THE LIGHT FAILS'
-        endBtn.textContent = next === 'clear' ? 'Play again' : 'Restart'
         if (detail) endDetail.textContent = detail
       }
       if (next === 'menu' || next === 'paused' || next === 'splash') focus = 0
@@ -309,7 +372,9 @@ export function createScreens(parent: HTMLElement): Screens {
   root.querySelector('#howto-prev')?.addEventListener('click', () => showPage(page - 1))
   root.querySelector('#howto-next')?.addEventListener('click', () => showPage(page + 1))
   root.querySelector('#btn-reset-tut')?.addEventListener('click', () => screens.onResetTutorial?.())
-  endBtn.addEventListener('click', () => screens.onRestart?.())
+  endRetry.addEventListener('click', () => screens.onRestart?.())
+  endTemple.addEventListener('click', () => screens.onTemple?.())
+  endMenu.addEventListener('click', () => screens.onQuit?.())
   boxes.forEach((box) => {
     box.addEventListener('change', () => {
       const setting = box.dataset.setting

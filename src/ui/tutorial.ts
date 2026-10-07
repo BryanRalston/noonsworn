@@ -76,6 +76,9 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
   let cutR = 0
   let cutT = 0
   let cutW = 0
+  let elapsed = 0
+  const AT = [4.5, 12, 19, 26, 33, 40]
+  const HOLD = 6
 
   function save() {
     storageSet(KEY, step >= 6 ? 'done' : String(step))
@@ -118,7 +121,7 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       if (device === 'pad') return 'Left stick to move'
       return 'WASD to move'
     }
-    if (step === 1) return 'Your weapons fire on their own'
+    if (step === 1) return 'Weapons fire on their own. Keep moving.'
     if (step === 2) return 'Enemies in sunlight take double damage. Fight in the light.'
     if (step === 3) {
       if (device === 'touch') return 'Dash-slash through them. Tap Cut.'
@@ -126,9 +129,9 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       return 'Dash-slash through them. Press Space.'
     }
     if (step === 4) return 'Collect shards'
-    if (device === 'touch') return 'Power-up ready. Tap the halo.'
-    if (device === 'pad') return 'Power-up ready. Press LB.'
-    return 'Power-up ready. Press Tab.'
+    if (device === 'touch') return 'Later picks bank on the halo. Tap it.'
+    if (device === 'pad') return 'Later picks bank on the halo. Press LB.'
+    return 'Later picks bank on the halo. Press Tab.'
   }
   function screenTop(wx: number, wy: number, wz: number, camera: Camera, height: number, topY: number): number {
     v.set(wx, wy, wz).project(camera)
@@ -169,6 +172,8 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
     }
     if (left - half < 8) left = half + 8
     if (left + half > width - 8) left = width - 8 - half
+    const clockBand = top < 86 && left > width * 0.22 && left < width * 0.78
+    if (clockBand) top = 92
     if (top < 8) top = 8
     if (top + labelH > height - 8) top = Math.max(8, height - 8 - labelH)
     return { x: left, y: top }
@@ -205,6 +210,7 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
       enabled = on
       step = readStep()
       timer = 0
+      elapsed = 0
       outline = 0
       outlined = false
       litHold = 0
@@ -218,6 +224,7 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
     reset() {
       step = 0
       timer = 0
+      elapsed = 0
       outline = 0
       outlined = false
       litHold = 0
@@ -274,33 +281,24 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
         return
       }
       if (now.moving) moved = true
-      if (step === 5 && !charged) {
+      elapsed += dt
+      const start = AT[step] ?? 99
+      if (elapsed < start) {
         hide()
-        timer = 0
-        litHold = 0
         return
       }
       const offer = document.getElementById('level-up')
-      if (step === 5 && offer && !offer.hidden) {
+      if (offer && !offer.hidden) {
         label.hidden = true
         hideArrow()
+        timer += dt
+        if (timer >= HOLD || done()) advance()
         return
       }
       if (step === 2 && timer >= 3) litHold = now.inLight ? litHold + dt : 0
       timer += dt
-      if (timer >= 12 || done()) advance()
+      if (timer >= HOLD || done()) advance()
       if (step >= 6) {
-        hide()
-        save()
-        return
-      }
-      if (step === 5 && !charged) {
-        hide()
-        timer = 0
-        return
-      }
-      if (step === 5 && now.charges <= 0) {
-        step = 6
         hide()
         save()
         return
