@@ -1,5 +1,6 @@
 import { Vector3, type Camera } from 'three'
 import { mulberry32, type Rng } from '../../core/rng'
+import type { MapId } from '../../data/mapId'
 import { TUNING } from '../../data/tuning'
 import { CARD, rankOf, type Build } from '../leveling'
 import { insideArena, octDist, resolveCircle, segmentBlocked } from '../collision'
@@ -47,7 +48,7 @@ export interface ChestEnv {
   time: number
   px: number
   pz: number
-  map: 'sundial' | 'lattice' | 'cloister' | 'stair'
+  map: MapId
   mapLit: (x: number, z: number) => boolean
   floorY: (x: number, z: number) => number
   w2: 'loading' | 'ready' | 'failed'

@@ -40,6 +40,8 @@ import { createAudio } from '../audio/audio'
 import { loadArt } from '../render/art'
 import { createBloom } from '../render/bloom'
 import { toonMap } from '../render/toon'
+import type { MapId } from '../data/mapId'
+import { assertMap } from '../data/mapId'
 import { loadMaps, markSeen, noteRun, rememberMap, type MapBest } from '../data/maps'
 import { storageGet, storageSet } from '../platform/storage'
 import { createMapSelect } from '../ui/mapSelect'
@@ -465,8 +467,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'splash'
   let hidLevel = false
-  let activeMap: 'sundial' | 'lattice' | 'cloister' | 'stair' = 'sundial'
-  let wantMap: 'sundial' | 'lattice' | 'cloister' | 'stair' = 'sundial'
+  let activeMap: MapId = 'sundial'
+  let wantMap: MapId = 'sundial'
   let lattice: LatticeHandle | null = null
   let latticeGate: Promise<void> | null = null
   let latticePending = false
@@ -3049,8 +3051,17 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       queuedSeed = n >>> 0
       startRun()
     },
-    setMap: (id: 'sundial' | 'lattice' | 'cloister' | 'stair') => {
-      if (id === 'sundial' || id === 'lattice' || id === 'cloister' || id === 'stair') wantMap = id
+    setMap: (id: MapId) => {
+      switch (id) {
+        case 'sundial':
+        case 'lattice':
+        case 'cloister':
+        case 'stair':
+          wantMap = id
+          break
+        default:
+          assertMap(id)
+      }
     },
     spawnStress,
     sun,

@@ -1,6 +1,7 @@
+import type { MapId } from '../data/mapId'
 import { MAP_DEFS, type MapRecord } from '../data/maps'
 
-export type MapChoice = 'sundial' | 'lattice' | 'cloister' | 'stair'
+export type MapChoice = MapId
 
 export interface MapSelect {
   open: (save: MapRecord) => void
