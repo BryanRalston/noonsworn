@@ -152,4 +152,9 @@ export const FEATURES: FeatureRow[] = [
   { area: 'Combat & Weapons', feature: 'Noon Bell drops on the densest pack', status: 'shipped', since: 'W2.1' },
   { area: 'Combat & Weapons', feature: 'A Sunspot exposes the pack it covers, so the kill can seal', status: 'shipped', since: 'W2.1' },
   { area: 'Controls', feature: 'The power-up hint hides while a level-up offer is open', status: 'shipped', since: 'W2.1' },
+  { area: 'Maps', feature: 'Nadir Court is its own night floor, and Stair clear opens it', status: 'shipped', since: 'F2' },
+  { area: 'Combat & Weapons', feature: 'Matins opens only while Sela stands in a beam', status: 'shipped', since: 'F2' },
+  { area: 'Combat & Weapons', feature: 'Five Rays is one face-up draft, then the Night-Clock runs', status: 'shipped', since: 'F2' },
+  { area: 'Combat & Weapons', feature: 'At 0:00 the ink rises. It is not a timeout card', status: 'shipped', since: 'F2' },
+  { area: 'Maps', feature: 'A clear ends on NOON IS SWORN, then a sealed record and Dawn Linen', status: 'shipped', since: 'F2' },
 ]

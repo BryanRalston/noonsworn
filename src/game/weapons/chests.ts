@@ -180,6 +180,7 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
       return dx * dx + dz * dz < 16
     }
     if (map === 'cloister') return octDist(x, z) < 11.4
+    if (map === 'nadir') return true
     return false
   }
 

@@ -265,6 +265,7 @@ export function createScreens(parent: HTMLElement): Screens {
     onHover: null,
     setEnd(view) {
       end.hidden = false
+      end.classList.toggle('sealed', view.title === 'NOON IS SWORN')
       endTitle.textContent = view.title
       endCause.textContent = view.cause
       endDetail.textContent = view.detail

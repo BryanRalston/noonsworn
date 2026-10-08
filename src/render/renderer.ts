@@ -6,6 +6,8 @@ export interface Gpu {
   renderer: WebGLRenderer
   scene: Scene
   sunLight: DirectionalLight
+  fill: HemisphereLight
+  fog: Fog
   resize: (ratio: number) => void
   setFog: (on: boolean) => void
   setFogRange: (near: number, far: number) => void
@@ -62,6 +64,8 @@ export function createGpu(canvas: HTMLCanvasElement, camera: PerspectiveCamera, 
     renderer,
     scene,
     sunLight,
+    fill,
+    fog,
     resize,
     setFog(on: boolean) {
       fogOn = on

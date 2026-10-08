@@ -46,6 +46,8 @@ export const HEX = {
   rose: '#E8B49A',
   duskPlum: '#382C36',
   stairCypress: '#2E4A32',
+  dawnLinen: '#F4E0C4',
+  nadirSky: '#14182C',
 } as const
 
 function c(hex: string): Color {
@@ -98,6 +100,10 @@ export const COLOR = {
   rose: c(HEX.rose),
   duskPlum: c(HEX.duskPlum),
   stairCypress: c(HEX.stairCypress),
+  dawnLinen: c(HEX.dawnLinen),
+  nadirSky: c(HEX.nadirSky),
+  nadirFloor: new Color().setRGB(0.026, 0.024, 0.058),
+  nadirBeam: new Color().setRGB(0.8, 0.42, 0.1),
 }
 
 export function mountPalette(target: HTMLElement) {

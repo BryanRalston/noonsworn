@@ -69,8 +69,10 @@ export interface AudioBus {
   preload: (names: readonly string[]) => void
   cue: (name: string) => void
   bed: (name: string, gain: number) => void
-  lowpass: (hz: number) => void
+  lowpass: (hz: number, seconds?: number) => void
   lowpassHz: () => number
+  musicRate: (rate: number) => void
+  weaponDuck: (on: boolean) => void
 }
 
 function preferOgg(): boolean {
@@ -86,6 +88,7 @@ export function createAudio(fxRng: () => number): AudioBus {
   let musicLow: BiquadFilterNode | null = null
   let duckGain: GainNode | null = null
   let lowHz = 18000
+  let musicWant = 1
   let ambBus: GainNode | null = null
   let post: GainNode | null = null
   let analyser: AnalyserNode | null = null
@@ -371,6 +374,7 @@ export function createAudio(fxRng: () => number): AudioBus {
     const src = ctx.createBufferSource()
     src.buffer = buf
     src.loop = true
+    src.playbackRate.value = musicWant
     src.connect(bus)
     src.start()
     return src
@@ -481,17 +485,25 @@ export function createAudio(fxRng: () => number): AudioBus {
       if (name === 'brimwash_crash' || name === 'compline_slam' || name === 'newel_cast' || name === 'newel_fall') duckTap()
     },
     bed,
-    lowpass(hz) {
+    lowpass(hz, seconds = 1) {
       if (!musicLow || !ctx) return
-      if (Math.abs(lowHz - hz) < 1) return
+      if (Math.abs(lowHz - hz) < 1 && seconds <= 1) return
       lowHz = hz
       const now = ctx.currentTime
       const freq = musicLow.frequency
       freq.cancelScheduledValues(now)
       freq.setValueAtTime(freq.value, now)
-      freq.linearRampToValueAtTime(hz, now + 1)
+      freq.linearRampToValueAtTime(hz, now + Math.max(0.05, seconds))
     },
     lowpassHz: () => lowHz,
+    musicRate(rate) {
+      musicWant = rate
+      if (musicLoop) musicLoop.playbackRate.value = rate
+    },
+    weaponDuck(on) {
+      if (!sfxBus) return
+      sfxBus.gain.value = sfxLevel * (on ? 0.75 : 1)
+    },
     meter() {
       const db = 20 * Math.log10(Math.max(held, 1e-5))
       const param = duckGain?.gain as (AudioParam & { getValueAtTime?: (time: number) => number }) | undefined

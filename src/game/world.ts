@@ -62,6 +62,7 @@ import { clockShadow, stairShadow, type ShadowDir } from './shadowDir'
 import { cellBlocked, PILLARS, resetHomePillars, setBeds } from './collision'
 import type { CloisterHandle } from './cloister'
 import type { LatticeHandle } from './lattice'
+import type { NadirHandle, NadirView } from './nadir'
 import type { StairHandle } from './stair'
 import { createTemple, writeFloorPillars } from './temple'
 import { createTraps } from './traps'
@@ -478,6 +479,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let stair: StairHandle | null = null
   let stairGate: Promise<void> | null = null
   let stairPending = false
+  let nadir: NadirHandle | null = null
+  let nadirGate: Promise<void> | null = null
+  let nadirPending = false
+  let nadirView: NadirView | null = null
+  let descendNadir = false
+  let nadirCut = -1
+  let nadirMusic = ''
   let hintBits = Number(storageGet('noonsworn.cloister.hints') ?? '0') || 0
   let stairBits = Number(storageGet('noonsworn.stair.hints') ?? '0') || 0
   let stairLow = -1
@@ -585,6 +593,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   }
 
   function mapLit(x: number, z: number): boolean {
+    if (activeMap === 'nadir' && nadir?.ready) return nadir.isLit(x, z)
     if (activeMap === 'stair' && stair?.ready) return stair.isLit(x, z)
     if (activeMap === 'cloister' && cloister?.ready) return cloister.isLit(x, z)
     if (activeMap === 'lattice' && lattice?.ready) return lattice.isLit(sunLit, x, z)
@@ -720,6 +729,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       bus.emit('hurt', { amount })
     },
     onXp(x, z, value) {
+      if (activeMap === 'nadir') return
       pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z)
       tutorial.onShard()
     },
@@ -745,9 +755,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     },
   }
 
-  function buzz(ms: number) {
+  function buzz(ms: number | number[]) {
     if (storageGet('noonsworn.haptics') === '0') return
-    const nav = navigator as Navigator & { vibrate?: (pattern: number) => boolean; userActivation?: { hasBeenActive: boolean } }
+    const nav = navigator as Navigator & { vibrate?: (pattern: number | number[]) => boolean; userActivation?: { hasBeenActive: boolean } }
     if (typeof nav.vibrate !== 'function') return
     if (nav.userActivation && !nav.userActivation.hasBeenActive) return
     nav.vibrate(ms)
@@ -771,10 +781,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     return `${m}:${s < 10 ? '0' : ''}${s}`
   }
 
-  const NEXT_TEMPLE: Record<string, { id: 'lattice' | 'cloister' | 'stair'; name: string } | undefined> = {
+  const NEXT_TEMPLE: Record<string, { id: MapId; name: string } | undefined> = {
     sundial: { id: 'lattice', name: 'Lattice Terraces' },
     lattice: { id: 'cloister', name: 'The Brimming Cloister' },
     cloister: { id: 'stair', name: 'The Westering Stair' },
+    stair: { id: 'nadir', name: 'Nadir Court' },
   }
 
   function goNext() {
@@ -784,6 +795,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       ads.gameplayStop()
       return
     }
+    if (activeMap === 'stair') descendNadir = true
     wantMap = nxt.id
     mapSelect.close()
     startRun()
@@ -820,20 +832,39 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
     }
     let progress = ''
-    if (cleared && nxt) progress = `${nxt.name} opened`
+    if (cleared && activeMap === 'nadir') {
+      const saved = loadMaps()
+      const line = (id: string, name: string) => {
+        const best = saved.best[id]?.clear
+        return `${name}  ${best == null ? '—' : clockText(best)}`
+      }
+      const left = nadir?.info().remain ?? nadirView?.remain ?? 0
+      progress = [
+        line('sundial', 'Sundial Court'),
+        line('lattice', 'Lattice Terraces'),
+        line('cloister', 'The Brimming Cloister'),
+        line('stair', 'The Westering Stair'),
+        `Nadir Court  ${clockText(time)}`,
+        `Night-Clock  ${clockText(left)} left`,
+        'Sela, Dawn Linen',
+      ].join('\n')
+    } else if (cleared && nxt) progress = `${nxt.name} opened`
     else if (cleared) progress = 'All four temples held'
     else if (activeMap === 'sundial') progress = `Lattice Terraces · ${Math.min(100, Math.floor((time / TUNING.runLength) * 100))}% of 5:00`
+    else if (activeMap === 'nadir') progress = ''
     else if (time < 270) progress = `Boss in ${clockText(270 - time)}`
     else progress = 'The boss still stands'
+    const nadirClear = cleared && activeMap === 'nadir'
+    const stairClear = cleared && activeMap === 'stair'
     screens.setEnd({
-      title: cleared ? 'THE DAY IS HELD' : 'THE LIGHT FAILS',
+      title: nadirClear ? 'NOON IS SWORN' : cleared ? 'THE DAY IS HELD' : 'THE LIGHT FAILS',
       detail: endDetail(),
-      cause: cleared ? '' : `Fell to ${lastHurt}`,
+      cause: cleared ? '' : activeMap === 'nadir' && nadirView?.inkLoss ? 'The ink keeps the dawn.' : `Fell to ${lastHurt}`,
       record,
       progress,
       icons,
-      primary: cleared ? (nxt ? `Enter ${nxt.name}` : 'Menu') : 'Retry',
-      primaryAction: cleared ? (nxt ? 'next' : 'menu') : 'retry',
+      primary: !cleared ? 'Retry' : nadirClear ? 'Continue' : stairClear ? 'Descend' : nxt ? `Enter ${nxt.name}` : 'Menu',
+      primaryAction: !cleared ? 'retry' : nadirClear ? 'menu' : nxt ? 'next' : 'menu',
       retry: cleared,
       temple: true,
       revive: false,
@@ -871,6 +902,21 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
       }
     }
+    if (activeMap === 'nadir' && nadirView?.showBoss && nadirView.boss) {
+      const info = nadir?.info()
+      if (info && info.hp > 0) {
+        return {
+          name: 'MATINS — Warden of the Caught Sun',
+          hint: nadirView.hint,
+          hp: info.hp,
+          max: Math.max(1, info.max),
+          phase: info.phase,
+          lit: nadirView.exposed,
+          x: nadirView.boss.x,
+          z: nadirView.boss.z,
+        }
+      }
+    }
     if (activeMap === 'stair' && stair) {
       const info = stair.fightInfo()
       if (info.awake && !info.cleared && info.hp > 0) {
@@ -896,6 +942,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       bossBeat = 0.6
       bossCardT = 2.5
       bossShown = ''
+      if (activeMap === 'nadir') storageSet('noonsworn.nadir.hint', '1')
     }
     bossView = live
     if (bossCardT > 0) bossCardT = Math.max(0, bossCardT - rawDt)
@@ -1001,8 +1048,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     if (showName && bossShown !== live.name) {
       bossShown = live.name
       bossNameEl.textContent = live.name
-      bossHintEl.textContent = live.hint
     }
+    if (showName && bossHintEl.textContent !== live.hint) bossHintEl.textContent = live.hint
     const pct = Math.max(0, Math.min(100, Math.round((live.hp / live.max) * 100)))
     const barKey = `${pct}${live.lit ? 'L' : 'S'}`
     if (barKey !== bossBar) {
@@ -1010,7 +1057,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       bossFill.style.width = `${pct}%`
       bossBarEl.classList.toggle('shade', !live.lit)
     }
-    const phase = `Phase ${live.phase} · ${live.lit ? 'Lit' : 'Shade'}`
+    const phase = activeMap === 'nadir'
+      ? `P${live.phase} · ${live.lit ? 'EXPOSED ×2' : 'SEALED'}`
+      : `Phase ${live.phase} · ${live.lit ? 'Lit' : 'Shade'}`
     if (phase !== bossPhaseText) {
       bossPhaseText = phase
       bossPhaseEl.textContent = phase
@@ -1053,11 +1102,16 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       else audio.win()
       const before = loadMaps().best[activeMap]
       runNoted = true
-      const opened = noteRun(activeMap, time, kills, next === 'clear')
+      if (activeMap === 'nadir' && next === 'clear') {
+        storageSet('noonsworn.dawn', '1')
+        paintLinen(true)
+      }
+      const opened = noteRun(activeMap, time, kills, next === 'clear', activeMap === 'nadir' && next === 'clear' ? nadir?.info().remain : undefined)
       fillEnd(next === 'clear', before)
       if (activeMap === 'stair' && next === 'clear') {
-        screens.setToast('All four temples held')
-        showToast('All four temples held', 4.2)
+        screens.setToast(null)
+        hideToast()
+        void ensureNadir()
       } else if (opened) {
         screens.setToast('New temple opened')
         showToast('New temple opened', 4.2)
@@ -1202,7 +1256,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   horde.onHit = ctx.onHit
   horde.onExpose = ctx.onExpose
   horde.onSpawn = (kind) => {
-    if (kind === 1) tips.notify('hound')
+    if (kind === 1 && activeMap !== 'nadir') tips.notify('hound')
   }
   horde.onDart = () => audio.darterDart()
   horde.bossHit = (x, z, radius, base, source, might, stamp) => {
@@ -1213,14 +1267,48 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       const crowd = stair.crowdHit(x, z, radius, base, source, might, stamp)
       return boss || crowd
     }
+    if (activeMap === 'nadir' && nadir) return nadir.soak(x, z, radius, base, source, might, stamp)
     return false
   }
 
   function clearedNow(): boolean {
+    if (activeMap === 'nadir') return !!nadirView?.claimed
     if (activeMap === 'lattice') return !!lattice?.cleared()
     if (activeMap === 'cloister') return !!cloister?.cleared()
     if (activeMap === 'stair') return !!stair?.cleared()
     return time >= TUNING.runLength
+  }
+
+  function grantNadir(id: number) {
+    build.spearJump = 2
+    build.haloJump = 2
+    build.flareJump = 2
+    build.bellJump = 2
+    build.helioJump = 2
+    build.scarabJump = 2
+    build.stakeJump = 2
+    build.prismJump = 2
+    const applySide = (kind: 'vitality' | 'wide' | 'heal' | 'done') => {
+      if (kind === 'vitality') {
+        player.maxHp += TUNING.passive.vitalHp
+        player.hp = Math.min(player.maxHp, player.hp + TUNING.passive.vitalHeal)
+      } else if (kind === 'wide') sun.setWide(build.wide)
+    }
+    applySide(applyRank(build, id))
+    applySide(applyRank(build, id))
+  }
+
+  function paintLinen(on: boolean) {
+    playerView.traverse((child) => {
+      const mesh = child as Mesh
+      if (!mesh.isMesh) return
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of list) {
+        const colored = material as MeshToonMaterial
+        if (!colored.color || !colored.isMeshToonMaterial) continue
+        colored.color.set(on ? COLOR.dawnLinen : 0xffffff)
+      }
+    })
   }
 
   // One layout read when a toast is shown. The phone 2×2 strip is taller than the
@@ -1401,6 +1489,125 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         })
     }
     return stairGate ?? Promise.resolve()
+  }
+
+  const dayLook = {
+    sun: gpu.sunLight.color.clone(),
+    sunI: gpu.sunLight.intensity,
+    sky: gpu.fill.color.clone(),
+    ground: gpu.fill.groundColor.clone(),
+    fillI: gpu.fill.intensity,
+    fog: gpu.fog.color.clone(),
+  }
+  const nightSky = new Color().setRGB(0.45, 0.55, 0.72)
+  const nightGround = new Color().setRGB(0.05, 0.06, 0.1)
+  const nightKey = new Color().setRGB(0.62, 0.7, 0.86)
+
+  function restoreDayLook() {
+    gpu.scene.background = COLOR.horizon
+    gpu.renderer.setClearColor(COLOR.horizon, 1)
+    gpu.renderer.toneMappingExposure = TUNING.look.exposure
+    gpu.fog.color.copy(dayLook.fog)
+    gpu.fill.color.copy(dayLook.sky)
+    gpu.fill.groundColor.copy(dayLook.ground)
+    gpu.fill.intensity = dayLook.fillI
+    gpu.sunLight.color.copy(dayLook.sun)
+    gpu.sunLight.intensity = dayLook.sunI
+    audio.musicRate(1)
+    audio.lowpass(18000)
+    audio.weaponDuck(false)
+    nadirMusic = ''
+    document.body.classList.remove('nadir')
+  }
+
+  function applyNadirLook(view: NadirView) {
+    const warm = view.warm
+    if (view.stage === 'noon') {
+      gpu.scene.background = COLOR.horizon
+      gpu.renderer.setClearColor(COLOR.horizon, 1)
+      gpu.renderer.toneMappingExposure = TUNING.look.exposure
+      gpu.sunLight.intensity = dayLook.sunI
+      gpu.sunLight.color.copy(dayLook.sun)
+      return
+    }
+    if (view.stage === 'drain') {
+      gpu.renderer.toneMappingExposure = TUNING.look.exposure * (1 - view.drain * 0.85)
+      gpu.sunLight.intensity = dayLook.sunI * (1 - view.drain)
+      return
+    }
+    gpu.scene.background = COLOR.nadirSky
+    gpu.renderer.setClearColor(COLOR.nadirSky, 1)
+    gpu.renderer.toneMappingExposure = TUNING.look.exposure
+    gpu.fog.color.copy(COLOR.nadirSky).lerp(dayLook.fog, warm)
+    gpu.fill.color.copy(nightSky).lerp(dayLook.sky, warm)
+    gpu.fill.groundColor.copy(nightGround).lerp(dayLook.ground, warm)
+    gpu.fill.intensity = 0.4 + warm * (dayLook.fillI - 0.4)
+    gpu.sunLight.color.copy(nightKey).lerp(dayLook.sun, warm)
+    gpu.sunLight.intensity = 0.3 + warm * (dayLook.sunI - 0.3)
+  }
+
+  function syncNadirMusic(view: NadirView) {
+    audio.weaponDuck(view.duck)
+    if (view.music === nadirMusic) return
+    nadirMusic = view.music
+    if (view.music === 'cut') audio.stopMusic()
+    else if (view.music === 'dawn') {
+      audio.startMusic()
+      audio.musicRate(1)
+      audio.lowpass(18000, 4)
+    } else if (view.music === 'night') {
+      audio.startMusic()
+      audio.musicRate(0.85)
+      audio.lowpass(500)
+    } else if (view.music === 'hold') {
+      audio.musicRate(1)
+      audio.lowpass(18000)
+    }
+  }
+
+  function ensureNadir(): Promise<void> {
+    if (nadir?.ready) return Promise.resolve()
+    if (!nadirGate) {
+      nadirGate = import('./nadir')
+        .then(async (mod) => {
+          const handle = mod.createNadir({
+            scene: gpu.scene,
+            hide: [floorMesh, wingFloor, wingPillars, inlay, scatter, outer, sky],
+            tint: [shell, pillars],
+            hooks: {
+              spawn: (x, z) => horde.spawn(0, x, z, false, TUNING.hordeCap, player.x, player.z),
+              cull: (n) => horde.cullTo(n, player.x, player.z),
+              mites: () => horde.count(),
+              hurt: (amount, reason) => ctx.onHurt(amount, reason),
+              tide: (amount) => {
+                player.hp -= amount
+                lastHurt = 'the ink'
+              },
+              grant: (id) => grantNadir(id),
+              buzz,
+              toast: (text) => showToast(text, 4.2),
+              pip: (x, z) => floats.push(x, z, '·', 'deflect'),
+              ring: (x, z, radius, rgb, seconds) => fx.ring(x, z, radius, rgb, seconds),
+              sfx: (name) => {
+                if (name === 'chime') audio.chime()
+                else if (name === 'clamp') audio.shutterClose()
+                else if (name === 'crack') audio.shutterOpen()
+                else if (name === 'rumble') audio.rumble()
+                else if (name === 'scrape') audio.espalierRake()
+                else if (name === 'exposed') audio.exposed()
+                else audio.armored()
+              },
+              rng: () => rng(),
+            },
+          })
+          nadir = handle
+          await handle.load()
+        })
+        .finally(() => {
+          nadirGate = null
+        })
+    }
+    return nadirGate ?? Promise.resolve()
   }
 
   const stairLift = (x: number, z: number) => (stair ? stair.floorY(x, z) + 0.35 : 0.35)
@@ -1598,6 +1805,22 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         })
       return
     }
+    if (wantMap === 'nadir' && !nadir?.ready) {
+      if (nadirPending) return
+      nadirPending = true
+      void ensureNadir()
+        .then(() => {
+          nadirPending = false
+          if (wantMap === 'nadir') startRun()
+        })
+        .catch((err) => {
+          nadirPending = false
+          wantMap = 'sundial'
+          if (import.meta.env.DEV) console.error(err)
+          startRun()
+        })
+      return
+    }
     const runSeed = queuedSeed ?? forcedSeed ?? (Date.now() >>> 0)
     queuedSeed = null
     rng = mulberry32(runSeed)
@@ -1662,7 +1885,36 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     temple.setRouting(activeMap !== 'sundial')
     temple.reset(rng)
     traps.reset(temple)
-    if (activeMap === 'stair' && stair) {
+    if (activeMap === 'nadir' && nadir) {
+      stair?.clear(false)
+      cloister?.clear(false)
+      lattice?.clear()
+      outer.visible = false
+      document.body.classList.add('nadir')
+      nadir.begin(descendNadir)
+      descendNadir = false
+      nadir.primeHint(storageGet('noonsworn.nadir.hint') === '1')
+      nadirCut = -1
+      if (!previewWeapon) {
+        player.x = 0
+        player.z = 12
+        player.px = 0
+        player.pz = 12
+        player.yaw = Math.PI
+        player.prevYaw = Math.PI
+        follow.snap(0, 12)
+      }
+      sun.time = 0
+      nadirView = nadir.tick(0, 0, player.x, player.z, follow.camera)
+      applyNadirLook(nadirView)
+      syncNadirMusic(nadirView)
+      nadir.warm(gpu.renderer, follow.camera)
+      paintLinen(storageGet('noonsworn.dawn') === '1')
+      prewarmDraw()
+    } else if (activeMap === 'stair' && stair) {
+      nadir?.clear()
+      nadirView = null
+      restoreDayLook()
       cloister?.clear(false)
       lattice?.clear()
       outer.visible = false
@@ -1684,6 +1936,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       audio.lowpass(STAIR_LOW[0] ?? 20000)
       stairGlides.push({ t: 0, hz: STAIR_LOW[0] ?? 20000 })
     } else if (activeMap === 'lattice' && lattice) {
+      nadir?.clear()
+      nadirView = null
+      restoreDayLook()
       stair?.clear(false)
       cloister?.clear(false)
       outer.visible = true
@@ -1693,6 +1948,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       lattice.warm(gpu.renderer, follow.camera)
       prewarmDraw()
     } else if (activeMap === 'cloister' && cloister) {
+      nadir?.clear()
+      nadirView = null
+      restoreDayLook()
       stair?.clear(false)
       lattice?.clear()
       outer.visible = true
@@ -1715,6 +1973,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       cloister.warm(gpu.renderer, follow.camera)
       prewarmDraw()
     } else {
+      nadir?.clear()
+      nadirView = null
+      restoreDayLook()
       stair?.clear(true)
       cloister?.clear(false)
       outer.visible = true
@@ -1864,6 +2125,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     }
     if (import.meta.env.DEV && params.get('map') === 'stair') {
       wantMap = 'stair'
+      startRun()
+      return
+    }
+    if (import.meta.env.DEV && params.get('map') === 'nadir') {
+      wantMap = 'nadir'
       startRun()
       return
     }
@@ -2065,6 +2331,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     if (import.meta.env.DEV && params.get('map') === 'lattice') wantMap = 'lattice'
     if (import.meta.env.DEV && params.get('map') === 'cloister') wantMap = 'cloister'
     if (import.meta.env.DEV && params.get('map') === 'stair') wantMap = 'stair'
+    if (import.meta.env.DEV && params.get('map') === 'nadir') wantMap = 'nadir'
     requestAnimationFrame(() => startRun())
   } else if (turnWho) {
     requestAnimationFrame(() => startRun())
@@ -2248,16 +2515,19 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
         return false
       }
-      sun.timeScale = activeMap === 'stair' ? 1 : Math.max(0.4, 1 - 0.12 * build.longday)
-      if (!sun.frozen) sun.advance(dt)
+      sun.timeScale = activeMap === 'stair' ? 1 : activeMap === 'nadir' ? 0 : Math.max(0.4, 1 - 0.12 * build.longday)
+      if (!sun.frozen && activeMap !== 'nadir') sun.advance(dt)
+      if (activeMap === 'nadir' && nadirView?.stage === 'noon') sun.time = 0
       clockPacks()
       if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
       if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high', time)
-      temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
-      temple.mask(floor.uniforms.uWing.value)
-      temple.kinds(floor.uniforms.uKind.value)
-      const wing = floor.uniforms.uWing.value
-      wingFloor.visible = wing.x + wing.y + wing.z + wing.w > 0
+      if (activeMap !== 'nadir') {
+        temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
+        temple.mask(floor.uniforms.uWing.value)
+        temple.kinds(floor.uniforms.uKind.value)
+        const wing = floor.uniforms.uWing.value
+        wingFloor.visible = wing.x + wing.y + wing.z + wing.w > 0
+      } else wingFloor.visible = false
       if (activeMap === 'lattice') lattice?.veil()
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
       if (previewShow && previewWeapon !== 'halo') {
@@ -2294,7 +2564,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
       }
       const steppedFrom = time
-      time += dt
+      if (!(activeMap === 'nadir' && nadirView?.freezeTime)) time += dt
       noteHint(time, prevStep === 0 && steppedFrom === 0 ? 0 : prevStep)
       prevStep = time
       if (previewWeapon === 'flare' || previewWeapon === 'all') {
@@ -2338,6 +2608,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       let wishX = basis.rx * state.moveX + basis.fx * state.moveY
       let wishZ = basis.rz * state.moveX + basis.fz * state.moveY
+      if (activeMap === 'nadir' && nadirView && !nadirView.combat) {
+        wishX = 0
+        wishZ = 0
+        state.cutPressed = false
+      }
       if (previewShow || previewWeapon === 'hits') {
         wishX = 0
         wishZ = 0
@@ -2483,6 +2758,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
             build.might,
           )
         }
+        if (activeMap === 'nadir' && nadir && cut.id !== nadirCut) {
+          nadirCut = cut.id
+          nadir.crack(cut.sx, cut.sz, cut.sx + cut.dirX * TUNING.cut.distance, cut.sz + cut.dirZ * TUNING.cut.distance)
+        }
         if (cut.time - cutMark >= 0.04) {
           cutMark = cut.time
           const yaw = yawFromDirection(cut.dirX, cut.dirZ)
@@ -2504,7 +2783,17 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       fillCtx(dt)
       const cam = follow.camera.position
-      if (activeMap === 'stair' && stair) {
+      if (activeMap === 'nadir' && nadir) {
+        nadirView = nadir.tick(dt, time, player.x, player.z, follow.camera)
+        horde.bossAt = nadirView.boss
+        horde.bossLock = nadirView.lock
+        syncNadirMusic(nadirView)
+        applyNadirLook(nadirView)
+        if ((nadirView.stage === 'ending' || nadirView.stage === 'card') && storageGet('noonsworn.dawn') !== '1') {
+          storageSet('noonsworn.dawn', '1')
+          paintLinen(true)
+        }
+      } else if (activeMap === 'stair' && stair) {
         stair.tick(dt, time, build.wide, build.longday, player.x, player.z, cam.x, cam.z)
         horde.bossAt = stair.boss()
         horde.bossLock = horde.bossAt != null
@@ -2526,7 +2815,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         horde.bossLock = false
       }
       writeFloorPillars(floor.uniforms.uPillars.value, floor.uniforms.uPillarN)
-      if (!horde.frozen && !turnWho) {
+      if (!horde.frozen && !turnWho && activeMap !== 'nadir') {
         const poured = temple.takeSpawns()
         const bossUp = activeMap === 'lattice' && (lattice?.bossing() ?? false)
         const cloisterBoss = activeMap === 'cloister' && (cloister?.bossing() ?? false)
@@ -2557,7 +2846,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       w2?.mark(mapLit, writeShadow)
       const hordeT = performance.now()
-      horde.update(ctx)
+      const nadirHold = activeMap === 'nadir' && !!nadirView && !nadirView.combat
+      if (!nadirHold) horde.update(ctx)
       if (activeMap === 'stair' && time >= 15) {
         // Mite reach is 0.8 m and the shared push holds a crowd at 0.9 m, so on
         // an open terrace they never touch her. Hounds, which do connect, are
@@ -2587,24 +2877,24 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       setWeaponPassives(build.reach, build.endurance)
       spears.multitude = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
       const spearT = performance.now()
-      horde.dmgCap = build.level < TUNING.earlyLevel ? TUNING.earlyWeaponCap : 0
-      spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
+      horde.dmgCap = activeMap === 'nadir' ? 0 : build.level < TUNING.earlyLevel ? TUNING.earlyWeaponCap : 0
+      if (!nadirHold) spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
       profSpear += performance.now() - spearT
       const haloT = performance.now()
-      halo.update(dt, player.x, player.z, horde, build.halo, build.might, build.haste, time, ctx)
+      if (!nadirHold) halo.update(dt, player.x, player.z, horde, build.halo, build.might, build.haste, time, ctx)
       profHalo += performance.now() - haloT
       const flareT = performance.now()
-      if (!(previewShow && previewWeapon === 'flare')) {
+      if (!nadirHold && !(previewShow && previewWeapon === 'flare')) {
         flare.update(dt, player.x, player.z, horde, build.flare, build.haste, build.might, mapLit, ctx)
       }
       flareMs += performance.now() - flareT
       const bellT = performance.now()
-      if (!(previewShow && previewWeapon === 'bell')) {
+      if (!nadirHold && !(previewShow && previewWeapon === 'bell')) {
         bell.update(dt, player.x, player.z, horde, build.bell, build.haste, build.might, mapLit, ctx, playBell)
       }
       bellMs += performance.now() - bellT
       const multi = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
-      w2?.update(dt, player.x, player.z, horde, build.helio, build.scarab, build.stake, build.prism, multi, build.haste, build.might, mapLit, writeShadow, ctx, time)
+      if (!nadirHold) w2?.update(dt, player.x, player.z, horde, build.helio, build.scarab, build.stake, build.prism, multi, build.haste, build.might, mapLit, writeShadow, ctx, time)
       const wasReveal = chests.revealUp()
       const chestT = performance.now()
       chestEnv.rawDt = rawDt
@@ -2613,7 +2903,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       chestEnv.pz = player.z
       chestEnv.map = activeMap
       chestEnv.w2 = w2State
-      chests.update(chestEnv)
+      if (activeMap !== 'nadir') chests.update(chestEnv)
       chestMs += performance.now() - chestT
       if (!wasReveal && chests.revealUp() && mode === 'level') {
         levelUp.hide()
@@ -2635,6 +2925,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         return false
       }
       if (player.hp <= 0 && !dying) {
+        if (activeMap === 'nadir') nadir?.noteDeath()
         dying = true
         deathHold = 0.6
         hitStop = 0
@@ -2649,6 +2940,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
         return false
       }
+      if (activeMap === 'nadir') build.pending = 0
       if (build.pending > before) {
         if (previewWeapon) build.pending = before
         else if (chests.revealUp()) chests.holdBank()
@@ -2711,14 +3003,21 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
       }
       follow.update(x, z, frameSec, sx, sz)
-      if (activeMap === 'stair' && stair) {
+      if (activeMap === 'nadir' && nadir) {
+        const boss = nadir.bossPos()
+        gpu.sunLight.position.set(boss.x - 6, 9, boss.z + 8)
+        gpu.sunLight.target.position.set(boss.x, 0, boss.z)
+      } else if (activeMap === 'stair' && stair) {
         const aim = stair.lightOffset()
         gpu.sunLight.position.set(x + aim.x, aim.y, z + aim.z)
       } else {
         const len = Math.hypot(sun.x, sun.z) || 1
         gpu.sunLight.position.set(x + (sun.x / len) * 16, 11, z + (sun.z / len) * 16)
       }
-      gpu.sunLight.target.position.set(x, 0, z)
+      if (activeMap === 'nadir' && nadir) {
+        const boss = nadir.bossPos()
+        gpu.sunLight.target.position.set(boss.x, 0, boss.z)
+      } else gpu.sunLight.target.position.set(x, 0, z)
       const lookDist = follow.lookDistance()
       const fogNear = lookDist + TUNING.arena.fogAhead
       const fogFar = lookDist + TUNING.arena.fogSpan
@@ -2866,8 +3165,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         fx.unmask()
       }
       profBloom = performance.now() - bloomT
-      if (activeMap !== 'stair') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, cssH)
+      if (activeMap !== 'stair' && activeMap !== 'nadir') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, cssH)
       stats = gpu.readStats()
+      if (activeMap === 'nadir') nadir?.noteDraws(stats.calls)
       pushFrameSample(frameMs)
       xpWindowT += frameSec
       if (xpWindowT >= 1) {
@@ -2894,7 +3194,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
             charges: build.pending,
           })
         } else tutorial.conceal()
-        tips.update(frameSec)
+        if (activeMap !== 'nadir') tips.update(frameSec)
       } else tutorial.conceal()
       floor.uniforms.uEdgeBoost.value = tutorial.outlining() ? 0.7 : 0
       hud.setCharges(build.pending)
@@ -2911,6 +3211,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         sundialDay = dayClock
         sundial.root.classList.toggle('day', dayClock)
       }
+      if (activeMap === 'nadir') sundial.root.hidden = true
       sundial.set(
         sun.angle,
         mode === 'playing' || mode === 'level' ? time : sun.time,
@@ -2934,8 +3235,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           gateArrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(-ay, ax)}rad)`
         }
       }
-      const showLine = dayClock && mode === 'playing' && time < 4.5
+      const showLine = activeMap === 'nadir'
+        ? !!(nadirView?.showClock && (mode === 'playing' || mode === 'paused'))
+        : dayClock && mode === 'playing' && time < 4.5
+      if (activeMap === 'nadir' && nadirView?.showClock) objective.textContent = nadirView.clock
+      else if (objective.textContent !== 'Hold the court until noon.') objective.textContent = 'Hold the court until noon.'
       if (objective.hidden === showLine) objective.hidden = !showLine
+      if (activeMap === 'nadir') gateArrow.hidden = true
       paintBoss()
       paintThreats()
       if (debug.visible) {
@@ -3057,6 +3363,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         case 'lattice':
         case 'cloister':
         case 'stair':
+        case 'nadir':
           wantMap = id
           break
         default:
@@ -3159,7 +3466,20 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     espalier: () => (activeMap === 'lattice' && lattice ? lattice.bossInfo() : null),
     shutters: () => (activeMap === 'lattice' && lattice ? lattice.plateInfo() : null),
     latticeTris: () => (lattice ? lattice.tris() : null),
-    whenReady: () => stairGate ?? cloisterGate ?? latticeGate ?? Promise.resolve(),
+    whenReady: () => nadirGate ?? stairGate ?? cloisterGate ?? latticeGate ?? Promise.resolve(),
+    matins: () => {
+      descendNadir = false
+      wantMap = 'nadir'
+      startRun()
+    },
+    nadirPhase: (n: 1 | 2 | 3) => nadir?.jump(n),
+    nadirRays: (ids: readonly number[]) => nadir?.autoRays(ids),
+    nadirPose: (name: string) => nadir?.pose(name),
+    nadirInfo: () => (nadir ? nadir.info() : null),
+    nadirAgree: (points: { x: number; z: number }[]) => {
+      if (activeMap !== 'nadir' || !nadir) return { tested: 0, agree: 0 }
+      return nadir.agree(gpu.renderer, follow.camera, points, [playerView, horde.miteMesh, horde.houndMesh, horde.darterMesh, scatter, outer, floorMesh])
+    },
     water: () => (activeMap === 'cloister' && cloister ? cloister.info() : null),
     compline: () => (activeMap === 'cloister' && cloister ? { phase: cloister.phase(), boss: cloister.bossing(), clear: cloister.cleared(), times: cloister.times() } : null),
     debugPhase: (n: number) => {

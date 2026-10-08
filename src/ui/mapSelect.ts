@@ -1,5 +1,6 @@
 import type { MapId } from '../data/mapId'
 import { MAP_DEFS, type MapRecord } from '../data/maps'
+import { storageGet } from '../platform/storage'
 
 export type MapChoice = MapId
 
@@ -16,6 +17,7 @@ function lockLine(id: string, playable: boolean, open: boolean): string {
   if (id === 'lattice') return 'Hold Sundial Court for 5:00'
   if (id === 'cloister') return 'Clear Lattice Terraces to open'
   if (id === 'stair') return 'Clear the Brimming Cloister to open'
+  if (id === 'nadir') return 'Clear the Westering Stair to open'
   return 'Sealed'
 }
 
@@ -85,10 +87,18 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
         }
         const title = document.createElement('strong')
         title.textContent = def.name
+        if (def.id === 'sundial' && storageGet('noonsworn.dawn') === '1') {
+          const badge = document.createElement('span')
+          badge.className = 'dawn-badge'
+          badge.textContent = 'dawn'
+          title.append(badge)
+        }
         const hook = document.createElement('span')
         hook.textContent = def.hook
         const time = document.createElement('em')
-        time.textContent = best?.clear != null
+        time.textContent = def.id === 'nadir' && best?.clear != null
+          ? `Clear ${clock(best.clear)} · Night-Clock ${best.remain == null ? '—' : clock(best.remain)}`
+          : best?.clear != null
           ? `Clear ${clock(best.clear)} · ${best.clearKills ?? best.kills} kills`
           : best?.survived != null
             ? `Survived ${clock(best.survived)}`
@@ -135,7 +145,7 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
       }
       if (confirm) {
         const def = MAP_DEFS[focus]
-        if (def && (def.id === 'sundial' || def.id === 'lattice' || def.id === 'cloister' || def.id === 'stair')) choose(def.id)
+        if (def && (def.id === 'sundial' || def.id === 'lattice' || def.id === 'cloister' || def.id === 'stair' || def.id === 'nadir')) choose(def.id)
       }
       return null
     },

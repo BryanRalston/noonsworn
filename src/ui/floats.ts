@@ -6,7 +6,7 @@ interface Live {
   z: number
   t: number
   text: string
-  kind: 'hot' | 'spark' | 'pop' | 'arm' | 'crit'
+  kind: 'hot' | 'spark' | 'pop' | 'arm' | 'crit' | 'deflect'
   width: number
 }
 
@@ -16,10 +16,11 @@ const FONT = {
   arm: '700 16px system-ui, sans-serif',
   spark: '700 20px system-ui, sans-serif',
   crit: '700 22px system-ui, sans-serif',
+  deflect: '700 18px system-ui, sans-serif',
 } as const
 
 export interface Floats {
-  push: (x: number, z: number, text: string, kind: 'hot' | 'spark' | 'pop' | 'arm' | 'crit') => void
+  push: (x: number, z: number, text: string, kind: 'hot' | 'spark' | 'pop' | 'arm' | 'crit' | 'deflect') => void
   sync: (camera: Camera, width: number, height: number, dt: number) => void
 }
 
@@ -132,7 +133,7 @@ export function createFloats(parent: HTMLElement, _cap: number): Floats {
         ctx.translate(cx, cy)
         ctx.scale(pop, pop)
         ctx.strokeStyle = '#141225'
-        ctx.fillStyle = row.kind === 'crit' ? '#F2C14A' : row.kind === 'arm' ? '#c8c4d4' : '#fff3b0'
+        ctx.fillStyle = row.kind === 'crit' ? '#F2C14A' : row.kind === 'deflect' ? '#1A1424' : row.kind === 'arm' ? '#c8c4d4' : '#fff3b0'
         ctx.lineWidth = 4
         ctx.strokeText(row.text, 0, 0)
         ctx.fillText(row.text, 0, 0)

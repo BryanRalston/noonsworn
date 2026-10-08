@@ -68,6 +68,19 @@ export const MAP_DEFS: MapDef[] = [
     unlock: 'cloister',
     playable: true,
   },
+  {
+    id: 'nadir',
+    name: 'Nadir Court',
+    hook: 'Stand in its light.',
+    footprint: 48,
+    pillars: 'sanctum',
+    cookie: null,
+    keyart: null,
+    wave: 'nadir',
+    boss: 'Matins',
+    unlock: 'stair',
+    playable: true,
+  },
 ]
 
 /** Pergola posts. These replace the four sanctum pillars while Lattice is active. */
@@ -93,6 +106,8 @@ export interface MapBest {
   /** Longest survival. A clear never replaces this, and this never replaces a clear. */
   survived?: number
   survivedKills?: number
+  /** Best Night-Clock remaining on a finale clear. Higher is better. */
+  remain?: number
 }
 
 export interface MapRecord {
@@ -123,6 +138,8 @@ function cleanBest(value: unknown): Record<string, MapBest> {
       if (typeof clearKills === 'number' && Number.isFinite(clearKills)) best.clearKills = clearKills
       if (typeof survived === 'number' && Number.isFinite(survived)) best.survived = survived
       if (typeof survivedKills === 'number' && Number.isFinite(survivedKills)) best.survivedKills = survivedKills
+      const remain = (row as { remain?: unknown }).remain
+      if (typeof remain === 'number' && Number.isFinite(remain)) best.remain = remain
       out[key] = best
     }
   }
@@ -136,9 +153,11 @@ export function loadMaps(): MapRecord {
     const parsed = JSON.parse(raw) as { unlocked?: unknown; best?: unknown; last?: unknown; seen?: unknown }
     const unlocked = Array.isArray(parsed.unlocked) ? parsed.unlocked.filter((id): id is string => typeof id === 'string') : ['sundial']
     if (!unlocked.includes('sundial')) unlocked.unshift('sundial')
+    const best = cleanBest(parsed.best)
+    if (best.stair?.clear != null && !unlocked.includes('nadir')) unlocked.push('nadir')
     const last = typeof parsed.last === 'string' ? parsed.last : 'sundial'
     const seen = Array.isArray(parsed.seen) ? parsed.seen.filter((id): id is string => typeof id === 'string') : []
-    return { unlocked, best: cleanBest(parsed.best), last, seen }
+    return { unlocked, best, last, seen }
   } catch {
     return fresh()
   }
@@ -155,12 +174,12 @@ export function rememberMap(id: string) {
 }
 
 /** A clear keeps the faster clear. A death keeps the longer survival and never replaces a clear. */
-export function noteRun(mapId: string, time: number, kills: number, cleared: boolean): boolean {
+export function noteRun(mapId: string, time: number, kills: number, cleared: boolean, remain?: number): boolean {
   const rec = loadMaps()
   const prev = rec.best[mapId]
   if (!prev) {
     rec.best[mapId] = cleared
-      ? { time, kills, clear: time, clearKills: kills }
+      ? { time, kills, clear: time, clearKills: kills, remain }
       : { time, kills, survived: time, survivedKills: kills }
   } else if (cleared) {
     if (prev.clear == null || time < prev.clear) {
@@ -169,6 +188,7 @@ export function noteRun(mapId: string, time: number, kills: number, cleared: boo
       prev.time = time
       prev.kills = kills
     }
+    if (typeof remain === 'number' && (prev.remain == null || remain > prev.remain)) prev.remain = remain
   } else {
     const lived = prev.survived ?? (prev.clear == null ? prev.time : 0)
     if (time > lived) {
@@ -191,6 +211,10 @@ export function noteRun(mapId: string, time: number, kills: number, cleared: boo
   }
   if (cleared && mapId === 'cloister' && !rec.unlocked.includes('stair')) {
     rec.unlocked.push('stair')
+    opened = true
+  }
+  if (cleared && mapId === 'stair' && !rec.unlocked.includes('nadir')) {
+    rec.unlocked.push('nadir')
     opened = true
   }
   saveMaps(rec)
