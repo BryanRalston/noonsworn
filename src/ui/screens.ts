@@ -278,7 +278,9 @@ export function createScreens(parent: HTMLElement): Screens {
       }
       endRetry.hidden = !view.retry
       endTemple.hidden = !view.temple
-      endRevive.hidden = !view.revive
+      // The rewarded revive is still a stub. Keep the button in the DOM and do not show it.
+      endRevive.hidden = true
+      endRecord.hidden = view.record.length === 0
       endIcons.replaceChildren()
       for (let i = 0; i < view.icons.length; i++) {
         const icon = view.icons[i]
@@ -319,7 +321,7 @@ export function createScreens(parent: HTMLElement): Screens {
         if (detail) endDetail.textContent = detail
       }
       if (next === 'menu' || next === 'paused' || next === 'splash') focus = 0
-      sync()
+      if (next !== 'level') sync()
       paintFocus()
     },
     navigate(dx, dy, confirm) {

@@ -288,7 +288,7 @@ export function createTutorial(parent: HTMLElement, scene: Scene): Tutorial {
         return
       }
       const offer = document.getElementById('level-up')
-      if (offer && !offer.hidden) {
+      if (offer && offer.classList.contains('show')) {
         label.hidden = true
         hideArrow()
         timer += dt

@@ -65,7 +65,7 @@ export function createTips(parent: HTMLElement): Tips {
     update(dt) {
       if (!enabled) return
       const strip = document.getElementById('level-up')
-      const offering = !!strip && !strip.hidden
+      const offering = !!strip && strip.classList.contains('show')
       if (offering && current?.id === 'boon') {
         root.hidden = true
         return

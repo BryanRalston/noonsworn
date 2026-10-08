@@ -9,7 +9,8 @@ export function waveAt(time: number): { rate: number; min: number; hound: number
   // Hound rolls start at houndChanceAt so the pack shares the opening hound's floor.
   if (time >= 40) {
     const rate = 1.2 + (surge ? 18 : 12.8) * ease
-    const min = Math.min(240, Math.round(8 + 232 * ease))
+    // Ten under the shared cap so a hound can still enter without a relocate.
+    const min = Math.min(TUNING.hordeCap - 10, Math.round(8 + 232 * ease))
     const hound = time < TUNING.houndChanceAt ? 0 : time < 180 ? 0.2 : surge ? 0.35 : 0.3
     const pack = time >= 60 && time < 300 ? (surge ? 36 : 25) : 0
     return { rate, min, hound, pack, surge }

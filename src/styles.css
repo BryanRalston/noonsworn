@@ -371,7 +371,7 @@ canvas.fade-death { filter: saturate(0.2); }
 #gate-tick { fill: var(--sandstone); }
 
 #level-up { background: none; }
-#level-up[hidden], #feature-map[hidden], #debug[hidden] { display: none !important; }
+#feature-map[hidden], #debug[hidden] { display: none !important; }
 #feature-map:not([hidden]) {
   z-index: 40;
   pointer-events: auto;
@@ -395,13 +395,12 @@ canvas.fade-death { filter: saturate(0.2); }
   background: color-mix(in srgb, var(--ink) 88%, transparent);
   border-top: 1px solid var(--shade);
   transform: translateY(110%);
-  transition: transform 150ms ease;
-  pointer-events: auto;
+  pointer-events: none;
   overflow: visible;
 }
-body:has(#level-up:not([hidden])) #touch-root,
-body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
-#level-up .strip.open { transform: translateY(0); }
+#touch-root.level-hide,
+#btn-halo.level-hide { visibility: hidden; }
+#level-up .strip.open { transform: translateY(0); pointer-events: auto; }
 #level-up .strip.sunlit { border-top: 2px solid var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 .strip-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 0 0 auto; }
 .strip-tag { color: var(--goldHot); font: 700 11px/1 system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -414,13 +413,11 @@ body:has(#level-up:not([hidden])) #btn-halo { visibility: hidden; }
 #level-up #cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; align-items: stretch; }
 #level-up .card { min-height: 0; padding: 6px 6px 8px; gap: 2px; border-radius: 10px; overflow: visible; }
 #level-up .card-icon { width: 28px; height: 28px; flex: 0 0 auto; }
-#level-up .card strong { font-size: 12px; line-height: 1.15; }
+#level-up .card strong { display: block; height: 2.3em; font-size: 12px; line-height: 1.15; overflow: hidden; }
 #level-up .card-line {
   color: var(--sandstone);
   font: 11px/1.2 system-ui, sans-serif;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  height: 2.4em;
   overflow: hidden;
 }
 #level-up .pips { flex: 0 0 auto; }

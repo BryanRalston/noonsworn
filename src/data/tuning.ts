@@ -35,8 +35,8 @@ export const TUNING = {
   packEvery: 60,
   packRadius: 20,
   packArc: 1.4,
-  houndAt: 40,
-  // Random hounds share the 40s floor. A 45s start left a still player alive past a minute.
+  // Scripted sundial hound. 40s left seed 22 standing past a minute; random rolls stay later.
+  houndAt: 35,
   houndChanceAt: 40,
   houndFirstDist: 14,
   houndLate: 180,
@@ -319,13 +319,14 @@ export const TUNING = {
     twelvefold: { every: 8, tolls: 12, window: 3, r0: 2, r1: 9, mul: 0.6, shove: 0.4, daze: 1, healCap: 25, height: 3.4, boss: 0.06 },
     solar: { mirrors: 3, radius: 2.2, tick: 0.15, chain: 3, mul: 0.35, retarget: 0.2, boss: 1.7 },
     sunroller: { scarab: 2.3, ball: 2.2, near: 5, far: 7, damage: 40, knock: 1.5, gap: 0.5, light: 2.5, tail: 1, ferry: 15, ferryMax: 6, boss: 0.3 },
-    obelisk: { max: 4, height: 2.8, life: 12, plant: 3, sweep: 90, damage: 18, gap: 0.5, fence: 9, fenceW: 0.45, fenceDmg: 10, fenceGap: 0.5, boss: 0.3 },
+    obelisk: { max: 4, height: 2.8, life: 12, plant: 3, sweep: 90, damage: 18, gap: 0.5, fence: 9, fenceW: 0.45, fenceDmg: 10, fenceGap: 0.5, boss: 0.18 },
     mocksun: { dogs: 2, orbit: 4, period: 2.5, split: 3, volley: 16, alive: 32, run: 6, litStep: 1 / 30, boss: 0.25 },
     chest: { sun: 2, fallback: 25, near: 8, far: 14, wideNear: 6, wideFar: 18 },
     reveal: { slow: 0.8, total: 2, skip: 0.3, holdMs: 150 },
   },
   healCard: 30,
-  hordeCap: 400,
+  // One crowd on every tier. Phones draw this many; the wave floor sits just under it.
+  hordeCap: 250,
   adsFakeMs: 1000,
   temple: {
     gate: 8,

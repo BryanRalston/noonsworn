@@ -810,9 +810,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           : `Clear ${clockText(time)} · best ${clockText(prev)}`
     } else {
       const prev = before?.survived ?? (before?.clear == null ? before?.time : undefined)
-      if (prev == null) record = `Survived ${clockText(time)}`
-      else if (time > prev) record = `Survived ${clockText(time)} · +${Math.round(time - prev)}s`
-      else record = `Survived ${clockText(time)} · best ${clockText(prev)}`
+      if (prev != null) {
+        const best = Math.max(time, prev)
+        const gap = Math.abs(time - prev)
+        record = `Best ${clockText(best)} (+${clockText(gap)})`
+      }
     }
     let progress = ''
     if (cleared && nxt) progress = `${nxt.name} opened`
@@ -831,7 +833,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       primaryAction: cleared ? (nxt ? 'next' : 'menu') : 'retry',
       retry: cleared,
       temple: true,
-      revive: !cleared,
+      revive: false,
     })
   }
 
@@ -929,12 +931,17 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     }
   }
 
+  const edgePaint = new Map<HTMLElement, string>()
+  function hideEdge(el: HTMLElement) {
+    if (!el.hidden) el.hidden = true
+    edgePaint.delete(el)
+  }
   function placeEdge(el: HTMLElement, x: number, z: number): boolean {
     arrowPoint.set(x, 1.2, z).project(follow.camera)
     const behind = arrowPoint.z > 1
     const off = behind || Math.abs(arrowPoint.x) > 0.92 || Math.abs(arrowPoint.y) > 0.92
     if (!off) {
-      if (!el.hidden) el.hidden = true
+      hideEdge(el)
       return false
     }
     let ax = arrowPoint.x
@@ -946,16 +953,24 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     const mag = Math.hypot(ax, ay) || 1
     const ux = ax / mag
     const uy = ay / mag
+    const left = `${Math.round((ux * 0.42 + 0.5) * cssW)}px`
+    const top = `${Math.round((-uy * 0.42 + 0.5) * cssH)}px`
+    const rot = `translate(-50%, -50%) rotate(${Math.atan2(-uy, ux).toFixed(3)}rad)`
+    const key = `${left}|${top}|${rot}`
     if (el.hidden) el.hidden = false
-    el.style.left = `${(ux * 0.42 + 0.5) * cssW}px`
-    el.style.top = `${(-uy * 0.42 + 0.5) * cssH}px`
-    el.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(-uy, ux)}rad)`
+    if (edgePaint.get(el) !== key) {
+      edgePaint.set(el, key)
+      el.style.left = left
+      el.style.top = top
+      el.style.transform = rot
+    }
     return true
   }
 
   function paintThreats() {
     let n = 0
-    if (mode === 'playing' || mode === 'level') {
+    // The level strip covers the playfield. Writing arrow styles there forces a layout after the frame.
+    if (mode === 'playing') {
       horde.visit((ex, ez, kind) => {
         if (kind !== 1 || n >= THREAT_N) return
         const el = threats[n]
@@ -965,7 +980,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     }
     for (let i = n; i < THREAT_N; i++) {
       const el = threats[i]
-      if (el && !el.hidden) el.hidden = true
+      if (el && !el.hidden) hideEdge(el)
     }
   }
 
@@ -973,7 +988,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     const live = bossView
     if (!live || (mode !== 'playing' && mode !== 'level')) {
       if (!bossCard.hidden) bossCard.hidden = true
-      if (!bossArrow.hidden) bossArrow.hidden = true
+      if (!bossArrow.hidden) hideEdge(bossArrow)
       return
     }
     if (bossCard.hidden) bossCard.hidden = false
@@ -997,7 +1012,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       bossPhaseText = phase
       bossPhaseEl.textContent = phase
     }
-    placeEdge(bossArrow, live.x, live.z)
+    if (mode === 'playing') placeEdge(bossArrow, live.x, live.z)
+    else if (!bossArrow.hidden) hideEdge(bossArrow)
   }
 
   // setSize clears the drawing buffer. Auto-resolution used to do that after
@@ -1103,9 +1119,19 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let haloLock = 0
   function offerFirst() {
     firstOffer = false
-    openLevel()
+    const sunlit = litAt(player.x, player.z)
+    offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
+    noteOffer(offerCount)
     hitStop = Math.max(hitStop, 0.4)
-    showToast('Later picks bank on the halo.', 3.4)
+    mode = 'level'
+    const cards = shown.slice(0, offerCount)
+    // The strip's text layout stays off this sim frame. The hook measures the next turn on its own.
+    requestAnimationFrame(() => {
+      levelUp.show(cards, sunlit, (id) => rankOf(build, id))
+      buzz(18)
+      showMode('level')
+      showToast('Later picks bank on the halo.', 3.4)
+    })
   }
   function closeOffer() {
     levelUp.hide()
@@ -1196,11 +1222,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   function parkToast() {
     toast.style.top = ''
     toast.style.bottom = ''
+    // A live measurement here forces layout in the same turn the strip is built.
     const offer = document.getElementById('level-up')
-    const strip = offer?.querySelector('.strip')
-    if (offer && !offer.hidden && strip instanceof HTMLElement && strip.offsetHeight > 0) {
-      const inset = Number.parseFloat(getComputedStyle(strip).bottom) || 0
-      toast.style.bottom = `${Math.round(strip.offsetHeight + inset + 12)}px`
+    if (offer && offer.classList.contains('show')) {
+      toast.style.bottom = 'calc(34px + 320px + 12px)'
       return
     }
     const end = document.getElementById('end-screen')
@@ -1386,6 +1411,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let drawZ = 0
   let cssW = 1
   let cssH = 1
+  // innerWidth flushes layout. Read it on resize, not on the frame that opens the strip.
+  const readCss = () => {
+    cssW = window.innerWidth || 1
+    cssH = window.innerHeight || 1
+  }
+  readCss()
+  window.addEventListener('resize', readCss)
   function stairCrowd(x: number, z: number, radius: number) {
     if (radius > 0.4) return null
     const dx = x - player.x
@@ -1607,11 +1639,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     if (devTools() && !previewWeapon && (arsenalParam === 'l1' || arsenalParam === 'l5' || arsenalParam === 'l5x8')) {
       const requested = Number(params.get('n') ?? '0')
       if (Number.isFinite(requested) && requested > 0) {
-        const swarm = Math.max(1, Math.min(400, requested))
+        const swarm = Math.max(1, Math.min(TUNING.hordeCap, requested))
         for (let i = 0; i < swarm; i++) {
           const ang = i * 2.399963
           const dist = 6 + (i % 12) * 0.45
-          horde.spawn(i % 17 === 0 ? 1 : 0, Math.cos(ang) * dist, Math.sin(ang) * dist, false, 400, 0, 0)
+          horde.spawn(i % 17 === 0 ? 1 : 0, Math.cos(ang) * dist, Math.sin(ang) * dist, false, TUNING.hordeCap, 0, 0)
         }
       }
     }
@@ -1737,9 +1769,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     quality.forceTier(tierName)
     quality.setDynresEnabled(false)
     const heavy = all || params.get('bench') === '1'
-    const requested = Number(params.get('n') ?? (heavy ? '400' : '90'))
-    let swarm = Number.isFinite(requested) ? requested : heavy ? 400 : 90
-    swarm = heavy ? Math.max(1, Math.min(400, swarm)) : Math.max(60, Math.min(120, swarm))
+    const requested = Number(params.get('n') ?? (heavy ? String(TUNING.hordeCap) : '90'))
+    let swarm = Number.isFinite(requested) ? requested : heavy ? TUNING.hordeCap : 90
+    swarm = heavy ? Math.max(1, Math.min(TUNING.hordeCap, swarm)) : Math.max(60, Math.min(120, swarm))
     if (previewShow) {
       showX = previewWeapon === 'hits' ? 11 : 0
       showZ = 0
@@ -1758,7 +1790,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       const ring = 16
       for (let i = 0; i < ring; i++) {
         const a = (i / ring) * Math.PI * 2
-        horde.spawn(0, showX + Math.cos(a) * 7, showZ + Math.sin(a) * 7, false, 400, showX, showZ)
+        horde.spawn(0, showX + Math.cos(a) * 7, showZ + Math.sin(a) * 7, false, TUNING.hordeCap, showX, showZ)
       }
       horde.frozen = true
       showIn = 0.08
@@ -1771,14 +1803,14 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       for (let i = 0; i < 8; i++) {
         const z = ((i % 4) - 1.5) * 0.7
         const row = Math.floor(i / 4)
-        horde.spawn(0, 8.2 + row * 0.4, z, false, 400, 12, 0)
-        horde.spawn(0, 15.1 + row * 0.35, z, false, 400, 12, 0)
+        horde.spawn(0, 8.2 + row * 0.4, z, false, TUNING.hordeCap, 12, 0)
+        horde.spawn(0, 15.1 + row * 0.35, z, false, TUNING.hordeCap, 12, 0)
       }
     } else {
       for (let i = 0; i < swarm; i++) {
         const ang = i * 2.399963
         const dist = heavy ? 6 + (i % 12) * 0.5 : 6 + (i % 8) * 0.75
-        horde.spawn(i % 14 === 0 ? 1 : 0, Math.cos(ang) * dist, Math.sin(ang) * dist, false, 400, 0, 0)
+        horde.spawn(i % 14 === 0 ? 1 : 0, Math.cos(ang) * dist, Math.sin(ang) * dist, false, TUNING.hordeCap, 0, 0)
       }
     }
     flare.cooldown = 0.15
@@ -2619,23 +2651,23 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         if (mode === 'level' && build.pending > 0) levelUp.show(shown.slice(0, offerCount), litAt(player.x, player.z), (id) => rankOf(build, id))
       }
       if (previewWeapon && params.get('bench') === '1') {
-        const want = Math.max(1, Math.min(400, Number(params.get('n') ?? '400') || 400))
+        const want = Math.max(1, Math.min(TUNING.hordeCap, Number(params.get('n') ?? String(TUNING.hordeCap)) || TUNING.hordeCap))
         let guard = 0
         while (horde.count() < want && guard < 80) {
           const ang = guard * 2.399 + time
           const dist = 8 + (guard % 10) * 0.7
-          horde.spawn(guard % 14 === 0 ? 1 : 0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, 400, player.x, player.z)
+          horde.spawn(guard % 14 === 0 ? 1 : 0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, TUNING.hordeCap, player.x, player.z)
           guard++
         }
       }
       if (import.meta.env.DEV && activeMap === 'stair' && params.get('bench') === '1' && !previewWeapon) {
         player.invuln = 1e6
-        const want = Math.max(1, Math.min(400, Number(params.get('n') ?? '400') || 400))
+        const want = Math.max(1, Math.min(TUNING.hordeCap, Number(params.get('n') ?? String(TUNING.hordeCap)) || TUNING.hordeCap))
         let guard = 0
         while (horde.count() < want && guard < 80) {
           const ang = guard * 2.399 + time
           const dist = 8 + (guard % 10) * 0.7
-          horde.spawn(0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, 400, player.x, player.z)
+          horde.spawn(0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, TUNING.hordeCap, player.x, player.z)
           guard++
         }
       }
@@ -2643,8 +2675,6 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       return hitStop <= 0
     },
     render(alpha, frameSec, frameMs) {
-      cssW = window.innerWidth || 1
-      cssH = window.innerHeight || 1
       if (presentationDue) {
         presentationDue = false
         applyPresentation()
@@ -2878,7 +2908,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         dayClock ? { down: true, length: TUNING.runLength } : { down: true, length: 270 },
       )
       const aim = temple.arrow()
-      if (!aim || (mode !== 'playing' && mode !== 'level')) gateArrow.hidden = true
+      if (!aim || mode !== 'playing') gateArrow.hidden = true
       else {
         arrowPoint.set(aim.x, 1.2, aim.z).project(follow.camera)
         const off = Math.abs(arrowPoint.x) > 0.9 || Math.abs(arrowPoint.y) > 0.9 || arrowPoint.z > 1

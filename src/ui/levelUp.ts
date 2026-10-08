@@ -38,7 +38,7 @@ export interface LevelUp {
 export function createLevelUp(parent: HTMLElement): LevelUp {
   const root = document.createElement('div')
   root.id = 'level-up'
-  root.hidden = true
+  root.setAttribute('aria-hidden', 'true')
   root.innerHTML = `<div class="strip"><div class="strip-head"><div class="strip-tag"></div><button type="button" id="level-close">Back</button></div><div id="cards"></div></div>`
   parent.append(root)
   const cards = root.querySelector('#cards') as HTMLElement
@@ -47,12 +47,63 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
   const close = root.querySelector('#level-close') as HTMLButtonElement
   close.setAttribute('aria-label', 'Back, keep the charge')
   let atlas = ''
+  let atlasOn = false
   let focus = 0
   let count = 0
   let touchPick = false
+  const slots: HTMLButtonElement[] = []
   function paintFocus() {
-    const buttons = cards.querySelectorAll('button')
-    buttons.forEach((btn, i) => btn.classList.toggle('focus', i === focus))
+    for (let i = 0; i < slots.length; i++) slots[i]?.classList.toggle('focus', i === focus)
+  }
+  function ensureSlot(i: number): HTMLButtonElement {
+    const existing = slots[i]
+    if (existing) return existing
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.innerHTML = '<span class="card-icon"></span><strong></strong><i class="pair-mark" hidden>pair</i><span class="card-line"></span><span class="pips"></span>'
+    btn.addEventListener('pointerup', (e) => {
+      if (e.pointerType !== 'touch') return
+      e.preventDefault()
+      touchPick = true
+      ui.onPick?.(i)
+      holdTouch(() => {
+        touchPick = false
+      })
+    })
+    btn.addEventListener('click', () => {
+      if (touchPick) return
+      ui.onPick?.(i)
+    })
+    btn.addEventListener('pointerenter', () => {
+      focus = i
+      paintFocus()
+    })
+    cards.append(btn)
+    slots[i] = btn
+    return btn
+  }
+  function warm() {
+    for (let i = 0; i < 4; i++) {
+      const btn = ensureSlot(i)
+      const icon = btn.querySelector('.card-icon') as HTMLElement
+      icon.style.setProperty('--i', String(i))
+      const line = btn.querySelector('.card-line') as HTMLElement
+      line.textContent = 'Warm the card line so the first offer does not shape new text.'
+      const name = btn.querySelector('strong') as HTMLElement
+      name.textContent = 'Warm'
+      paintPips(btn.querySelector('.pips') as HTMLElement, 1, 2, 5)
+    }
+    strip.style.opacity = '0'
+    strip.style.pointerEvents = 'none'
+    strip.classList.add('open')
+    void strip.offsetHeight
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        strip.classList.remove('open')
+        strip.style.opacity = ''
+        strip.style.pointerEvents = ''
+      })
+    })
   }
   const ui: LevelUp = {
     root,
@@ -60,11 +111,28 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
     onClose: null,
     arm(url) {
       atlas = url
+      const img = new Image()
+      img.decoding = 'async'
+      img.src = url
+      root.style.setProperty('--card-atlas', `url("${url}")`)
+      document.documentElement.style.setProperty('--card-atlas', `url("${url}")`)
+      atlasOn = true
+      const paint = () => {
+        const scratch = document.createElement('canvas')
+        scratch.width = 8
+        scratch.height = 8
+        const ctx = scratch.getContext('2d')
+        if (ctx && img.naturalWidth > 0) ctx.drawImage(img, 0, 0, 8, 8)
+        warm()
+      }
+      if (typeof img.decode === 'function') void img.decode().then(paint).catch(paint)
+      else paint()
     },
     show(list, sunlit, rank) {
-      if (atlas) {
+      if (atlas && !atlasOn) {
         root.style.setProperty('--card-atlas', `url("${atlas}")`)
         document.documentElement.style.setProperty('--card-atlas', `url("${atlas}")`)
+        atlasOn = true
       }
       count = list.length
       focus = 0
@@ -77,43 +145,37 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
           ? 'Tap a card · Back keeps the charge'
           : '1  2  3   ·   Esc keeps the charge'
       strip.classList.toggle('sunlit', sunlit)
-      cards.replaceChildren()
       for (let i = 0; i < list.length; i++) {
         const card = list[i]
         if (!card) continue
-        const btn = document.createElement('button')
-        btn.type = 'button'
+        const btn = ensureSlot(i)
+        btn.hidden = false
         btn.className = card.from === 'new' ? 'card new' : 'card'
-        const pair = rank ? completesPair(card.id, rank) : false
-        const pips = pipRow(card.rank, card.next, card.max)
-        btn.innerHTML = `<span class="card-icon" style="--i:${card.id}"></span><strong>${card.name}</strong>${pair ? '<i class="pair-mark">pair</i>' : ''}<span class="card-line">${card.text}</span>${pips}`
-        btn.addEventListener('pointerup', (e) => {
-          if (e.pointerType !== 'touch') return
-          e.preventDefault()
-          touchPick = true
-          ui.onPick?.(i)
-          holdTouch(() => {
-            touchPick = false
-          })
-        })
-        btn.addEventListener('click', () => {
-          if (touchPick) return
-          ui.onPick?.(i)
-        })
-        btn.addEventListener('pointerenter', () => {
-          focus = i
-          paintFocus()
-        })
-        cards.append(btn)
+        const icon = btn.querySelector('.card-icon') as HTMLElement
+        icon.style.setProperty('--i', String(card.id))
+        const name = btn.querySelector('strong') as HTMLElement
+        if (name.textContent !== card.name) name.textContent = card.name
+        const line = btn.querySelector('.card-line') as HTMLElement
+        if (line.textContent !== card.text) line.textContent = card.text
+        const mark = btn.querySelector('.pair-mark') as HTMLElement
+        mark.hidden = !(rank && completesPair(card.id, rank))
+        paintPips(btn.querySelector('.pips') as HTMLElement, card.rank, card.next, card.max)
       }
-      root.hidden = false
-      strip.classList.remove('open')
-      requestAnimationFrame(() => strip.classList.add('open'))
+      for (let i = list.length; i < slots.length; i++) {
+        const extra = slots[i]
+        if (extra) extra.hidden = true
+      }
+      root.setAttribute('aria-hidden', 'false')
+      root.classList.add('show')
+      strip.classList.add('open')
+      setLevelChrome(true)
       paintFocus()
     },
     hide() {
       strip.classList.remove('open')
-      root.hidden = true
+      root.classList.remove('show')
+      root.setAttribute('aria-hidden', 'true')
+      setLevelChrome(false)
       count = 0
     },
     move(dir) {
@@ -152,14 +214,22 @@ function bindTouch(el: HTMLElement, fn: () => void) {
   })
 }
 
-function pipRow(rank: number, next: number, max: number): string {
-  if (max <= 1 && rank <= 0) return '<span class="pips"></span>'
-  let html = '<span class="pips">'
-  const dots = Math.max(max, 1)
-  for (let i = 1; i <= dots; i++) {
-    const cls = i <= rank ? 'on' : i <= next ? 'next' : ''
-    html += `<i class="${cls}"></i>`
+function setLevelChrome(open: boolean): void {
+  document.getElementById('touch-root')?.classList.toggle('level-hide', open)
+  document.getElementById('btn-halo')?.classList.toggle('level-hide', open)
+}
+
+function paintPips(el: HTMLElement, rank: number, next: number, max: number): void {
+  if (max <= 1 && rank <= 0) {
+    el.replaceChildren()
+    return
   }
-  html += '</span>'
-  return html
+  const dots = Math.max(max, 1)
+  while (el.childElementCount < dots) el.append(document.createElement('i'))
+  while (el.childElementCount > dots) el.lastElementChild?.remove()
+  for (let i = 0; i < dots; i++) {
+    const pip = el.children[i] as HTMLElement
+    const n = i + 1
+    pip.className = n <= rank ? 'on' : n <= next ? 'next' : ''
+  }
 }
