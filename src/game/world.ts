@@ -492,6 +492,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let hitStop = 0
   let dying = false
   let deathHold = 0
+  // Set once the ending best has been read and the run recorded. A later step must not record again.
+  let runNoted = false
   let firstOffer = true
   let lastHurt = 'the shade'
   let bossWas = false
@@ -811,9 +813,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     } else {
       const prev = before?.survived ?? (before?.clear == null ? before?.time : undefined)
       if (prev != null) {
-        const best = Math.max(time, prev)
-        const gap = Math.abs(time - prev)
-        record = `Best ${clockText(best)} (+${clockText(gap)})`
+        if (time > prev) record = `New best! ${clockText(time)} (+${clockText(time - prev)})`
+        else record = `Best ${clockText(prev)} (+${clockText(prev - time)})`
       }
     }
     let progress = ''
@@ -1035,6 +1036,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   applyPresentation()
 
   function showMode(next: ScreenMode) {
+    // The result line is the best from before this run. Recording first makes the run compare against itself.
+    if (runNoted && (next === 'dead' || next === 'clear')) return
     mode = next
     screens.setMode(next, next === 'dead' || next === 'clear' ? endDetail() : undefined)
     const playUi = next === 'playing' || next === 'paused' || next === 'level'
@@ -1047,6 +1050,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (next === 'dead') audio.death()
       else audio.win()
       const before = loadMaps().best[activeMap]
+      runNoted = true
       const opened = noteRun(activeMap, time, kills, next === 'clear')
       fillEnd(next === 'clear', before)
       if (activeMap === 'stair' && next === 'clear') {
@@ -1616,6 +1620,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     hitStop = 0
     dying = false
     deathHold = 0
+    runNoted = false
     firstOffer = true
     lastHurt = 'the shade'
     bossWas = false
@@ -2235,8 +2240,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (chests.slowing()) dt *= 0.15
       const state = first ? frame : held
       if (clearedNow()) {
-        showMode('clear')
-        bus.emit('runEnd', { victory: true, time, kills, level: build.level })
+        if (mode !== 'clear') {
+          showMode('clear')
+          bus.emit('runEnd', { victory: true, time, kills, level: build.level })
+        }
         return false
       }
       sun.timeScale = activeMap === 'stair' ? 1 : Math.max(0.4, 1 - 0.12 * build.longday)
@@ -2619,8 +2626,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, onGem)
       noteBoss(rawDt)
       if (clearedNow()) {
-        showMode('clear')
-        bus.emit('runEnd', { victory: true, time, kills, level: build.level })
+        if (mode !== 'clear') {
+          showMode('clear')
+          bus.emit('runEnd', { victory: true, time, kills, level: build.level })
+        }
         return false
       }
       if (player.hp <= 0 && !dying) {
@@ -2632,8 +2641,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (dying) {
         deathHold -= rawDt
         if (deathHold > 0) return true
-        showMode('dead')
-        bus.emit('runEnd', { victory: false, time, kills, level: build.level })
+        if (mode !== 'dead') {
+          showMode('dead')
+          bus.emit('runEnd', { victory: false, time, kills, level: build.level })
+        }
         return false
       }
       if (build.pending > before) {
