@@ -342,6 +342,8 @@ export interface NadirInfo {
   p3at: number
   result: string
   draws: number
+  /** Peak on frames the Five Rays panel or the result card covers. Not the play gate. */
+  warmDraws: number
   source: string
   tell: { kind: string; t: number; dur: number; ang: number; x: number; z: number; r: number } | null
 }
@@ -425,7 +427,7 @@ export interface NadirHandle {
   skip: () => void
   info: () => NadirInfo
   warm: (renderer: WebGLRenderer, camera: Camera) => void
-  noteDraws: (n: number) => void
+  noteDraws: (n: number, visible: boolean) => void
   bossPos: () => { x: number; z: number }
   primeHint: (seen: boolean) => void
   noteDeath: () => void
@@ -577,6 +579,7 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
   let p3at = -1
   let result = 'live'
   let peakDraws = 0
+  let warmPeak = 0
   let hintSeen = false
   let scarT = 0
   let shutAng = 0
@@ -1362,6 +1365,8 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
       shutterHits = 0
       p3at = -1
       result = 'live'
+      peakDraws = 0
+      warmPeak = 0
       scarT = 0
       shutClose = 0
       seamLive = false
@@ -1515,7 +1520,7 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
         duck,
         music,
         sworn: endingT >= 10.5,
-        warmUp: (stage === 'draft' || stage === 'silence') && !warmed,
+        warmUp: stage === 'draft' && !warmed,
       }
     },
     soak(x, z, radius, base, source, might, stamp) {
@@ -1694,10 +1699,10 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
         tideR = 8
         fightT = N.clock
         clockPin = N.clock
-      } else if (name === 'sunrise' || name === 'sworn' || name === 'card') {
+      } else if (name === 'kill' || name === 'sunrise' || name === 'sworn' || name === 'card') {
         deferP3 = false
         deferSweep = false
-        deferEnding = { t: name === 'sunrise' ? 8 : name === 'sworn' ? 10.6 : 12, card: name === 'card' }
+        deferEnding = { t: name === 'kill' ? 0 : name === 'sunrise' ? 8 : name === 'sworn' ? 10.6 : 12, card: name === 'card' }
       }
     },
     autoRays(ids) {
@@ -1735,19 +1740,33 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
         p3at,
         result,
         draws: peakDraws,
+        warmDraws: warmPeak,
         source: lastSource,
         tell: tell ? { kind: tell.kind, t: tell.t, dur: tell.dur, ang: tell.ang, x: tell.x, z: tell.z, r: tell.r } : null,
       }
     },
     warm(renderer, camera) {
+      const rigWas = rig ? rig.visible : false
+      const haloWas = halo.visible
+      const floorWas = floor.visible
       if (rig) rig.visible = true
       halo.visible = true
       floor.visible = true
       renderer.compile(scene, camera)
+      const before = renderer.info.render.calls
+      renderer.render(scene, camera)
+      const compiled = renderer.info.render.calls - before
+      if (compiled > warmPeak) warmPeak = compiled
+      renderer.info.reset()
+      if (rig) rig.visible = rigWas
+      halo.visible = haloWas
+      floor.visible = floorWas
       warmed = true
     },
-    noteDraws(n) {
-      if (n > peakDraws) peakDraws = n
+    noteDraws(n, visible) {
+      if (visible) {
+        if (n > peakDraws) peakDraws = n
+      } else if (n > warmPeak) warmPeak = n
     },
     bossPos: () => ({ x: bossX, z: bossZ }),
     primeHint(seen) {

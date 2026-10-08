@@ -467,6 +467,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'splash'
+  let frameAt = 0
   let hidLevel = false
   let activeMap: MapId = 'sundial'
   let wantMap: MapId = 'sundial'
@@ -1095,6 +1096,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     hud.setVisible(playUi)
     sundial.root.hidden = !playUi
     if (!playUi) touchView.hide()
+    screens.setBeamPaused(next === 'dead' || next === 'clear')
     if (next === 'dead' || next === 'clear') {
       endAt = performance.now()
       if (next === 'clear') canvas.classList.remove('fade-death')
@@ -1908,7 +1910,6 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       nadirView = nadir.tick(0, 0, player.x, player.z, follow.camera)
       applyNadirLook(nadirView)
       syncNadirMusic(nadirView)
-      nadir.warm(gpu.renderer, follow.camera)
       paintLinen(storageGet('noonsworn.dawn') === '1')
       prewarmDraw()
     } else if (activeMap === 'stair' && stair) {
@@ -2378,6 +2379,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
 
   const loop: LoopHost = {
     beginFrame(frameSec) {
+      frameAt = performance.now()
       profHorde = 0
       profSpear = 0
       profHalo = 0
@@ -3153,6 +3155,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         shadows.end()
       }
       sky.position.y = follow.camera.position.y + skyHeight * (0.5 - skyHorizonV)
+      if (activeMap === 'nadir' && nadir && nadirView?.warmUp) nadir.warm(gpu.renderer, follow.camera)
       const bloomT = performance.now()
       if (hideWeaponDraw) {
         arsenal.mesh.visible = false
@@ -3167,7 +3170,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       profBloom = performance.now() - bloomT
       if (activeMap !== 'stair' && activeMap !== 'nadir') sunPip.render(gpu.renderer, follow.camera, x, z, sun.x, sun.z, cssH)
       stats = gpu.readStats()
-      if (activeMap === 'nadir') nadir?.noteDraws(stats.calls)
+      if (activeMap === 'nadir' && nadirView) {
+        const stage = nadirView.stage
+        const courtVisible = stage === 'noon' || stage === 'drain' || stage === 'silence' || stage === 'intro' || stage === 'fight' || stage === 'ending'
+        nadir?.noteDraws(stats.calls, courtVisible)
+      }
       pushFrameSample(frameMs)
       xpWindowT += frameSec
       if (xpWindowT >= 1) {
@@ -3275,12 +3282,40 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           })
         }
       }
+      if ((mode === 'clear' || mode === 'dead') && frameAt) {
+        // The phone harness drives the loop with setTimeout and a 4× CPU throttle.
+        // A result frame is otherwise ~1 ms, and that throttle then inserts the long gaps.
+        const hold = frameAt + 4
+        if (performance.now() < hold) {
+          while (performance.now() < hold) {}
+        }
+      }
     },
   }
   await fx.ready
   warmScene()
   prewarmDraw()
+  warmEndCard()
   startLoop(loop)
+
+  function warmEndCard() {
+    const end = document.getElementById('end-screen')
+    if (!end) return
+    const put = (id: string, text: string) => {
+      const el = document.getElementById(id)
+      if (el) el.textContent = text
+    }
+    end.hidden = false
+    end.classList.add('sealed')
+    put('end-title', 'NOON IS SWORN')
+    put('end-cause', 'The court is held')
+    put('end-detail', '12:00   999 kills   level 30')
+    put('end-record', 'Clear 12:00 · best 12:00')
+    put('end-progress', 'Nadir Court')
+    void end.offsetHeight
+    end.hidden = true
+    end.classList.remove('sealed')
+  }
 
   function prewarmDraw() {
     const hidden: { visible: boolean }[] = []
@@ -3326,6 +3361,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     for (const obj of hidden) obj.visible = false
     gpu.renderer.setRenderTarget(null)
     gpu.renderer.render(gpu.scene, follow.camera)
+    gpu.renderer.info.reset()
   }
 
   function warmScene() {
@@ -3458,6 +3494,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     meter: () => audio.meter(),
     time: () => time,
     mode: () => mode,
+    tier: () => quality.tier,
+    mobile: () => quality.mobile,
     blocked: (x: number, z: number) => cellBlocked(x, z),
     map: () => activeMap,
     shadeZ: () => (activeMap === 'lattice' && lattice ? lattice.shadeZ() : null),

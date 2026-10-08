@@ -328,7 +328,7 @@ export const TUNING = {
   // One crowd on every tier. Phones draw this many; the wave floor sits just under it.
   hordeCap: 250,
   nadir: {
-    hp: 15137,
+    hp: 11600,
     clock: 240,
     halfDeg: 17,
     beam: 24,
@@ -337,8 +337,8 @@ export const TUNING = {
     sealed: 0.35,
     exposed: 2,
     teach: 12,
-    p2: 0.65,
-    p3: 0.3,
+    p2: 0.72,
+    p3: 0.22,
     lash: 12,
     bell: 14,
     seam: 20,

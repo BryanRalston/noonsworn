@@ -352,7 +352,15 @@ body:has(#boss-card:not([hidden])) #jit { top: calc(196px + env(safe-area-inset-
 #boss-arrow { border-left-color: var(--goldHot); }
 .threat-arrow[hidden], #boss-arrow[hidden] { display: none !important; }
 canvas.fade-death { filter: saturate(0.2); }
-#end-screen { align-items: stretch; width: min(420px, calc(100vw - 28px)); }
+#end-screen {
+  align-items: stretch;
+  width: min(420px, calc(100vw - 28px));
+  background-color: color-mix(in srgb, var(--ink) 78%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  contain: layout style paint;
+}
+
 #end-cause { margin: 0; color: var(--goldHot); font: 700 16px/1.3 system-ui, sans-serif; }
 #end-record, #end-progress, #end-detail { margin: 0; color: var(--sandstone); font: 14px/1.35 system-ui, sans-serif; }
 #end-screen.sealed #end-detail, #end-screen.sealed #end-progress { white-space: pre-line; }
