@@ -1,4 +1,9 @@
 /** Every gameplay number lives here. */
+// Sunmark earn. Costs stay 25..150. First-run 15 and finale 25/5 stay put.
+export const EARN_PER30 = 3.25
+export const EARN_BOSS = 9
+export const EARN_CLEAR = 16
+
 export const TUNING = {
   simHz: 60,
   maxSteps: 4,

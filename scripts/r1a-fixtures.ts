@@ -328,9 +328,9 @@ function fixture13(): void {
   const cut = openMeta(store)
   check('13 cutoff', cut.env.sunmarks === 0)
   const earned = cut.credit({ seconds: 90, bossKills: 0, cleared: false, finale: false, mapId: 'sundial', practice: false })
-  check('13 90s death', earned.total === 21 && cut.env.sunmarks === 21, `${earned.total} ${earned.line}`)
+  check('13 90s death', earned.total === 24 && cut.env.sunmarks === 24, `${earned.total} ${earned.line}`)
   const second = cut.credit({ seconds: 90, bossKills: 0, cleared: false, finale: false, mapId: 'sundial', practice: false })
-  check('13 no second first', second.total === 6 && cut.env.sunmarks === 27, String(second.total))
+  check('13 no second first', second.total === 9 && cut.env.sunmarks === 33, String(second.total))
   const practice = openMeta(memStore())
   const stamped = practice.credit({ seconds: 300, bossKills: 1, cleared: true, finale: true, mapId: 'nadir', practice: true })
   check('13 practice stamp', stamped.total === 0 && stamped.line.toLowerCase().includes('practice'), stamped.line)
@@ -344,7 +344,7 @@ function fixture13(): void {
   called.endRun()
   called.arm('sundial')
   const after = called.credit({ seconds: 90, bossKills: 0, cleared: false, finale: false, mapId: 'sundial', practice: false })
-  check('13 after end', after.total === 21, String(after.total))
+  check('13 after end', after.total === 24, String(after.total))
   const prev = globalThis.location
   globalThis.location = { search: '?dev=1' } as Location
   try {
@@ -386,12 +386,12 @@ function fixture14(): void {
 }
 
 function earnMath(): void {
-  check('score 90 death', scoreRun(90, 0, false, false, false, false, 0) === 21)
-  check('score cap', scoreRun(30, 0, false, false, true, false, 0.45) === 2)
-  check('score over cap', scoreRun(30, 0, false, false, true, false, 0.65) === 2)
-  check('score clear boss', scoreRun(300, 1, true, false, true, false, 0) === 30)
-  check('score finale first', scoreRun(300, 1, true, true, true, false, 0) === 55)
-  check('score finale repeat', scoreRun(300, 1, true, true, true, true, 0) === 35)
+  check('score 90 death', scoreRun(90, 0, false, false, false, false, 0) === 24)
+  check('score cap', scoreRun(30, 0, false, false, true, false, 0.45) === 4)
+  check('score over cap', scoreRun(30, 0, false, false, true, false, 0.65) === 4)
+  check('score clear boss', scoreRun(300, 1, true, false, true, false, 0) === 57)
+  check('score finale first', scoreRun(300, 1, true, true, true, false, 0) === 82)
+  check('score finale repeat', scoreRun(300, 1, true, true, true, true, 0) === 62)
   const store = memStore({
     [META]: JSON.stringify({
       v: 1,
@@ -409,7 +409,7 @@ function earnMath(): void {
   const s = openMeta(store)
   s.arm('sundial')
   const lined = s.credit({ seconds: 90, bossKills: 0, cleared: false, finale: false, mapId: 'sundial', practice: false })
-  check('score lines +40', lined.total === 8, `${lined.total} ${lined.line}`)
+  check('score lines +40', lined.total === 13, `${lined.total} ${lined.line}`)
   const rich = openMeta(memStore({
     [META]: JSON.stringify({
       v: 1,

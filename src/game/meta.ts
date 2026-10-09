@@ -1,4 +1,4 @@
-import { TUNING } from '../data/tuning'
+import { EARN_BOSS, EARN_CLEAR, EARN_PER30, TUNING } from '../data/tuning'
 import { storageCommit, storageGet } from '../platform/storage'
 
 export const META_KEY = 'noonsworn.meta.v1'
@@ -280,7 +280,7 @@ function bonusOf(ids: readonly string[]): number {
 
 /** Pure earn total. The sim and the ledger share this so the report matches the game. */
 export function scoreRun(seconds: number, bossKills: number, cleared: boolean, finale: boolean, first: boolean, finaleDone: boolean, bonus: number): number {
-  const base = Math.floor(Math.max(0, seconds) / 30) * 2 + bossKills * 5 + (cleared ? 5 : 0) + (first ? 0 : 15) + (finale ? (finaleDone ? 5 : 25) : 0)
+  const base = Math.floor(Math.max(0, seconds) / 30) * EARN_PER30 + bossKills * EARN_BOSS + (cleared ? EARN_CLEAR : 0) + (first ? 0 : 15) + (finale ? (finaleDone ? 5 : 25) : 0)
   return Math.floor(base * (1 + Math.min(TUNING.lines.bonusCap, Math.max(0, bonus))))
 }
 
@@ -393,10 +393,10 @@ export function openMeta(store: MetaStore): MetaSession {
       env.sunmarks += total
       env.rev += 1
       write()
-      const survival = Math.floor(Math.max(0, input.seconds) / 30) * 2
+      const survival = Math.floor(Math.max(0, input.seconds) / 30) * EARN_PER30
       const parts = [`${survival} survived`]
-      if (input.bossKills) parts.push(`${input.bossKills * 5} boss`)
-      if (input.cleared) parts.push('5 clear')
+      if (input.bossKills) parts.push(`${input.bossKills * EARN_BOSS} boss`)
+      if (input.cleared) parts.push(`${EARN_CLEAR} clear`)
       if (first) parts.push('15 first')
       if (input.finale) parts.push(finaleDone ? '5 finale' : '25 finale')
       if (bonus > 0) parts.push(`lines +${Math.round(bonus * 100)}%`)
