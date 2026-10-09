@@ -134,3 +134,62 @@ PUSH-READY: NO
 - Static frames: YES (0 on menu, credits, Hour Wheel, picker, results)
 - Production `?dev=1` gate: YES
 - Push: not done
+
+## R1b.1
+
+Measured on this computer (`bryan`), `d1a66d1` against `962c18f`. The `962c18f` server was a detached worktree on port 5176. `33c1eec` and `962c18f` differ in `EARN_PER30`, `EARN_BOSS`, `EARN_CLEAR`, and the Sunmark sentence in `meta.ts`. Spawn, sun, and boss code are the same, so the `962c18f` spawn tape is the `33c1eec` sequence. No weapon numbers changed. No boss numbers changed. `camera.ts` is unchanged.
+
+### Lattice draws
+
+The print is still a 2D canvas and adds 0 WebGL calls. The ledger on both commits walks every visible mesh from the scene. Seed 11, lines off, tier high, chests off, 1280×720.
+
+Opening 1.5 s, max calls and the mesh-signature set match on all four temples:
+
+| Map | 962c18f | d1a66d1 |
+| --- | --- | --- |
+| sundial | 17 | 17 |
+| lattice | 18 | 18 |
+| cloister | 18 | 18 |
+| stair | 18 | 18 |
+
+Jumping the clock and simulating two seconds gives the same max on both commits: t=30 → 17, t=90 → 18, t=150 → 19, t=210 → 19, t=269 → 21. Bloom discs and XP gems are off in those windows.
+
+The six-second Lattice window that produced the R1b peak (set time 269, then 360 steps, sample every other step) is where the commits separate. `962c18f` mode is 22 (83 of 180 frames) and the max is 23. `d1a66d1` mode is 23 (51 frames) and the max is 25. Paired frames:
+
+| t | 962c18f | d1a66d1 |
+| --- | --- | --- |
+| 269.02 | 18 | 19 |
+| 270.02 | 20 | 20 |
+| 271.23 | 23 | 24 |
+| 271.36 | 23 | 25 |
+
+179 of 180 paired frames differ by exactly the meshes that turned on. The two that `d1a66d1` adds on top of the `962c18f` peak are already in `lattice.ts` and `pickups.ts`:
+
+- `CircleGeometry` / `MeshBasicMaterial`, parent Scene: the lattice bloom disc. On for 70 frames here, and for 0 frames on `962c18f`.
+- `IcosahedronGeometry` / `MeshBasicMaterial`, parent Scene: the XP gem. On for 118 frames here, and for 5 frames on `962c18f`.
+
+A weapon shot (`arsenal`) accounts for the rest of the swing, one draw while a spear is in flight. Forty-three frames are +2 with the disc and the gem both on. Seventeen frames are +3 with the disc, the gem, and a shot. When the signature set matches, the call count matches (65 frames at delta 0, and no frame where the same signatures produced different counts). One frame is +1 with the same signature set.
+
+R1b did not add a mesh, a material, or a print object to the WebGL scene. Deleting the disc or the gem would hide effects `962c18f` already draws when a lit kill plants a bloom or a gem is on the ground. They stay.
+
+### Cloister seeds 33, 44, 66
+
+Non-daily runs are supposed to take the named streams. The brief says they keep their current feel and use the same stream structure with the run seed as the base. The gate for that is spawn counts within ±2%, which R1b already met. It is not a bit-exact replay of `962c18f`.
+
+A non-daily Cloister run, seeds 33, 44, and 66, 15 s, player invulnerable. Both commits spawn 6 mites. The spawn times match (2.81 s, 5.58 s, 8.14 s, 10.38 s, 12.35 s, 14.13 s). The positions do not. That is `openStreams(runSeed)` replacing the single `mulberry32(seed)` the boss and the sun used to share.
+
+| Seed | 962c18f hash | First spawn (t cs, kind, x, z) | d1a66d1 hash | First spawn |
+| --- | --- | --- | --- | --- |
+| 33 | 19d8e7d4 | 281, 0, 20, −64 | 9fb01434 | 281, 0, −12, −84 |
+| 44 | e25452fc | 281, 0, 20, −64 | 2522fbfc | 281, 0, −84, −36 |
+| 66 | b722ca08 | 281, 0, −60, −84 | 37904854 | 281, 0, −64, −20 |
+
+The Cloister clear/death flips in the R1b table come from that split. The mean of the four `d1a66d1` clears stays −6.4% against the five `33c1eec` clears, inside ±15%. Weapons were not retuned. Bosses were not retuned.
+
+PUSH-READY: YES
+
+- Lattice opening and the two-second day samples: same call counts as `962c18f`
+- Lattice six-second window: mode 23, max 25. The extra calls are the existing bloom disc and XP gem. No mesh removed
+- Cloister seeds 33/44/66: same spawn count and times, different positions, as the named streams require
+- Weapons and bosses: unchanged
+- Push: not done
