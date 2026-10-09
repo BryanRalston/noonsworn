@@ -425,6 +425,8 @@ export interface NadirHandle {
   pose: (name: string) => void
   autoRays: (ids: readonly number[]) => void
   skip: () => void
+  /** True when `advance` more seconds of the ending would open the credits card. */
+  cardDue: (advance: number) => boolean
   info: () => NadirInfo
   warm: (renderer: WebGLRenderer, camera: Camera) => void
   noteDraws: (n: number, visible: boolean) => void
@@ -1718,6 +1720,9 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
       }
     },
     skip,
+    cardDue(advance) {
+      return stage === 'ending' && !claimed && endingT >= 0 && endingT + advance >= 12
+    },
     info() {
       return {
         phase,

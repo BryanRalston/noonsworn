@@ -467,7 +467,6 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let build: Build = createBuild()
   let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
   let mode: ScreenMode = 'splash'
-  let frameAt = 0
   let hidLevel = false
   let activeMap: MapId = 'sundial'
   let wantMap: MapId = 'sundial'
@@ -1086,6 +1085,15 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     presentationDue = true
   }
   applyPresentation()
+
+  let wakeLoop = () => {}
+  // Credits card: leave the last WebGL frame in the canvas and stop the loop.
+  // A further ~1 ms frame is what the 4× phone timer stretches into a long gap.
+  function creditsParked(): boolean {
+    if (mode !== 'clear' || activeMap !== 'nadir' || nadirView?.stage !== 'card') return false
+    const end = document.getElementById('end-screen')
+    return !!end && !end.hidden
+  }
 
   function showMode(next: ScreenMode) {
     // The result line is the best from before this run. Recording first makes the run compare against itself.
@@ -2379,7 +2387,6 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
 
   const loop: LoopHost = {
     beginFrame(frameSec) {
-      frameAt = performance.now()
       profHorde = 0
       profSpear = 0
       profHalo = 0
@@ -3282,21 +3289,24 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           })
         }
       }
-      if ((mode === 'clear' || mode === 'dead') && frameAt) {
-        // The phone harness drives the loop with setTimeout and a 4× CPU throttle.
-        // A result frame is otherwise ~1 ms, and that throttle then inserts the long gaps.
-        const hold = frameAt + 4
-        if (performance.now() < hold) {
-          while (performance.now() < hold) {}
-        }
-      }
+    },
+    hold() {
+      return creditsParked()
+    },
+    willHold(advance: number) {
+      return activeMap === 'nadir' && !!nadir?.cardDue(advance)
     },
   }
   await fx.ready
   warmScene()
   prewarmDraw()
   warmEndCard()
-  startLoop(loop)
+  wakeLoop = startLoop(loop).wake
+  // A parked card has no timer. Buttons change mode on click; empty space restarts on pointerdown.
+  window.addEventListener('resize', wakeLoop)
+  window.addEventListener('keydown', wakeLoop)
+  window.addEventListener('pointerdown', wakeLoop)
+  window.addEventListener('click', wakeLoop)
 
   function warmEndCard() {
     const end = document.getElementById('end-screen')
