@@ -316,7 +316,9 @@ h1 { color: var(--goldHot); font-size: 40px; }
 #boss-name { margin: 0; font: 700 18px/1.2 system-ui, sans-serif; letter-spacing: 0.14em; color: var(--goldHot); }
 body.nadir #boss-name { letter-spacing: 0.04em; font-size: 15px; }
 body.nadir #objective { top: calc(200px + env(safe-area-inset-top)); }
+body.nadir #jit { top: calc(236px + env(safe-area-inset-top)); }
 body:has(#boss-card:not([hidden])) #jit { top: calc(196px + env(safe-area-inset-top)); }
+body.nadir:has(#boss-card:not([hidden])) #jit { top: calc(236px + env(safe-area-inset-top)); }
 #boss-hint { margin: 2px 0 6px; font: 600 13px/1.3 system-ui, sans-serif; color: var(--sandstone); }
 #boss-name[hidden], #boss-hint[hidden] { display: none !important; }
 #boss-bar { height: 8px; border-radius: 99px; background: #2a2418; overflow: hidden; }
@@ -644,7 +646,7 @@ canvas.fade-death { filter: saturate(0.2); }
 #coach[hidden] { display: none !important; }
 #jit {
   position: fixed;
-  top: calc(136px + env(safe-area-inset-top));
+  top: calc(160px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 6;
@@ -833,7 +835,8 @@ canvas.fade-death { filter: saturate(0.2); }
   color: var(--linen);
   border: 1px solid var(--shade);
 }
-.map-card img, .map-swatch { width: 100%; height: 72px; border-radius: 10px; object-fit: cover; }
+.map-card img, .map-swatch { display: block; width: 100%; aspect-ratio: 8 / 3; height: auto; border-radius: 10px; object-fit: cover; }
+.map-card img[hidden], .map-swatch[hidden] { display: none !important; }
 .map-swatch { display: block; background: radial-gradient(circle at 50% 40%, var(--gold), var(--sandstone) 46%, var(--sandstoneDeep)); }
 #water-brim[hidden], #water-deep[hidden] { display: none; }
 #water-brim, #water-deep { fill: none; }

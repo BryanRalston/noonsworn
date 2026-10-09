@@ -22,6 +22,14 @@ function lockLine(id: string, playable: boolean, open: boolean): string {
   return 'Sealed'
 }
 
+const CARD_TINT: Record<string, string> = {
+  sundial: '#E9D2A6',
+  lattice: '#C9973A',
+  cloister: '#2C5A8A',
+  stair: '#E2C79A',
+  nadir: '#14182C',
+}
+
 function clock(time: number): string {
   const whole = Math.max(0, Math.floor(time))
   const m = Math.floor(whole / 60)
@@ -101,15 +109,23 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
         lock.textContent = lockLine(def.id, def.playable, unlocked(def.id))
         btn.append(title, lock)
       } else {
+        const swatch = document.createElement('span')
+        swatch.className = 'map-swatch'
+        swatch.style.background = CARD_TINT[def.id] ?? '#E9D2A6'
+        btn.append(swatch)
         if (def.keyart) {
           const img = document.createElement('img')
           img.alt = ''
+          img.hidden = true
           img.src = `${import.meta.env.BASE_URL}${def.keyart}`
+          const reveal = () => {
+            img.hidden = false
+            swatch.hidden = true
+          }
+          img.decode().then(reveal).catch(() => {
+            if (img.complete && img.naturalWidth > 0) reveal()
+          })
           btn.append(img)
-        } else {
-          const swatch = document.createElement('span')
-          swatch.className = 'map-swatch'
-          btn.append(swatch)
         }
         const title = document.createElement('strong')
         title.textContent = def.name
