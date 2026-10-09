@@ -95,7 +95,7 @@ export interface StairHandle {
   apply: () => void
   clear: (restore: boolean) => void
   warm: (renderer: WebGLRenderer, camera: Camera) => void
-  tick: (dt: number, time: number, wide: number, longday: number, px: number, pz: number, camX: number, camZ: number) => void
+  tick: (dt: number, time: number, wide: number, longday: number, px: number, pz: number, camX: number, camZ: number, sunAt?: number) => void
   place: (time: number, wide: number, longday: number) => void
   floorY: (x: number, z: number) => number
   isLit: (x: number, z: number) => boolean
@@ -2490,7 +2490,7 @@ export function createStair(opts: {
       arch.visible = show[1] ?? false
       if (newelRoot) newelRoot.visible = show[2] ?? false
     },
-    tick(dt, time, wide, longday, ppx, ppz, cx, cz) {
+    tick(dt, time, wide, longday, ppx, ppz, cx, cz, sunAt = time) {
       const t0 = performance.now()
       px = ppx
       pz = ppz
@@ -2499,7 +2499,7 @@ export function createStair(opts: {
       sim += dt
       runT = time
       uTime.value += dt
-      syncVisual(time, wide, longday)
+      syncVisual(sunAt, wide, longday)
       decay(dt)
       ensurePitch(wide, longday)
       stairFight.tick(dt, time, ppx, ppz, opts.camera?.() ?? null)

@@ -113,6 +113,8 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
     else flashEl.classList.toggle('alt')
   })
 
+  /** chest.v1. The layout salt shipped before Noon Print. */
+  const CHEST_V1 = 0x51ed5eed
   let placeRng: Rng = mulberry32(1)
   const list: Chest[] = []
   const fired = [false, false, false]
@@ -257,7 +259,7 @@ export function createChests(fx: WeaponFx, arsenal: Arsenal, container: HTMLElem
 
   return {
     reset(seed: number) {
-      placeRng = mulberry32((seed ^ 0x51ed5eed) >>> 0)
+      placeRng = mulberry32((seed ^ CHEST_V1) >>> 0)
       list.length = 0
       fired[0] = false
       fired[1] = false

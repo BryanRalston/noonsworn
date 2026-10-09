@@ -1,3 +1,4 @@
+import { LINE_NAME, previewDay, utcDay, utcLeft } from '../core/noon'
 import type { MapId } from '../data/mapId'
 import { MAP_DEFS, type MapRecord } from '../data/maps'
 import { storageGet } from '../platform/storage'
@@ -28,7 +29,7 @@ function clock(time: number): string {
   return `${m}:${s < 10 ? '0' : ''}${s}`
 }
 
-export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) => void): MapSelect {
+export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) => void, onPrint?: () => void, pinnedDay?: () => number): MapSelect {
   const host = parent.querySelector('#screens') ?? parent
   const root = document.createElement('div')
   root.id = 'map-select'
@@ -42,6 +43,11 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
   let arm = 0
   let save: MapRecord = { unlocked: ['sundial'], best: {}, last: 'sundial', seen: [] }
   const buttons: HTMLButtonElement[] = []
+  let countEl: HTMLElement | null = null
+  let countTimer = 0
+  function paintCount() {
+    if (countEl) countEl.textContent = `Next print ${utcLeft()}`
+  }
 
   function unlocked(id: string): boolean {
     return save.unlocked.includes(id)
@@ -60,6 +66,26 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
   function rebuild() {
     cards.replaceChildren()
     buttons.length = 0
+    countEl = null
+    if (onPrint) {
+      const day = previewDay(pinnedDay?.() || utcDay())
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.id = 'noon-print'
+      btn.className = 'map-card'
+      btn.style.gridColumn = '1 / -1'
+      btn.style.minHeight = '96px'
+      const title = document.createElement('strong')
+      title.textContent = 'Noon Print'
+      const hook = document.createElement('span')
+      const def = MAP_DEFS.find((row) => row.id === day.temple)
+      hook.textContent = `${def?.name ?? day.temple} · ${LINE_NAME[day.line] ?? day.line}`
+      countEl = document.createElement('em')
+      paintCount()
+      btn.append(title, hook, countEl)
+      btn.addEventListener('click', () => onPrint())
+      cards.append(btn)
+    }
     for (const def of MAP_DEFS) {
       const btn = document.createElement('button')
       btn.type = 'button'
@@ -122,9 +148,13 @@ export function createMapSelect(parent: HTMLElement, onChoose: (id: MapChoice) =
       arm = 2
       rebuild()
       root.hidden = false
+      if (countTimer) window.clearInterval(countTimer)
+      countTimer = window.setInterval(paintCount, 1000)
     },
     close() {
       root.hidden = true
+      if (countTimer) window.clearInterval(countTimer)
+      countTimer = 0
     },
     isOpen: () => !root.hidden,
     toast(text) {

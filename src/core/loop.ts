@@ -11,6 +11,10 @@ export interface LoopHost {
   hold?: () => boolean
   /** This frame's sim advance will park the loop. Do not queue the next frame first. */
   willHold?: (advance: number) => boolean
+  /** Sim steps kept this frame. Omitted uses TUNING.maxSteps. */
+  stepBudget?: () => number
+  /** When the budget is spent, keep the leftover time instead of dropping it. */
+  keepTime?: () => boolean
 }
 
 export function startLoop(host: LoopHost): { wake: () => void } {
@@ -29,10 +33,12 @@ export function startLoop(host: LoopHost): { wake: () => void } {
     if (frameSec < 0) frameSec = 0
     if (frameSec > 0.1) frameSec = 0.1
     const frameMs = frameSec * 1000
+    const capOf = () => host.stepBudget?.() ?? TUNING.maxSteps
     let pending = acc + frameSec
     let advance = 0
     let budget = 0
-    while (pending >= STEP && budget < TUNING.maxSteps) {
+    const previewCap = capOf()
+    while (pending >= STEP && budget < previewCap) {
       pending -= STEP
       advance += STEP
       budget++
@@ -48,7 +54,8 @@ export function startLoop(host: LoopHost): { wake: () => void } {
       acc += frameSec * scale
       let steps = 0
       let first = true
-      while (acc >= STEP && steps < TUNING.maxSteps) {
+      const cap = capOf()
+      while (acc >= STEP && steps < cap) {
         const keep = host.step(STEP, first)
         first = false
         acc -= STEP
@@ -58,7 +65,7 @@ export function startLoop(host: LoopHost): { wake: () => void } {
           break
         }
       }
-      if (steps === TUNING.maxSteps) acc = 0
+      if (steps === cap && host.keepTime?.() !== true) acc = 0
       const alpha = acc / STEP
       host.render(alpha > 1 ? 1 : alpha, frameSec, frameMs)
     }

@@ -90,6 +90,7 @@ export interface CastPeek {
 
 export interface CloisterCast {
   reset: () => void
+  reseed: (seed: number, note?: (v: number) => void) => void
   tick: (dt: number, time: number, cycle: number, px: number, pz: number, might: number, lite?: boolean) => void
   warm: (renderer: WebGLRenderer, camera: Camera) => void
   soak: (x: number, z: number, radius: number, base: number, source: 'weapon' | 'cut', might: number, stamp: number) => boolean
@@ -613,7 +614,17 @@ function laneHit(px: number, pz: number, lane: Vector4, half: number): boolean {
 }
 
 export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): CloisterCast {
-  let rng: Rng = mulberry32(7)
+  let castSeed = 7
+  let onRoll: ((v: number) => void) | null = null
+  const makeRng = (seed: number): Rng => {
+    const raw = mulberry32(seed >>> 0)
+    return () => {
+      const v = raw()
+      if (onRoll) onRoll(v)
+      return v
+    }
+  }
+  let rng: Rng = makeRng(castSeed)
   const votaries: Foe[] = []
   const blots: Foe[] = []
   for (let i = 0; i < V_MAX; i++) votaries.push(blank())
@@ -1001,8 +1012,13 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
   }
 
   const cast: CloisterCast = {
+    reseed(seed, note) {
+      castSeed = seed >>> 0
+      onRoll = note ?? null
+      rng = makeRng(castSeed)
+    },
     reset() {
-      rng = mulberry32(7)
+      rng = makeRng(castSeed)
       wakeAt = 0
       p2at = 0
       p3at = 0

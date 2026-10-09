@@ -286,7 +286,6 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const aimZ = new Float32Array(MAX)
   const sepX = new Float32Array(MAX)
   const sepZ = new Float32Array(MAX)
-  let syncLite = false
   let syncTick = 0
   const travelled = new Float32Array(MAX)
   let bonusMites = 0
@@ -815,7 +814,6 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     },
     update(ctx) {
       clock = ctx.time
-      syncLite = ctx.lite
       syncTick = ctx.tick
       deepFn = ctx.deep
       stepDt = horde.frozen ? 0 : ctx.dt
@@ -1207,8 +1205,8 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     face(angle) {
       for (let i = 0; i < MAX; i++) if (alive[i]) yaw[i] = angle
     },
-    sync(_camX, _camZ, _high) {
-      const writeMorph = !syncLite || (syncTick & 1) === 0
+    sync(_camX, _camZ, high) {
+      const writeMorph = high || (syncTick & 1) === 0
       let mites = 0
       let hounds = 0
       let darters = 0

@@ -33,6 +33,7 @@ export interface Envelope {
   lines: string[]
   palette: string
   daily: Record<string, number>
+  prints: string[]
   migratedFrom: string | null
   inferred: string[]
   readonly?: boolean
@@ -51,6 +52,8 @@ export interface CreditIn {
   finale: boolean
   mapId: string
   practice: boolean
+  daily?: boolean
+  printDay?: string
 }
 
 export interface MetaSession {
@@ -63,6 +66,10 @@ export interface MetaSession {
   lineLive: (id: string, mapId: string) => boolean
   armed: () => string[]
   credit: (input: CreditIn) => { total: number; line: string }
+  hasPrint: (day: string) => boolean
+  notePractice: (day: string, seconds: number) => void
+  armLine: (id: string) => void
+  devUsed: () => boolean
   buy: (id: string, confirmed: boolean) => { ok: boolean; reason: string }
   setLines: (ids: string[]) => void
   setPalette: (id: string) => boolean
@@ -84,6 +91,7 @@ function blank(from: string | null): Envelope {
     lines: [],
     palette: 'default',
     daily: {},
+    prints: [],
     migratedFrom: from,
     inferred: [],
   }
@@ -106,6 +114,7 @@ function pack(env: Envelope): string {
     lines: env.lines,
     palette: env.palette,
     daily: env.daily,
+    prints: env.prints,
     migratedFrom: env.migratedFrom,
     inferred: env.inferred,
   })
@@ -213,6 +222,7 @@ function fill(env: Envelope, parsed: Partial<Envelope>, floorSun: boolean) {
   env.lines = floorSun ? row.lines.slice(0, 3) : row.lines
   env.palette = row.palette || 'default'
   env.inferred = row.inferred
+  env.prints = strings((parsed as { prints?: unknown }).prints)
   if (floorSun) env.daily = parsed.daily && typeof parsed.daily === 'object' ? (parsed.daily as Record<string, number>) : {}
 }
 
@@ -279,15 +289,12 @@ function bonusOf(ids: readonly string[]): number {
 }
 
 /** Pure earn total. The sim and the ledger share this so the report matches the game. */
-export function scoreRun(seconds: number, bossKills: number, cleared: boolean, finale: boolean, first: boolean, finaleDone: boolean, bonus: number): number {
-  const base = Math.floor(Math.max(0, seconds) / 30) * EARN_PER30 + bossKills * EARN_BOSS + (cleared ? EARN_CLEAR : 0) + (first ? 0 : 15) + (finale ? (finaleDone ? 5 : 25) : 0)
+export function scoreRun(seconds: number, bossKills: number, cleared: boolean, finale: boolean, first: boolean, finaleDone: boolean, bonus: number, print = 0): number {
+  const base = Math.floor(Math.max(0, seconds) / 30) * EARN_PER30 + bossKills * EARN_BOSS + (cleared ? EARN_CLEAR : 0) + (first ? 0 : 15) + (finale ? (finaleDone ? 5 : 25) : 0) + print
   return Math.floor(base * (1 + Math.min(TUNING.lines.bonusCap, Math.max(0, bonus))))
 }
 
-/**
- * Noon Print pays +10 once R1b calls this with a day key.
- * This round never calls it, and it does not write the ledger.
- */
+/** Noon Print pays +10 once per UTC date. The ledger applies the line bonus. */
 export function creditNoonPrint(day: string): number {
   return day ? 10 : 0
 }
@@ -325,6 +332,8 @@ export function openMeta(store: MetaStore): MetaSession {
         inferred: union(env.inferred, other.inferred),
         lines: other.lines.length ? other.lines : env.lines,
         palette: other.palette || env.palette,
+        daily: Object.keys(other.daily).length ? other.daily : env.daily,
+        prints: other.prints.length ? other.prints : env.prints,
       }
     } catch {
       /* keep the session copy */
@@ -374,16 +383,36 @@ export function openMeta(store: MetaStore): MetaSession {
       return true
     },
     armed: () => armed.slice(),
+    hasPrint: (day) => env.prints.includes(day),
+    notePractice(day, seconds) {
+      if (!day || future || env.readonly) return
+      const next = Math.floor(Math.max(0, seconds))
+      if ((env.daily[day] ?? 0) >= next) return
+      env.daily[day] = next
+      env.rev += 1
+      write()
+    },
+    armLine(id) {
+      if (id) armed = [id]
+    },
+    devUsed: () => devDuring || practiceUrl(),
     credit(input) {
       if (input.practice || practiceUrl() || devDuring) return { total: 0, line: 'Practice · 0 Sunmarks' }
       if (future || env.readonly) return { total: 0, line: '0 Sunmarks' }
       pull()
       const first = !env.ent.includes('bonus.first')
       const finaleDone = env.ent.includes('bonus.finale')
-      const bonus = bonusOf(armed.filter((id) => env.ent.includes(id)))
-      const total = scoreRun(input.seconds, input.bossKills, input.cleared, input.finale, !first, finaleDone, bonus)
+      const bonus = bonusOf(input.daily ? armed : armed.filter((id) => env.ent.includes(id)))
+      const day = input.printDay || ''
+      let print = 0
+      if (day && !env.prints.includes(day)) {
+        print = creditNoonPrint(day)
+        env.prints.push(day)
+        if (env.prints.length >= 5) add(env.wheel, 'mark.prints')
+      }
+      const total = scoreRun(input.seconds, input.bossKills, input.cleared, input.finale, !first, finaleDone, bonus, print)
       add(env.ent, 'bonus.first')
-      if (input.cleared) grantTemple(input.mapId)
+      if (input.cleared && !input.daily) grantTemple(input.mapId)
       if (input.finale) {
         add(env.ent, 'bonus.finale')
         add(env.ent, 'line.fewhands')
@@ -399,6 +428,7 @@ export function openMeta(store: MetaStore): MetaSession {
       if (input.cleared) parts.push(`${EARN_CLEAR} clear`)
       if (first) parts.push('15 first')
       if (input.finale) parts.push(finaleDone ? '5 finale' : '25 finale')
+      if (print) parts.push('10 print')
       if (bonus > 0) parts.push(`lines +${Math.round(bonus * 100)}%`)
       parts.push(`${total} Sunmarks`)
       return { total, line: parts.join(' · ') }

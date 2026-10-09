@@ -18,6 +18,7 @@ import { TUNING, type TierName } from '../data/tuning'
 import { createEvents } from '../core/events'
 import { startLoop, type LoopHost } from '../core/loop'
 import { yawFromDirection } from '../core/math'
+import { dayKey, LINE_NAME, offerStream, openStreams, takePlan, templeOf, utcDay, type SunEvent } from '../core/noon'
 import { mulberry32, type Rng } from '../core/rng'
 import { NoopAds } from '../platform/ads'
 import { createFollowCamera } from '../render/camera'
@@ -28,7 +29,7 @@ import { createGpu } from '../render/renderer'
 import { createInput, type InputState } from '../input/input'
 import type { Basis } from '../input/touch'
 import { createDebugOverlay, frameSummary, pushFrameSample } from '../ui/debugOverlay'
-import { createFeatureMap } from '../ui/featureMap'
+import type { FeatureMap } from '../ui/featureMap'
 import { createHud } from '../ui/hud'
 import { createLevelUp } from '../ui/levelUp'
 import { autopickEnabled, createScreens, tipsEnabled, type ScreenMode } from '../ui/screens'
@@ -42,7 +43,7 @@ import { createBloom } from '../render/bloom'
 import { toonMap } from '../render/toon'
 import type { MapId } from '../data/mapId'
 import { assertMap } from '../data/mapId'
-import { loadMaps, markSeen, noteRun, rememberMap, type MapBest } from '../data/maps'
+import { MAP_DEFS, loadMaps, markSeen, noteRun, rememberMap, type MapBest } from '../data/maps'
 import { storageGet, storageSet } from '../platform/storage'
 import { createMapSelect } from '../ui/mapSelect'
 import { createTouchControls } from '../ui/touchControls'
@@ -200,9 +201,16 @@ export async function boot(container: HTMLElement) {
   let litAz = 1.4
   let shadeAx = 18
   let shadeAz = 3
+  const devQuery = import.meta.env.DEV || params.get('dev') === '1'
   const forced = params.get('seed')
-  const forcedSeed = forced != null && Number.isFinite(Number(forced)) ? Number(forced) : null
+  const forcedSeed = devQuery && forced != null && Number.isFinite(Number(forced)) ? Number(forced) : null
   let queuedSeed: number | null = null
+  let queuedPrint = false
+  const dayParam = params.get('day')
+  let dayPin = devQuery && dayParam != null && Number.isFinite(Number(dayParam)) ? Number(dayParam) : 0
+  if (forcedSeed != null) document.documentElement.dataset.seed = '1'
+  if (devQuery && params.get('arsenal')) document.documentElement.dataset.arsenal = '1'
+  if (devQuery && params.get('evo') === 'all') document.documentElement.dataset.evo = '1'
   const ads = new NoopAds(params.get('ads') === 'fake')
   void ads.init()
   if (params.get('ads') === 'fake') {
@@ -241,7 +249,30 @@ export async function boot(container: HTMLElement) {
   const levelUp = createLevelUp(ui)
   const tips = createTips(ui)
   tips.setEnabled(tipsEnabled())
-  const featureMap = createFeatureMap(() => ({ version: __VERSION__, sha: __SHA__, tier: quality.tier }))
+  const featureStub = document.createElement('div')
+  featureStub.hidden = true
+  let featureMap: FeatureMap = {
+    root: featureStub,
+    toggle() {
+      const stub = featureStub
+      void openFeatureMap().then(() => {
+        if (featureMap.root !== stub) featureMap.toggle()
+      })
+    },
+    close() {},
+    refresh() {},
+  }
+  let featureGate: Promise<void> | null = null
+  function openFeatureMap(): Promise<void> {
+    if (!(import.meta.env.DEV || params.get('dev') === '1')) return Promise.resolve()
+    if (featureGate) return featureGate
+    featureGate = import('../ui/featureMap').then((mod) => {
+      const live = mod.createFeatureMap(() => ({ version: __VERSION__, sha: __SHA__, tier: quality.tier }))
+      featureMap.root.replaceWith(live.root)
+      featureMap = live
+    })
+    return featureGate
+  }
   ui.append(featureMap.root)
   const gateArrow = document.createElement('div')
   gateArrow.id = 'gate-arrow'
@@ -467,7 +498,34 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   })
   const cut = createCut()
   let build: Build = createBuild()
-  let rng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
+  let spawnRng: Rng = mulberry32(forcedSeed ?? (Date.now() >>> 0))
+  let bossRng: Rng = mulberry32(1)
+  let offerRoll = 0
+  let offerLevel = -1
+  let offerLit = false
+  let printBase = 1
+  let printRun = false
+  let printOfficial = false
+  let printKey = ''
+  let printLine = ''
+  let printEvents: SunEvent[] = []
+  let printEi = 0
+  let printScale = 1
+  let printMod: { hidePrint: () => void } | null = null
+  let sunWarp = 0
+  const litBits = new Uint32Array(16)
+  let litMark = -1
+  const tapeOn = import.meta.env.DEV && params.get('tape') === '1'
+  const tapeS: number[] = []
+  const tapeO: string[] = []
+  const tapeB: number[] = []
+  const tapeU: string[] = []
+  let tapeXpMark = 0
+  function bossRoll(): number {
+    const v = bossRng()
+    if (tapeOn) tapeB.push((time * 100) | 0, (v * 1000) | 0)
+    return v
+  }
   let mode: ScreenMode = 'splash'
   let hidLevel = false
   let activeMap: MapId = 'sundial'
@@ -501,6 +559,15 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let time = 0
   let kills = 0
   let tick = 0
+  if (tapeOn) {
+    const origSpawn = horde.spawn.bind(horde)
+    horde.spawn = (kind, x, z, bench, limit, fromX, fromZ) => {
+      if (!bench && (mode === 'playing' || mode === 'level')) {
+        tapeS.push((time * 100) | 0, kind | 0, (x * 4) | 0, (z * 4) | 0)
+      }
+      return origSpawn(kind, x, z, bench, limit, fromX, fromZ)
+    }
+  }
   let hitStop = 0
   let dying = false
   let deathHold = 0
@@ -671,7 +738,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         w2 = mod.createW2(fx, arsenal)
         openW2Offers()
         applyArsenalDev()
-        applyEvoAll(build, params.get('evo') === 'all', arsenalParam === 'l5x8')
+        applyEvoAll(build, devTools() && params.get('evo') === 'all', devTools() && arsenalParam === 'l5x8')
         w2State = 'ready'
       })
       .catch(() => {
@@ -748,7 +815,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     },
     onXp(x, z, value) {
       if (activeMap === 'nadir') return
-      pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z)
+      pickups.spawn(x, z, value, capXp(), player.x, player.z)
       tutorial.onShard()
     },
     onKill() {
@@ -874,6 +941,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     else progress = 'The boss still stands'
     const nadirClear = cleared && activeMap === 'nadir'
     const stairClear = cleared && activeMap === 'stair'
+    if (printRun) {
+      progress = 'same conditions'
+      record = printOfficial ? 'Official' : 'Practice'
+    }
     screens.setEnd({
       title: nadirClear ? 'NOON IS SWORN' : cleared ? 'THE DAY IS HELD' : 'THE LIGHT FAILS',
       detail: endDetail(),
@@ -881,8 +952,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       record,
       progress,
       icons,
-      primary: !cleared ? 'Retry' : nadirClear ? 'Continue' : stairClear ? 'Descend' : nxt ? `Enter ${nxt.name}` : 'Menu',
-      primaryAction: !cleared ? 'retry' : nadirClear ? 'menu' : nxt ? 'next' : 'menu',
+      primary: printRun || !cleared ? 'Retry' : nadirClear ? 'Continue' : stairClear ? 'Descend' : nxt ? `Enter ${nxt.name}` : 'Menu',
+      primaryAction: printRun || !cleared ? 'retry' : nadirClear ? 'menu' : nxt ? 'next' : 'menu',
       retry: cleared,
       temple: true,
       revive: false,
@@ -1143,13 +1214,18 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     // The result line is the best from before this run. Recording first makes the run compare against itself.
     if (runNoted && (next === 'dead' || next === 'clear')) return
     if ((next === 'dead' || next === 'clear') && !runNoted) {
+      const daily = printRun
+      const official = daily && printOfficial && !liveMeta().devUsed()
+      if (daily && !official) liveMeta().notePractice(printKey, time)
       endMarks = liveMeta().credit({
         seconds: time,
         bossKills: takenBosses(next === 'clear'),
         cleared: next === 'clear',
-        finale: next === 'clear' && activeMap === 'nadir',
+        finale: !daily && next === 'clear' && activeMap === 'nadir',
         mapId: activeMap,
-        practice: false,
+        practice: daily && !official,
+        daily,
+        printDay: official ? printKey : '',
       }).line
       liveMeta().endRun()
     }
@@ -1178,8 +1254,24 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         marks.textContent = endMarks
       }
       if (liveMeta().hasProgress()) ensureMeta(() => metaUi?.paintResult())
-      const opened = noteRun(activeMap, time, kills, next === 'clear', activeMap === 'nadir' && next === 'clear' ? nadir?.info().remain : undefined)
+      const opened = printRun ? false : noteRun(activeMap, time, kills, next === 'clear', activeMap === 'nadir' && next === 'clear' ? nadir?.info().remain : undefined)
       fillEnd(next === 'clear', before)
+      if (printRun) {
+        const def = MAP_DEFS.find((row) => row.id === activeMap)
+        const bits: number[] = []
+        for (let i = 0; i < litBits.length; i++) bits.push(litBits[i] ?? 0)
+        void import('../ui/noonprint').then((mod) => {
+          printMod = mod
+          void mod.mountPrint({
+            temple: def?.name ?? activeMap,
+            date: printKey,
+            seconds: time,
+            cleared: next === 'clear',
+            line: LINE_NAME[printLine] ?? printLine,
+            bits,
+          })
+        })
+      } else printMod?.hidePrint()
       if (activeMap === 'stair' && next === 'clear') {
         screens.setToast(null)
         hideToast()
@@ -1226,8 +1318,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     ctx.pz = player.z
     ctx.iframe = player.iframe
     ctx.invuln = player.invuln
-    ctx.separate = tick % (quality.tier === 'low' ? 2 : 1) === 0
-    ctx.lite = quality.tier !== 'high'
+    ctx.separate = printRun || tick % (quality.tier === 'low' ? 2 : 1) === 0
+    ctx.lite = printRun ? false : quality.tier !== 'high'
     ctx.might = build.might
     ctx.searing = build.searing
     ctx.guide = activeMap === 'stair' && stair ? stair.guide : activeMap === 'cloister' && cloister ? cloister.guide : temple.routing() ? temple.guide : null
@@ -1240,11 +1332,34 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     ctx.bloomLive = activeMap === 'lattice' && lattice ? lattice.blooming() : false
   }
 
-  function openLevel() {
-    const sunlit = litAt(player.x, player.z)
-    offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
+  function capProjectiles(): number {
+    return printRun ? TUNING.noon.projectiles : TUNING.tiers[quality.tier].projectiles
+  }
+
+  function capXp(): number {
+    return printRun ? TUNING.noon.xp : TUNING.tiers[quality.tier].xp
+  }
+
+  function rollOffers() {
+    if (offerLevel !== build.level) {
+      offerLevel = build.level
+      offerRoll = 0
+    }
+    const rolled = offerStream(printBase, build.level, offerRoll)
+    offerRoll += 1
+    offerLit = litAt(player.x, player.z)
+    offerCount = rollCards(build, rolled, shown, offerLit ? 4 : 3)
+    if (tapeOn) {
+      const ids: number[] = []
+      for (let i = 0; i < offerCount; i++) ids.push(shown[i]?.id ?? -1)
+      tapeO.push(`${build.level}:${ids.join('.')}`)
+    }
     noteOffer(offerCount)
-    levelUp.show(shown.slice(0, offerCount), sunlit, (id) => rankOf(build, id))
+  }
+
+  function openLevel() {
+    rollOffers()
+    levelUp.show(shown.slice(0, offerCount), offerLit, (id) => rankOf(build, id))
     metaUi?.syncOffer(rerollLeft, banishLeft, levelUp.index())
     buzz(18)
     if (mode !== 'level') showMode('level')
@@ -1269,15 +1384,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let haloLock = 0
   function offerFirst() {
     firstOffer = false
-    const sunlit = litAt(player.x, player.z)
-    offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
-    noteOffer(offerCount)
+    rollOffers()
     hitStop = Math.max(hitStop, 0.4)
     mode = 'level'
     const cards = shown.slice(0, offerCount)
     // The strip's text layout stays off this sim frame. The hook measures the next turn on its own.
     requestAnimationFrame(() => {
-      levelUp.show(cards, sunlit, (id) => rankOf(build, id))
+      levelUp.show(cards, offerLit, (id) => rankOf(build, id))
       metaUi?.syncOffer(rerollLeft, banishLeft, levelUp.index())
       buzz(18)
       showMode('level')
@@ -1309,15 +1422,30 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     animFlourish = true
   }
 
-  function takeCard(index: number) {
+  function takeCard(index: number, fromTape = false) {
     if (mode !== 'level') return
-    if (chests.revealUp() || chests.swallowing()) return
+    // Chest swallow is a wall-clock hold. The tape stays on sim time so a daily matches on every screen.
+    if (!fromTape && (chests.revealUp() || chests.swallowing())) return
     audio.ui()
     tutorial.onClaim()
     applyCard(shown[index]?.id ?? CARD.heal)
     hud.setCharges(build.pending)
     if (build.pending > 0) openLevel()
     else closeOffer()
+  }
+
+  function takeTapeOffers() {
+    if (!tapeOn || chests.revealUp()) return
+    let guard = 0
+    while (build.pending > 0 && guard < 8) {
+      guard += 1
+      firstOffer = false
+      if (mode !== 'level') openLevel()
+      if (mode !== 'level' || offerCount < 1) break
+      const left = build.pending
+      takeCard(0, true)
+      if (build.pending >= left) break
+    }
   }
 
   function bankCharges() {
@@ -1330,9 +1458,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       return
     }
     while (build.pending > 0) {
-      const sunlit = litAt(player.x, player.z)
-      offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
-      noteOffer(offerCount)
+      rollOffers()
       const index = recommendIndex(build, shown, offerCount)
       const card = shown[index]
       showToast(card?.name ?? 'Upgrade', 2)
@@ -1544,7 +1670,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
               place: (index, x, z) => horde.place(index, x, z),
               stagger: (index, seconds) => horde.staggerFor(index, seconds),
               wash: (index, seconds) => horde.washFor(index, seconds),
-              xp: (x, z, value) => pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z),
+              xp: (x, z, value) => pickups.spawn(x, z, value, capXp(), player.x, player.z),
               ping: (x, z, lit) => fx.hit(x, z, lit),
               spawn: (kind, x, z) => horde.spawn(kind, x, z, false, 56, player.x, player.z),
               cull: (n) => horde.cullTo(n, player.x, player.z),
@@ -1596,9 +1722,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
               storageSet('noonsworn.stair.hints', String(stairBits))
               showToast(text, 4.2)
             },
-            xp: (x, z, value) => pickups.spawn(x, z, value, TUNING.tiers[quality.tier].xp, player.x, player.z),
+            xp: (x, z, value) => pickups.spawn(x, z, value, capXp(), player.x, player.z),
             kill: () => audio.kill(),
-            camera: () => follow.camera,
+            camera: () => (printRun ? null : follow.camera),
           })
           stair = handle
           await handle.load()
@@ -1716,7 +1842,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
                 else if (name === 'exposed') audio.exposed()
                 else audio.armored()
               },
-              rng: () => rng(),
+              rng: () => bossRoll(),
             },
           })
           nadir = handle
@@ -1887,6 +2013,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         .catch((err) => {
           latticePending = false
           wantMap = 'sundial'
+          queuedPrint = false
           if (import.meta.env.DEV) console.error(err)
           startRun()
         })
@@ -1903,6 +2030,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         .catch((err) => {
           cloisterPending = false
           wantMap = 'sundial'
+          queuedPrint = false
           if (import.meta.env.DEV) console.error(err)
           startRun()
         })
@@ -1919,6 +2047,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         .catch((err) => {
           stairPending = false
           wantMap = 'sundial'
+          queuedPrint = false
           if (import.meta.env.DEV) console.error(err)
           startRun()
         })
@@ -1935,6 +2064,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         .catch((err) => {
           nadirPending = false
           wantMap = 'sundial'
+          queuedPrint = false
           if (import.meta.env.DEV) console.error(err)
           startRun()
         })
@@ -1942,13 +2072,49 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     }
     const runSeed = queuedSeed ?? forcedSeed ?? (Date.now() >>> 0)
     queuedSeed = null
-    rng = mulberry32(runSeed)
+    const printing = queuedPrint
+    queuedPrint = false
+    printRun = printing
+    const day = printing ? (dayPin || utcDay()) : 0
+    printKey = printing ? dayKey(day) : ''
+    printBase = printing ? day : runSeed
+    const streams = openStreams(printBase)
+    spawnRng = streams.spawn
+    bossRng = streams.boss
+    fxState = streams.fx >>> 0
+    offerLevel = -1
+    offerRoll = 0
+    printEi = 0
+    printScale = 1
+    sunWarp = 0
+    litBits.fill(0)
+    litMark = -1
+    if (tapeOn) {
+      tapeS.length = 0
+      tapeO.length = 0
+      tapeB.length = 0
+      tapeU.length = 0
+      tapeXpMark = 0
+    }
     resetPlayer(player)
     resetCut(cut)
     build = createBuild()
-    sun.reset(rng)
+    sun.reset(streams.sun)
+    printEvents = []
+    printLine = ''
+    if (printing) {
+      const plan = takePlan(streams.sun, wantMap)
+      printLine = plan.line
+      printEvents = plan.events
+      if (tapeOn) tapeU.push(`sun:${sun.theta0.toFixed(4)}:${sun.dir}`, ...plan.events.map((ev) => `${ev.t}:${ev.scale}`))
+    }
     metaUi?.closeMeta()
     liveMeta().arm(wantMap)
+    if (printing) {
+      liveMeta().armLine(printLine)
+      printOfficial = !liveMeta().devUsed() && !liveMeta().hasPrint(printKey)
+      cloister?.seedBoss(streams.bossSeed, tapeOn ? (v) => tapeB.push((time * 100) | 0, (v * 1000) | 0) : undefined)
+    } else cloister?.seedBoss(streams.bossSeed)
     sun.setBeam(liveMeta().lineLive('line.sliver', wantMap) ? TUNING.lines.sliverDeg : TUNING.beamDeg)
     sun.setDay(liveMeta().lineLive('line.quick', wantMap) ? TUNING.lines.quickDay : TUNING.daySeconds)
     setShadeWeapon(liveMeta().lineLive('line.hard', wantMap) ? TUNING.lines.hardShade : TUNING.armoredWeapon)
@@ -1990,10 +2156,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     follow.snap(0, 0)
     exposePops = 0
     applyArsenalDev()
-    chests.reset(runSeed)
+    chests.reset(printing ? streams.chest : runSeed)
     clearEvos()
     chests.syncAcquire(build)
-    if (w2State === 'ready') applyEvoAll(build, params.get('evo') === 'all', arsenalParam === 'l5x8')
+    if (w2State === 'ready') applyEvoAll(build, devTools() && params.get('evo') === 'all', devTools() && arsenalParam === 'l5x8')
     if (devTools() && !previewWeapon && (arsenalParam === 'l1' || arsenalParam === 'l5' || arsenalParam === 'l5x8')) {
       const requested = Number(params.get('n') ?? '0')
       if (Number.isFinite(requested) && requested > 0) {
@@ -2016,7 +2182,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     setBeds([])
     // The stair keeps its own sun. Shut the sundial gate clock so those floors and pillars are not drawn.
     temple.setRouting(activeMap !== 'sundial')
-    temple.reset(rng)
+    temple.reset(spawnRng)
     traps.reset(temple)
     if (activeMap === 'nadir' && nadir) {
       stair?.clear(false)
@@ -2223,8 +2389,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   function spawnStress(n: number) {
     if (mode !== 'playing' && mode !== 'paused') startRun()
     for (let i = 0; i < n; i++) {
-      const ang = rng() * Math.PI * 2
-      const dist = 16 + rng() * 6
+      const ang = spawnRng() * Math.PI * 2
+      const dist = 16 + spawnRng() * 6
       horde.spawn(0, player.x + Math.cos(ang) * dist, player.z + Math.sin(ang) * dist, false, TUNING.hordeCap, player.x, player.z)
     }
   }
@@ -2238,11 +2404,20 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   }
   const mapSelect = createMapSelect(ui, (id) => {
     audio.ui()
+    queuedPrint = false
     wantMap = id
     rememberMap(id)
     mapSelect.close()
     startRun()
-  })
+  }, () => {
+    audio.ui()
+    const day = dayPin || utcDay()
+    const temple = templeOf(day)
+    wantMap = temple
+    queuedPrint = true
+    mapSelect.close()
+    startRun()
+  }, () => dayPin || utcDay())
   screens.onPlay = () => {
     audio.ui()
     if (import.meta.env.DEV && params.get('map') === 'lattice') {
@@ -2266,22 +2441,18 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       return
     }
     const saved = loadMaps()
-    if (saved.unlocked.some((id) => id !== 'sundial')) {
-      mapSelect.open(saved)
-      if (liveMeta().hasProgress()) ensureMeta(() => metaUi?.syncPicker())
-      if (saved.unlocked.includes('stair') && !saved.seen.includes('stair') && markSeen('stair')) {
-        mapSelect.toast('New temple opened')
-      } else if (saved.unlocked.includes('cloister') && !saved.seen.includes('cloister') && markSeen('cloister')) {
-        mapSelect.toast('New temple opened')
-      }
-      return
+    mapSelect.open(saved)
+    if (liveMeta().hasProgress()) ensureMeta(() => metaUi?.syncPicker())
+    if (saved.unlocked.includes('stair') && !saved.seen.includes('stair') && markSeen('stair')) {
+      mapSelect.toast('New temple opened')
+    } else if (saved.unlocked.includes('cloister') && !saved.seen.includes('cloister') && markSeen('cloister')) {
+      mapSelect.toast('New temple opened')
     }
-    wantMap = 'sundial'
-    startRun()
   }
   screens.onRestart = () => {
     audio.ui()
     mapSelect.close()
+    if (printRun) queuedPrint = true
     startRun()
   }
   screens.onNext = () => {
@@ -2651,11 +2822,20 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       const quick = liveMeta().lineLive('line.quick', activeMap)
       sun.timeScale = activeMap === 'stair' ? 1 : activeMap === 'nadir' ? 0 : Math.max(quick ? 1 : 0.4, 1 - 0.12 * build.longday)
+      if (printRun) {
+        while (printEi < printEvents.length && time >= (printEvents[printEi]?.t ?? 1e9)) {
+          printScale = printEvents[printEi]?.scale ?? 1
+          printEi += 1
+          if (tapeOn) tapeU.push(`${(time * 100) | 0}:${printScale}`)
+        }
+        if (printEi > 0 && activeMap !== 'nadir') sun.timeScale = printScale
+        sunWarp += dt * (printEi > 0 ? printScale : 1)
+      }
       if (!sun.frozen && activeMap !== 'nadir') sun.advance(dt)
       if (activeMap === 'nadir' && nadirView?.stage === 'noon') sun.time = 0
       clockPacks()
       if (activeMap === 'lattice') lattice?.tick(dt, sun, time, player.x, player.z, sunLit)
-      if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high', time)
+      if (activeMap === 'cloister') cloister?.tick(dt, sun, build.wide, player.x, player.z, quality.tier !== 'high', time, printRun ? false : quality.tier !== 'high')
       if (activeMap !== 'nadir') {
         temple.update(dt, time + dt, sun.time, player.x, player.z, sun.frozen)
         temple.mask(floor.uniforms.uWing.value)
@@ -2670,7 +2850,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         if (showIn <= 0) {
           if (previewWeapon === 'sunspear') {
             showIn = 1
-            spears.kick(player.x, player.z, 0.15, build.spear, TUNING.tiers[quality.tier].projectiles)
+            spears.kick(player.x, player.z, 0.15, build.spear, capProjectiles())
           } else if (previewWeapon === 'bell') {
             showIn = 1.15
             bell.show(player.x, player.z, build.bell)
@@ -2700,6 +2880,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       const steppedFrom = time
       if (!(activeMap === 'nadir' && nadirView?.freezeTime)) time += dt
+      if (printRun) {
+        const sec = time | 0
+        if (sec !== litMark && sec >= 0 && sec < 512) {
+          litMark = sec
+          if (litAt(player.x, player.z)) litBits[sec >> 5] |= 1 << (sec & 31)
+        }
+      }
       noteHint(time, prevStep === 0 && steppedFrom === 0 ? 0 : prevStep)
       prevStep = time
       if (previewWeapon === 'flare' || previewWeapon === 'all') {
@@ -2767,6 +2954,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         wishZ = previewSweepZ
         state.cutDirX = previewSweepX
         state.cutDirZ = previewSweepZ
+      }
+      if (tapeOn && !previewWeapon) {
+        const dir = ((time / 8) | 0) % 4
+        wishX = dir === 0 ? 1 : dir === 2 ? -1 : 0
+        wishZ = dir === 1 ? 1 : dir === 3 ? -1 : 0
       }
       if (washSlow > 0) washSlow = Math.max(0, washSlow - dt)
       const pitchSlow = activeMap === 'stair' && stair ? stair.drag().slow : 1
@@ -2919,6 +3111,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
       fillCtx(dt)
       const cam = follow.camera.position
+      // A daily is the same on every screen. Spawn bias uses the desktop rig, not the live portrait camera.
+      const camBias = TUNING.camera.distance * Math.cos(TUNING.camera.pitch)
+      const spawnCamX = printRun ? player.x + Math.sin(TUNING.camera.yaw) * camBias : cam.x
+      const spawnCamZ = printRun ? player.z + Math.cos(TUNING.camera.yaw) * camBias : cam.z
       if (activeMap === 'nadir' && nadir) {
         nadirView = nadir.tick(dt, time, player.x, player.z, follow.camera)
         horde.bossAt = nadirView.boss
@@ -2931,7 +3127,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           paintPalette()
         }
       } else if (activeMap === 'stair' && stair) {
-        stair.tick(dt, time, build.wide, build.longday, player.x, player.z, cam.x, cam.z)
+        stair.tick(dt, time, build.wide, build.longday, player.x, player.z, spawnCamX, spawnCamZ, printRun ? sunWarp : time)
         horde.bossAt = stair.boss()
         horde.bossLock = horde.bossAt != null
         horde.annexNear = stair.crowdNear
@@ -2965,9 +3161,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           player.x,
           player.z,
           bossUp ? Math.min(playCap, 56) : cloisterBoss ? Math.min(playCap, 40) : playCap,
-          rng,
-          cam.x,
-          cam.z,
+          spawnRng,
+          spawnCamX,
+          spawnCamZ,
           poured,
           temple.pickWing,
           activeMap === 'lattice' ? latticePlan(time, bossUp) : activeMap === 'cloister' && cloister ? cloister.plan(time) : activeMap === 'stair' && stair ? stair.plan(time) : undefined,
@@ -3015,7 +3211,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       spears.multitude = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
       const spearT = performance.now()
       horde.dmgCap = activeMap === 'nadir' ? 0 : build.level < TUNING.earlyLevel ? TUNING.earlyWeaponCap : 0
-      if (!nadirHold) spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, TUNING.tiers[quality.tier].projectiles, ctx)
+      if (!nadirHold) spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, capProjectiles(), ctx)
       profSpear += performance.now() - spearT
       const haloT = performance.now()
       if (!nadirHold) halo.update(dt, player.x, player.z, horde, build.halo, build.might, build.haste, time, ctx)
@@ -3052,7 +3248,14 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         pickups.shove(ferryOne)
       }
       const before = build.pending
-      pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), TUNING.tiers[quality.tier].xp, onGem)
+      if (tapeOn) {
+        const mark = (time / 12) | 0
+        if (mark > tapeXpMark && !chests.revealUp()) {
+          tapeXpMark = mark
+          grantXp(build, xpToNext(build.level))
+        }
+      }
+      pickups.update(dt, player.x, player.z, TUNING.player.pickup * (1 + TUNING.passive.lode * build.lodestone), capXp(), onGem)
       noteBoss(rawDt)
       if (clearedNow()) {
         if (mode !== 'clear') {
@@ -3081,11 +3284,13 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (build.pending > before) {
         if (previewWeapon) build.pending = before
         else if (chests.revealUp()) chests.holdBank()
+        else if (tapeOn) takeTapeOffers()
         else if (firstOffer) offerFirst()
         else bankCharges()
       }
       if (chests.takeHold()) {
-        if (firstOffer) offerFirst()
+        if (tapeOn) takeTapeOffers()
+        else if (firstOffer) offerFirst()
         else bankCharges()
       }
       if (wasReveal && !chests.revealUp() && hidLevel) {
@@ -3410,7 +3615,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
             cap: quality.cap,
             exposed: horde.exposed(),
             angle: sun.angle,
-            pools: `spear ${spears.used()}/${TUNING.tiers[quality.tier].projectiles}  xp ${pickups.used()}/${TUNING.tiers[quality.tier].xp}`,
+            pools: `spear ${spears.used()}/${capProjectiles()}  xp ${pickups.used()}/${capXp()}`,
             renderer: quality.renderer || 'masked',
             bloom: quality.tier !== 'low',
             extra: `${sun.frozen ? 'frozen' : 'moving'}  player ${litAt(player.x, player.z) ? 'lit' : 'shade'}  xp/s ${xpPerSec.toFixed(1)}  vsync ${quality.targetMs.toFixed(2)}  peak ${heard.peak.toFixed(1)}dB  voices ${heard.voices}  clip ${heard.clipped}  ads ${document.documentElement.dataset.ads ?? ads.last}  audit ${audit ? 'ok' : 'fail'}\nsfx ${sfxLine()}\ntris mite ${horde.tris.mite.toFixed(0)} hound ${horde.tris.hound.toFixed(0)} sela ${sela.tris.toFixed(0)}`,
@@ -3421,6 +3626,12 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     },
     hold() {
       return staticShown && staticScreen()
+    },
+    stepBudget() {
+      return printRun ? TUNING.noon.steps : TUNING.maxSteps
+    },
+    keepTime() {
+      return printRun
     },
     willHold(advance: number) {
       return staticScreen() || (activeMap === 'nadir' && !!nadir?.cardDue(advance))
@@ -3921,9 +4132,45 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     },
     offers: () => {
       const buf: Card[] = []
-      const n = rollCards(build, rng, buf, 4)
+      const n = rollCards(build, offerStream(printBase, build.level, 0), buf, 4)
       return buf.slice(0, n).map((c) => c.name)
     },
+    ...(import.meta.env.DEV
+      ? {
+          setDay: (n: number) => {
+            dayPin = n >>> 0
+          },
+          startPrint: (day?: number) => {
+            if (day != null && Number.isFinite(day)) dayPin = day >>> 0
+            const pinned = dayPin || utcDay()
+            wantMap = templeOf(pinned)
+            queuedPrint = true
+            queuedSeed = null
+            startRun()
+          },
+          noonDigest: () => {
+            const chest = chests.sample().log.map((e) => `${e.t.toFixed(2)}:${(e.x * 4) | 0}:${(e.z * 4) | 0}`).join(',')
+            const spawn = tapeS.join(',')
+            const offers = tapeO.join(',')
+            const boss = tapeB.join(',')
+            const sunPart = tapeU.join(',')
+            const fold = (s: string) => {
+              let h = 2166136261
+              for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
+              return (h >>> 0).toString(16)
+            }
+            return {
+              hash: fold([spawn, offers, chest, boss, sunPart].join('|')),
+              parts: { spawn: fold(spawn), offers: fold(offers), chest: fold(chest), boss: fold(boss), sun: fold(sunPart) },
+              spawnN: tapeS.length,
+              tail: tapeS.slice(-8),
+              map: activeMap,
+              time,
+              line: printLine,
+            }
+          },
+        }
+      : {}),
   }
   if (devTools()) {
     const wrapped = new Proxy(api, {

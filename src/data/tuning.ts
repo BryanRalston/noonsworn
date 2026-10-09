@@ -7,6 +7,9 @@ export const EARN_CLEAR = 16
 export const TUNING = {
   simHz: 60,
   maxSteps: 4,
+  /** Noon Print stream version. Bump when a daily would stop matching. */
+  rules: 1,
+  noon: { projectiles: 500, xp: 600, steps: 8 },
   seedKey: 'seed',
   runLength: 300,
   inputBuffer: 0.15,

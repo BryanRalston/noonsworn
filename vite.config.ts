@@ -97,7 +97,7 @@ export default defineConfig({
     modulePreload: {
       resolveDependencies(filename, deps) {
         void filename
-        return deps.filter((dep) => !dep.includes('arsenal') && !dep.includes('/meta-'))
+        return deps.filter((dep) => !dep.includes('arsenal') && !dep.includes('/meta-') && !dep.includes('noonprint') && !dep.includes('featureMap'))
       },
     },
     rollupOptions: {
@@ -106,6 +106,8 @@ export default defineConfig({
           const id = info.facadeModuleId?.replace(/\\/g, '/') ?? ''
           if (id.endsWith('/src/game/weapons/w2.ts')) return 'assets/arsenal-[hash].js'
           if (id.endsWith('/src/ui/metaUi.ts')) return 'assets/meta-[hash].js'
+          if (id.endsWith('/src/ui/noonprint.ts')) return 'assets/noonprint-[hash].js'
+          if (id.endsWith('/src/ui/featureMap.ts')) return 'assets/featureMap-[hash].js'
           return 'assets/[name]-[hash].js'
         },
       },

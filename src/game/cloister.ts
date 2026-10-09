@@ -779,7 +779,8 @@ export interface CloisterHandle {
   apply: () => void
   clear: (restore: boolean) => void
   warm: (renderer: WebGLRenderer, camera: Camera) => void
-  tick: (dt: number, sun: SunLike, wide: number, px: number, pz: number, lite?: boolean, runTime?: number) => void
+  tick: (dt: number, sun: SunLike, wide: number, px: number, pz: number, lite?: boolean, runTime?: number, simLite?: boolean) => void
+  seedBoss: (seed: number, note?: (v: number) => void) => void
   pin: (sun: SunLike) => void
   hold: (sun: SunLike, c: number) => void
   shoveAt: (x: number, z: number, radius: number) => { x: number; z: number } | null
@@ -1462,6 +1463,9 @@ export function createCloister(opts: {
 
   return {
     ready: true,
+    seedBoss(seed, note) {
+      cast.reseed(seed, note)
+    },
     apply() {
       PILLARS.length = 0
       for (let i = 0; i < STELAE.length; i++) {
@@ -1536,7 +1540,7 @@ export function createCloister(opts: {
       sun.advance(0)
       sun.frozen = true
     },
-    tick(dt, sun, wide, px, pz, lite, runTime = 0) {
+    tick(dt, sun, wide, px, pz, lite, runTime = 0, simLite = lite) {
       if (!active) return
       sunRef = sun
       uLite.value = lite ? 1 : 0
@@ -1552,7 +1556,7 @@ export function createCloister(opts: {
         brimOn = true
         ringOn = false
       }
-      cast.tick(dt, runTime, cycle, px, pz, 0, lite)
+      cast.tick(dt, runTime, cycle, px, pz, 0, simLite)
       const vis = cast.visuals()
       if (vis.hold) {
         level = 1

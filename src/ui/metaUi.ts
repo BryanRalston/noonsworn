@@ -116,7 +116,7 @@ function paintWheel() {
     btn.classList.toggle('outline', owned && !!earned)
     btn.classList.toggle('locked', !owned)
     const cost = mark.cost
-    const label = mark.id === 'mark.prints' ? 'with Noon Print' : kept ? `${short(mark.id)} kept` : owned ? short(mark.id) : cost ? `${short(mark.id)} ${cost}` : short(mark.id)
+    const label = mark.id === 'mark.prints' ? (owned ? '5 distinct Noon Prints' : 'with Noon Print') : kept ? `${short(mark.id)} kept` : owned ? short(mark.id) : cost ? `${short(mark.id)} ${cost}` : short(mark.id)
     btn.textContent = confirmId === mark.id ? `Confirm ${cost}?` : label
     btn.disabled = !owned && (!cost || mark.id === 'mark.prints')
     if (mark.id === 'mark.prints') btn.disabled = true
