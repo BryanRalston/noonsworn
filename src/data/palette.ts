@@ -47,6 +47,8 @@ export const HEX = {
   duskPlum: '#382C36',
   stairCypress: '#2E4A32',
   dawnLinen: '#F4E0C4',
+  flax: '#E6C36A',
+  pewter: '#A9B7C2',
   nadirSky: '#14182C',
 } as const
 
@@ -101,6 +103,8 @@ export const COLOR = {
   duskPlum: c(HEX.duskPlum),
   stairCypress: c(HEX.stairCypress),
   dawnLinen: c(HEX.dawnLinen),
+  flax: c(HEX.flax),
+  pewter: c(HEX.pewter),
   nadirSky: c(HEX.nadirSky),
   nadirFloor: new Color().setRGB(0.026, 0.024, 0.058),
   nadirBeam: new Color().setRGB(0.8, 0.42, 0.1),

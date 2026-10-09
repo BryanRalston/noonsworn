@@ -31,6 +31,7 @@ export interface LevelUp {
   arm: (url: string) => void
   move: (dir: number) => void
   confirm: () => void
+  index: () => number
   onPick: ((index: number) => void) | null
   onClose: (() => void) | null
 }
@@ -39,7 +40,7 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
   const root = document.createElement('div')
   root.id = 'level-up'
   root.setAttribute('aria-hidden', 'true')
-  root.innerHTML = `<div class="strip"><div class="strip-head"><div class="strip-tag"></div><button type="button" id="level-close">Back</button></div><div id="cards"></div></div>`
+  root.innerHTML = `<div class="strip"><div class="strip-head"><div class="strip-tag"></div><button type="button" id="level-close">Back</button></div><div id="cards"></div><div id="offer-tools"></div></div>`
   parent.append(root)
   const cards = root.querySelector('#cards') as HTMLElement
   const tag = root.querySelector('.strip-tag') as HTMLElement
@@ -178,6 +179,7 @@ export function createLevelUp(parent: HTMLElement): LevelUp {
       setLevelChrome(false)
       count = 0
     },
+    index: () => focus,
     move(dir) {
       if (count < 1 || dir === 0) return
       focus = (focus + (dir > 0 ? 1 : -1) + count) % count

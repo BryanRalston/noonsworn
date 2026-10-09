@@ -143,6 +143,7 @@ export function createScreens(parent: HTMLElement): Screens {
         <button type="button" class="menu-item" id="btn-pause-howto">How to Play</button>
         <button type="button" class="menu-item" id="btn-pause-settings">Settings</button>
         <button type="button" class="menu-item" id="btn-pause-quit">Quit to menu</button>
+        <p id="pause-lines" hidden></p>
       </div>
     </section>
     <section id="end-screen" hidden>
@@ -152,6 +153,8 @@ export function createScreens(parent: HTMLElement): Screens {
       <p id="end-record"></p>
       <div id="end-icons"></div>
       <p id="end-progress"></p>
+      <p id="end-marks" hidden></p>
+      <button type="button" class="menu-item" id="btn-next-mark" hidden></button>
       <p id="map-toast" hidden>New temple opened</p>
       <button type="button" class="menu-item primary" id="btn-end">Retry</button>
       <button type="button" class="menu-item" id="btn-end-retry" hidden>Retry</button>

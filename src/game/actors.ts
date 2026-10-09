@@ -68,6 +68,7 @@ export interface SelaView {
   cue: SelaCue
   spearTip: (out: Vector3) => void
   pose: (frame: SelaFrame) => void
+  setBlister: (fill: number) => void
 }
 
 export interface SelaFrame {
@@ -112,14 +113,14 @@ function triCount(obj: Object3D): number {
   return n
 }
 
-function createMarker(): Mesh {
+function createMarker(fill: { value: number }): Mesh {
   const geo = new CircleGeometry(0.8, 40)
   geo.rotateX(-Math.PI / 2)
   const mat = new ShaderMaterial({
     transparent: true,
     depthWrite: false,
     toneMapped: true,
-    uniforms: { uTime: enemyTime() },
+    uniforms: { uTime: enemyTime(), uFill: fill },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       void main() {
@@ -131,6 +132,7 @@ function createMarker(): Mesh {
       precision highp float;
       varying vec2 vUv;
       uniform float uTime;
+      uniform float uFill;
       void main() {
         vec2 p = vUv * 2.0 - 1.0;
         float r = length(p);
@@ -138,7 +140,10 @@ function createMarker(): Mesh {
         float pulse = 0.72 + 0.28 * sin(uTime * 1.5);
         float stroke = smoothstep(0.55, 0.58, r) * (1.0 - smoothstep(0.62, 0.65, r));
         vec3 col = mix(vec3(${dark.r.toFixed(4)}, ${dark.g.toFixed(4)}, ${dark.b.toFixed(4)}), vec3(${gold.r.toFixed(4)}, ${gold.g.toFixed(4)}, ${gold.b.toFixed(4)}), stroke * pulse);
-        gl_FragColor = vec4(col, mix(0.8, 0.95, stroke));
+        float arc = fract(atan(p.x, p.y) * 0.15915 + 0.5);
+        float on = step(0.72, r) * step(r, 0.88) * step(arc, uFill) * step(0.001, uFill);
+        col = mix(col, vec3(${gold.r.toFixed(4)}, ${gold.g.toFixed(4)}, ${gold.b.toFixed(4)}), on);
+        gl_FragColor = vec4(col, max(mix(0.8, 0.95, stroke), on));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }
@@ -300,7 +305,8 @@ export function createSela(gltf: GLTF): SelaView {
   visual.add(rig)
   const root = new Group()
   root.name = 'sela'
-  root.add(createMarker(), visual)
+  const blister = { value: 0 }
+  root.add(createMarker(blister), visual)
   let actionName: ClipName | null = null
   let fired = ''
   let flourishLatch = false
@@ -356,6 +362,9 @@ export function createSela(gltf: GLTF): SelaView {
     spearTip(out) {
       root.updateMatrixWorld(true)
       out.copy(tipLocal).applyMatrix4(spearMesh.matrixWorld)
+    },
+    setBlister(fill) {
+      blister.value = fill
     },
     pose(frame) {
       cue.throwRelease = false

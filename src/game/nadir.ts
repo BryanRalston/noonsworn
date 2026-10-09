@@ -424,6 +424,7 @@ export interface NadirHandle {
   jump: (phase: 1 | 2 | 3) => void
   pose: (name: string) => void
   autoRays: (ids: readonly number[]) => void
+  setSliver: (on: boolean) => void
   skip: () => void
   /** True when `advance` more seconds of the ending would open the credits card. */
   cardDue: (advance: number) => boolean
@@ -597,6 +598,14 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
   let deferEnding: { t: number; card: boolean } | null = null
   let burst = 0
   const rays = [-1, -1, -1, -1, -1]
+  let sliverOn = false
+  let lightName: HTMLElement | null = null
+  let lightText: HTMLElement | null = null
+  const lode = { id: CARD.lodestone, name: 'Lodestone', text: 'Pulls shards from farther off.' }
+  function lightPick(which: number): { id: number; name: string; text: string } | undefined {
+    if (sliverOn && which === 0) return lode
+    return RAYS[4]?.[which]
+  }
   const tmp = new Vector3()
   const fwd = new Vector3()
   const goldRgb = [COLOR.gold.r, COLOR.gold.g, COLOR.gold.b]
@@ -617,6 +626,10 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.innerHTML = `<strong>${card.name}</strong><em>${card.text}</em>`
+      if (bucket === 4 && which === 0) {
+        lightName = btn.querySelector('strong')
+        lightText = btn.querySelector('em')
+      }
       btn.addEventListener('click', () => choose(bucket, which))
       row.append(btn)
     })
@@ -637,7 +650,7 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
 
   function grantPick(bucket: number, which: number) {
     if ((rays[bucket] ?? -1) >= 0) return
-    const card = RAYS[bucket]?.[which]
+    const card = bucket === 4 ? lightPick(which) : RAYS[bucket]?.[which]
     if (!card) return
     rays[bucket] = which
     hooks.grant(card.id)
@@ -1705,6 +1718,14 @@ export function createNadir(opts: { scene: Scene; hide: Object3D[]; tint: Object
         deferP3 = false
         deferSweep = false
         deferEnding = { t: name === 'kill' ? 0 : name === 'sunrise' ? 8 : name === 'sworn' ? 10.6 : 12, card: name === 'card' }
+      }
+    },
+    setSliver(on) {
+      sliverOn = on
+      const card = lightPick(0)
+      if (card && lightName && lightText) {
+        lightName.textContent = card.name
+        lightText.textContent = card.text
       }
     },
     autoRays(ids) {

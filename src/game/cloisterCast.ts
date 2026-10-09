@@ -28,7 +28,7 @@ import { mulberry32, type Rng } from '../core/rng'
 import { COLOR } from '../data/palette'
 import { TUNING } from '../data/tuning'
 import { octDist, slideCircle } from './collision'
-import { damageAmount } from './sunClock'
+import { damageAmount, shadeWeaponMul } from './sunClock'
 import { attachCompline } from './complineRig'
 
 const V_MAX = 18
@@ -1285,7 +1285,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         if (!hit(foe.x, foe.z, reach)) continue
         foe.heading = id
         let amount = damage * (1 + TUNING.passive.might * might)
-        if (foe.mode === 0) amount *= TUNING.armoredWeapon
+        if (foe.mode === 0) amount *= shadeWeaponMul()
         else amount = damageAmount(damage, ask.lit(foe.x, foe.z), 'cut', might, ask.deep(foe.x, foe.z))
         foe.hp -= amount
         if (foe.hp <= 0) {
@@ -1313,7 +1313,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         let m = 1 + TUNING.passive.might * might
         if (under) m *= TUNING.exposedDamage
         else if (deep) m *= TUNING.cloister.deepWeapon
-        else m *= TUNING.armoredWeapon
+        else m *= shadeWeaponMul()
         foe.hp -= base * m
         hooks.ping(foe.x, foe.z, under)
         any = true
@@ -1330,7 +1330,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
         const reach = foe.mode === 0 ? specB.radius : 0.45
         if (dx * dx + dz * dz > (rPad + reach) * (rPad + reach)) continue
         let amount = base * (1 + TUNING.passive.might * might)
-        if (foe.mode === 0) amount *= TUNING.armoredWeapon
+        if (foe.mode === 0) amount *= shadeWeaponMul()
         else amount = damageAmount(base, ask.lit(foe.x, foe.z), source, might, ask.deep(foe.x, foe.z))
         foe.hp -= amount
         any = true

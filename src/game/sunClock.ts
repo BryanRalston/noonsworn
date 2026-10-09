@@ -15,9 +15,13 @@ export interface SunClock {
   dirZ: number
   cosBeta: number
   beta: number
+  beamDeg: number
+  daySeconds: number
   frozen: boolean
   timeScale: number
   reset: (rng: Rng) => void
+  setBeam: (deg: number) => void
+  setDay: (seconds: number) => void
   setWide: (stacks: number) => void
   advance: (dt: number) => void
   isLit: (x: number, z: number) => boolean
@@ -36,6 +40,8 @@ export function createSunClock(): SunClock {
     dirZ: 0,
     cosBeta: Math.cos((TUNING.beamDeg * Math.PI) / 180),
     beta: (TUNING.beamDeg * Math.PI) / 180,
+    beamDeg: TUNING.beamDeg,
+    daySeconds: TUNING.daySeconds,
     frozen: false,
     timeScale: 1,
     reset(rng) {
@@ -45,8 +51,14 @@ export function createSunClock(): SunClock {
       sun.frozen = false
       place()
     },
+    setBeam(deg) {
+      sun.beamDeg = deg
+    },
+    setDay(seconds) {
+      sun.daySeconds = seconds
+    },
     setWide(stacks) {
-      const deg = TUNING.beamDeg + TUNING.wideDeg * Math.max(0, Math.min(TUNING.wideMax, stacks))
+      const deg = sun.beamDeg + TUNING.wideDeg * Math.max(0, Math.min(TUNING.wideMax, stacks))
       sun.beta = (deg * Math.PI) / 180
       sun.cosBeta = Math.cos(sun.beta)
     },
@@ -77,7 +89,7 @@ export function createSunClock(): SunClock {
   }
 
   function place() {
-    const theta = sun.theta0 + sun.dir * Math.PI * 2 * (sun.time / TUNING.daySeconds)
+    const theta = sun.theta0 + sun.dir * Math.PI * 2 * (sun.time / sun.daySeconds)
     sun.angle = theta
     sun.x = Math.cos(theta) * TUNING.sunRadius
     sun.z = Math.sin(theta) * TUNING.sunRadius
@@ -95,11 +107,22 @@ export function hasteMul(ranks: number): number {
   return Math.max(0.2, 1 - TUNING.passive.haste * ranks)
 }
 
+let shadeWeapon: number = TUNING.armoredWeapon
+
+/** Shade-weapon multiplier. Hard Line is the only writer; the default is the base ×0.5. */
+export function setShadeWeapon(mul: number): void {
+  shadeWeapon = mul
+}
+
+export function shadeWeaponMul(): number {
+  return shadeWeapon
+}
+
 /** Multiplier shared by weapons and the Noon Cut. */
 export function damageAmount(base: number, lit: boolean, source: 'weapon' | 'cut', might: number, deep = false): number {
   let m = 1 + TUNING.passive.might * might
   if (lit) m *= TUNING.exposedDamage
-  else if (source === 'weapon') m *= deep ? TUNING.cloister.deepWeapon : TUNING.armoredWeapon
+  else if (source === 'weapon') m *= deep ? TUNING.cloister.deepWeapon : shadeWeapon
   else m *= TUNING.armoredCut
   return base * m
 }

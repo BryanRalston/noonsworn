@@ -53,11 +53,12 @@ import { createShards } from './shards'
 import { createBlobShadows } from './shadows'
 import { createDirector, latticePlan } from './director'
 import { createHorde, type Horde, type HordeCtx } from './enemies/horde'
-import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBoon, lockW1Pool, openW2Offers, rankOf, recommendIndex, rollCards, xpToNext, type Build, type Card } from './leveling'
+import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBoon, lockW1Pool, openW2Offers, rankOf, recommendIndex, rollCards, setOfferRewrite, xpToNext, type Build, type Card } from './leveling'
 import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
-import { createSunClock, damageAmount } from './sunClock'
+import { createSunClock, damageAmount, setShadeWeapon } from './sunClock'
+import { bootMeta, liveMeta } from './meta'
 import { clockShadow, stairShadow, type ShadowDir } from './shadowDir'
 import { cellBlocked, PILLARS, resetHomePillars, setBeds } from './collision'
 import type { CloisterHandle } from './cloister'
@@ -169,6 +170,7 @@ function blankInput(): InputState {
 }
 
 export async function boot(container: HTMLElement) {
+  bootMeta()
   mountPalette(document.documentElement)
   const params = new URLSearchParams(location.search)
   const previewWeapon = import.meta.env.DEV ? params.get('m25a') : null
@@ -504,6 +506,22 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   let deathHold = 0
   // Set once the ending best has been read and the run recorded. A later step must not record again.
   let runNoted = false
+  let endMarks = ''
+  let rerollLeft = 0
+  let banishLeft = 0
+  const banned = new Set<number>()
+  let lineFx: {
+    reset: () => void
+    step: (dt: number) => void
+    draw: (count: number) => void
+    apply: () => void
+  } | null = null
+  let staticShown = false
+  let metaHeld = false
+  type MetaUiMod = typeof import('../ui/metaUi')
+  let metaUi: MetaUiMod | null = null
+  let metaLoading = false
+  const metaWait: (() => void)[] = []
   let firstOffer = true
   let lastHurt = 'the shade'
   let bossWas = false
@@ -1087,17 +1105,54 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   applyPresentation()
 
   let wakeLoop = () => {}
-  // Credits card: leave the last WebGL frame in the canvas and stop the loop.
-  // A further ~1 ms frame is what the 4× phone timer stretches into a long gap.
-  function creditsParked(): boolean {
-    if (mode !== 'clear' || activeMap !== 'nadir' || nadirView?.stage !== 'card') return false
-    const end = document.getElementById('end-screen')
-    return !!end && !end.hidden
+
+  function ensureMeta(done?: () => void) {
+    if (metaUi) {
+      done?.()
+      return
+    }
+    if (done) metaWait.push(done)
+    if (metaLoading) return
+    metaLoading = true
+    void import('../ui/metaUi').then((mod) => {
+      metaUi = mod
+      mod.attach({
+        wake: () => wakeLoop(),
+        paint: () => paintPalette(),
+        mapId: () => activeMap,
+        onReroll: () => rerollOffer(),
+        onBanish: (index) => banishOffer(index),
+        setHeld: (on) => {
+          metaHeld = on
+        },
+      })
+      metaLoading = false
+      const wait = metaWait.splice(0)
+      for (let i = 0; i < wait.length; i++) wait[i]?.()
+    })
+  }
+
+  function takenBosses(cleared: boolean): number {
+    if (activeMap === 'sundial') return 0
+    if (cleared) return 1
+    if (activeMap === 'lattice' && lattice?.bossInfo()?.dead) return 1
+    return 0
   }
 
   function showMode(next: ScreenMode) {
     // The result line is the best from before this run. Recording first makes the run compare against itself.
     if (runNoted && (next === 'dead' || next === 'clear')) return
+    if ((next === 'dead' || next === 'clear') && !runNoted) {
+      endMarks = liveMeta().credit({
+        seconds: time,
+        bossKills: takenBosses(next === 'clear'),
+        cleared: next === 'clear',
+        finale: next === 'clear' && activeMap === 'nadir',
+        mapId: activeMap,
+        practice: false,
+      }).line
+      liveMeta().endRun()
+    }
     mode = next
     screens.setMode(next, next === 'dead' || next === 'clear' ? endDetail() : undefined)
     const playUi = next === 'playing' || next === 'paused' || next === 'level'
@@ -1114,8 +1169,15 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       runNoted = true
       if (activeMap === 'nadir' && next === 'clear') {
         storageSet('noonsworn.dawn', '1')
-        paintLinen(true)
+        if (liveMeta().env.palette === 'default') liveMeta().setPalette('linen')
+        paintPalette()
       }
+      const marks = document.getElementById('end-marks')
+      if (marks) {
+        marks.hidden = !endMarks
+        marks.textContent = endMarks
+      }
+      if (liveMeta().hasProgress()) ensureMeta(() => metaUi?.paintResult())
       const opened = noteRun(activeMap, time, kills, next === 'clear', activeMap === 'nadir' && next === 'clear' ? nadir?.info().remain : undefined)
       fillEnd(next === 'clear', before)
       if (activeMap === 'stair' && next === 'clear') {
@@ -1130,6 +1192,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       }
     } else {
       screens.setToast(null)
+      if (next === 'paused') metaUi?.syncPause()
       if (next === 'menu' || next === 'splash') audio.stopMusic()
     }
     if (next !== 'level') levelUp.hide()
@@ -1182,8 +1245,25 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
     noteOffer(offerCount)
     levelUp.show(shown.slice(0, offerCount), sunlit, (id) => rankOf(build, id))
+    metaUi?.syncOffer(rerollLeft, banishLeft, levelUp.index())
     buzz(18)
     if (mode !== 'level') showMode('level')
+  }
+
+  function rerollOffer() {
+    if (mode !== 'level' || rerollLeft <= 0) return
+    rerollLeft -= 1
+    openLevel()
+  }
+
+  function banishOffer(index: number) {
+    if (mode !== 'level' || banishLeft <= 0) return
+    const id = shown[index]?.id
+    if (id == null || id === CARD.heal) return
+    banned.add(id)
+    banishLeft -= 1
+    applyOfferFilter()
+    openLevel()
   }
 
   let haloLock = 0
@@ -1198,12 +1278,18 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     // The strip's text layout stays off this sim frame. The hook measures the next turn on its own.
     requestAnimationFrame(() => {
       levelUp.show(cards, sunlit, (id) => rankOf(build, id))
+      metaUi?.syncOffer(rerollLeft, banishLeft, levelUp.index())
       buzz(18)
       showMode('level')
       showToast('Later picks bank on the halo.', 3.4)
     })
   }
+  function fewHands(): boolean {
+    return liveMeta().lineLive('line.fewhands', activeMap)
+  }
+
   function closeOffer() {
+    if (fewHands() && build.pending > TUNING.lines.fewBank) return
     levelUp.hide()
     if (mode === 'level') showMode('playing')
     haloLock = performance.now() + 80
@@ -1239,7 +1325,10 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     hud.pulse()
     hud.setCharges(build.pending)
     tutorial.onCharge()
-    if (!autopickEnabled()) return
+    if (!autopickEnabled()) {
+      if (fewHands() && build.pending > TUNING.lines.fewBank) openLevel()
+      return
+    }
     while (build.pending > 0) {
       const sunlit = litAt(player.x, player.z)
       offerCount = rollCards(build, rng, shown, sunlit ? 4 : 3)
@@ -1308,7 +1397,9 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     applySide(applyRank(build, id))
   }
 
-  function paintLinen(on: boolean) {
+  function paintPalette() {
+    const id = liveMeta().env.palette
+    const tint = id === 'linen' ? COLOR.dawnLinen : id === 'flax' ? COLOR.flax : id === 'pewter' ? COLOR.pewter : null
     playerView.traverse((child) => {
       const mesh = child as Mesh
       if (!mesh.isMesh) return
@@ -1316,9 +1407,27 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       for (const material of list) {
         const colored = material as MeshToonMaterial
         if (!colored.color || !colored.isMeshToonMaterial) continue
-        colored.color.set(on ? COLOR.dawnLinen : 0xffffff)
+        colored.color.set(tint ?? 0xffffff)
       }
     })
+  }
+
+  function applyOfferFilter() {
+    lineFx?.apply()
+  }
+
+  function stepBlister(dt: number) {
+    lineFx?.step(dt)
+  }
+
+  function staticScreen(): boolean {
+    if (metaHeld || mapSelect.isOpen()) return true
+    if (mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits') return true
+    if (mode === 'dead' || mode === 'clear') {
+      const end = document.getElementById('end-screen')
+      return !!end && !end.hidden
+    }
+    return false
   }
 
   // One layout read when a toast is shown. The phone 2×2 strip is taller than the
@@ -1838,7 +1947,16 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     resetCut(cut)
     build = createBuild()
     sun.reset(rng)
+    metaUi?.closeMeta()
+    liveMeta().arm(wantMap)
+    sun.setBeam(liveMeta().lineLive('line.sliver', wantMap) ? TUNING.lines.sliverDeg : TUNING.beamDeg)
+    sun.setDay(liveMeta().lineLive('line.quick', wantMap) ? TUNING.lines.quickDay : TUNING.daySeconds)
+    setShadeWeapon(liveMeta().lineLive('line.hard', wantMap) ? TUNING.lines.hardShade : TUNING.armoredWeapon)
     sun.setWide(0)
+    rerollLeft = liveMeta().rerolls()
+    banishLeft = liveMeta().banishes()
+    banned.clear()
+    lineFx?.reset()
     director.reset()
     horde.clear()
     spears.clear()
@@ -1889,6 +2007,11 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     }
     audio.startMusic()
     activeMap = wantMap
+    applyOfferFilter()
+    nadir?.setSliver(liveMeta().lineLive('line.sliver', activeMap))
+    lineFx?.draw(liveMeta().armed().length)
+    paintPalette()
+    if (liveMeta().hasProgress() || liveMeta().armed().length) ensureMeta(() => metaUi?.syncPause())
     resetHomePillars()
     setBeds([])
     // The stair keeps its own sun. Shut the sundial gate clock so those floors and pillars are not drawn.
@@ -1918,7 +2041,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       nadirView = nadir.tick(0, 0, player.x, player.z, follow.camera)
       applyNadirLook(nadirView)
       syncNadirMusic(nadirView)
-      paintLinen(storageGet('noonsworn.dawn') === '1')
+      paintPalette()
       prewarmDraw()
     } else if (activeMap === 'stair' && stair) {
       nadir?.clear()
@@ -2145,6 +2268,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     const saved = loadMaps()
     if (saved.unlocked.some((id) => id !== 'sundial')) {
       mapSelect.open(saved)
+      if (liveMeta().hasProgress()) ensureMeta(() => metaUi?.syncPicker())
       if (saved.unlocked.includes('stair') && !saved.seen.includes('stair') && markSeen('stair')) {
         mapSelect.toast('New temple opened')
       } else if (saved.unlocked.includes('cloister') && !saved.seen.includes('cloister') && markSeen('cloister')) {
@@ -2167,6 +2291,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
   screens.onTemple = () => {
     audio.ui()
     mapSelect.open(loadMaps())
+    if (liveMeta().hasProgress()) ensureMeta(() => metaUi?.syncPicker())
   }
   screens.onResume = () => {
     if (mode === 'paused') {
@@ -2481,7 +2606,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       } else if (mode === 'level') {
         frame.cutPressed = false
         queuedCut = false
-        if (frame.pausePressed || frame.cancelPressed) closeOffer()
+        if ((frame.pausePressed || frame.cancelPressed) && !(fewHands() && build.pending > TUNING.lines.fewBank)) closeOffer()
         else if (frame.pick >= 0 && frame.pick < offerCount) takeCard(frame.pick)
         else {
           if (frame.navX !== 0) levelUp.move(frame.navX)
@@ -2524,7 +2649,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         }
         return false
       }
-      sun.timeScale = activeMap === 'stair' ? 1 : activeMap === 'nadir' ? 0 : Math.max(0.4, 1 - 0.12 * build.longday)
+      const quick = liveMeta().lineLive('line.quick', activeMap)
+      sun.timeScale = activeMap === 'stair' ? 1 : activeMap === 'nadir' ? 0 : Math.max(quick ? 1 : 0.4, 1 - 0.12 * build.longday)
       if (!sun.frozen && activeMap !== 'nadir') sun.advance(dt)
       if (activeMap === 'nadir' && nadirView?.stage === 'noon') sun.time = 0
       clockPacks()
@@ -2665,6 +2791,7 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
       if (cut.active && !cutWas) tutorial.onCut()
       if (!previewShow && (previewWeapon === 'cut' || previewWeapon === 'all') && cut.cooldown > 0.45) cut.cooldown = 0.45
       if (!slipped) integratePlayer(player, dt, wishX, wishZ, speed, cut.active, cut.dirX, cut.dirZ, cut.time)
+      stepBlister(dt)
       if (chests.revealUp()) player.invuln = Math.max(player.invuln, 0.2)
       if (activeMap === 'cloister' && cloister) {
         const carried = cloister.shoveAt(player.x, player.z, player.radius)
@@ -2800,7 +2927,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
         applyNadirLook(nadirView)
         if ((nadirView.stage === 'ending' || nadirView.stage === 'card') && storageGet('noonsworn.dawn') !== '1') {
           storageSet('noonsworn.dawn', '1')
-          paintLinen(true)
+          if (liveMeta().env.palette === 'default') liveMeta().setPalette('linen')
+          paintPalette()
         }
       } else if (activeMap === 'stair' && stair) {
         stair.tick(dt, time, build.wide, build.longday, player.x, player.z, cam.x, cam.z)
@@ -3289,18 +3417,39 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
           })
         }
       }
+      staticShown = staticScreen()
     },
     hold() {
-      return creditsParked()
+      return staticShown && staticScreen()
     },
     willHold(advance: number) {
-      return activeMap === 'nadir' && !!nadir?.cardDue(advance)
+      return staticScreen() || (activeMap === 'nadir' && !!nadir?.cardDue(advance))
     },
   }
   await fx.ready
   warmScene()
   prewarmDraw()
   warmEndCard()
+  try {
+    const fxMod = await import('./lineFx')
+    lineFx = fxMod.createLineFx({
+      player,
+      mode: () => mode,
+      map: () => activeMap,
+      lit: mapLit,
+      banned,
+      ring: (fill) => sela.setBlister(fill),
+      hurt: () => {
+        audio.hurt()
+        animHurt = true
+        lastHurt = 'the light'
+      },
+      setRewrite: setOfferRewrite,
+    })
+  } catch (err) {
+    if (import.meta.env.DEV) console.error(err)
+  }
+
   wakeLoop = startLoop(loop).wake
   // A parked card has no timer. Buttons change mode on click; empty space restarts on pointerdown.
   window.addEventListener('resize', wakeLoop)
@@ -3777,7 +3926,14 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
     },
   }
   if (devTools()) {
-    window.__noonsworn = api
-    window.__nw = api
+    const wrapped = new Proxy(api, {
+      get(target, key, recv) {
+        liveMeta().noteDev()
+        return Reflect.get(target, key, recv)
+      },
+    })
+    window.__noonsworn = wrapped
+    window.__nw = wrapped
   }
+  if (liveMeta().hasProgress()) ensureMeta()
 }

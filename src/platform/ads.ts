@@ -1,7 +1,7 @@
 import { TUNING } from '../data/tuning'
 
 export type AdResult = 'rewarded' | 'skipped' | 'unavailable'
-export type RewardPlacement = 'revive' | 'reroll' | 'doubleGilt'
+export type RewardPlacement = 'revive' | 'reroll' | 'bonusMark'
 
 export interface AdsProvider {
   init(): Promise<void>

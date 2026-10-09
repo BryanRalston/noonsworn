@@ -42,6 +42,7 @@ export function createSundial(parent: HTMLElement): Sundial {
       <circle id="sun-dot" cx="36" cy="8" r="4"></circle>
       <path id="stair-arc" hidden></path>
       <circle id="stair-elev" r="2.2" cx="36" cy="12" hidden></circle>
+      <g id="line-notches"></g>
       <g id="rim-marks">
         <circle class="rim" data-t="105" r="1.5"></circle>
         <circle class="rim" data-t="180" r="1.5"></circle>

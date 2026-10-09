@@ -26,6 +26,17 @@ export const TUNING = {
   exposedSpeed: 0.8,
   armoredWeapon: 0.5,
   armoredCut: 1,
+  lines: {
+    sliverDeg: 14,
+    // Lattice seed 22 at 0.46 is +66% boss time. 0.47 holds that seed on the baseline.
+    hardShade: 0.47,
+    blisterSeconds: 4,
+    blisterRate: 0.02,
+    quickDay: 42,
+    fewBank: 1,
+    bonusCap: 0.4,
+    bonus: { sliver: 0.15, hard: 0.15, blister: 0.15, quick: 0.1, fewhands: 0.1 },
+  },
   hitFlash: 0.08,
   deathTime: 0.2,
   contactGap: 0.5,

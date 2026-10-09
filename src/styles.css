@@ -953,3 +953,25 @@ html.reduce-motion #dayburst-flash.on.alt { animation: none; opacity: 0; }
 #chest-pointer[hidden] { display: none !important; }
 body:has(#evo-reveal:not([hidden])) #touch-root,
 body:has(#evo-reveal:not([hidden])) #btn-halo { visibility: hidden; }
+#line-notches .line-notch { fill: var(--gold); }
+#end-marks, #pause-lines { color: var(--goldHot); font-size: 14px; margin: 8px 0; }
+#btn-wheel, #btn-wardrobe-menu, #btn-next-mark, #line-row button, #offer-tools button, #wardrobe button, #hour-wheel button { min-height: 48px; }
+#line-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 12px; }
+#line-row button { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--sandstone); background: transparent; color: var(--linen); }
+#line-row button.on { border-color: var(--gold); color: var(--goldHot); }
+#line-row button:disabled { opacity: 0.45; }
+#offer-tools { display: flex; gap: 8px; margin-top: 8px; }
+#offer-tools button { flex: 1; border-radius: 10px; border: 1px solid var(--gold); background: #141225; color: var(--linen); }
+#offer-tools:empty { display: none; }
+#map-cards.framed .map-card { box-shadow: inset 0 0 0 2px var(--gold); }
+#hour-wheel, #wardrobe { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(20, 18, 37, 0.82); }
+#hour-wheel[hidden], #wardrobe[hidden] { display: none; }
+.wheel-card { width: min(420px, calc(100% - 24px)); padding: 16px; border-radius: 16px; background: #1b1730; color: var(--linen); text-align: center; }
+.wheel-ring { position: relative; width: 300px; height: 300px; margin: 12px auto; }
+.wheel-ring button { position: absolute; left: 50%; top: 50%; width: 72px; margin: 0; padding: 4px; border-radius: 12px; border: 1px solid #5c5346; background: transparent; color: var(--linen); font-size: 11px; transform: translate(-50%, -50%) rotate(var(--a)) translateY(-112px) rotate(calc(var(--a) * -1)); }
+.wheel-ring button.fill { background: var(--gold); color: #241806; border-color: var(--gold); }
+.wheel-ring button.outline { background: transparent; border: 2px solid var(--gold); color: var(--goldHot); }
+.wheel-ring button.locked { opacity: 0.55; }
+.wardrobe-list { display: grid; gap: 8px; margin: 12px 0; }
+.wardrobe-list button.on { border-color: var(--gold); color: var(--goldHot); }
+.wheel-note { min-height: 1.2em; color: var(--sandstone); }

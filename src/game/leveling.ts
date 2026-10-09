@@ -107,6 +107,12 @@ export const SLOT_CAP = 6
 
 let offerW2 = false
 let poolW1 = false
+let offerRewrite: ((ids: number[], rest: number[], boon: number[], need: number) => void) | null = null
+
+/** Null keeps the base offer byte-for-byte. A rewrite only replaces cards after the roll. */
+export function setOfferRewrite(fn: ((ids: number[], rest: number[], boon: number[], need: number) => void) | null): void {
+  offerRewrite = fn
+}
 
 /** The lazy chunk calls this once it has registered card text. */
 export function openW2Offers(): void {
@@ -269,6 +275,7 @@ export function rollCards(build: Build, rng: Rng, out: Card[], count = 3): numbe
   }
   if (wantHalo && !ids.includes(CARD.halo) && restPool.includes(CARD.halo)) ids[0] = CARD.halo
   while (ids.length < need) ids.push(CARD.heal)
+  offerRewrite?.(ids, restPool, boonPool, need)
   for (let i = 0; i < need; i++) out[i] = describe(build, ids[i] ?? CARD.heal)
   return need
 }
