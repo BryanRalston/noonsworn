@@ -133,3 +133,88 @@ Cards `82f72b6`: `src/ui/mapSelect.ts`, `src/data/maps.ts`, `src/styles.css`, an
 Briefs under `briefs/` stayed untracked.
 
 PUSH-READY: NO
+
+# R3.1
+
+Local only. Not pushed. Source is `dc06c39`, on top of `7a63c54`. Measured on this computer against Vite `http://127.0.0.1:5174/noonsworn/`. The before crops came from the `d6c9db9` worktree on port 5179. Chrome 154, CDP 9224, profile `chrome-f21`. No 402, 429, or credit error.
+
+## Items
+
+| Item | Verdict | Evidence |
+| --- | --- | --- |
+| 1 Cloister gameplay | PARTIAL | Collision, lit test, and hit reach match `d6c9db9`. The rerun clears 5 of 6. The five-clear mean is 39.54 s, 19.3% above the R1b four-clear mean of 33.16 s. The ±15% ceiling is 38.13 s. |
+| 2 Crispness | PASS | Garland and vine cards are hard diamonds at game zoom. The halo rim reads warm bronze in day, shade, and the Nadir night court. `qa/r3/contact.png` is the new before/after sheet. `qa/r3/contact_before.png` is the previous sheet. |
+| 3 Lattice draws | PASS | Desktop high boss peak is 20. Phone med on the same window peaks at 16. Net draws added stays 0. |
+| 4 Temple cards | PASS | The 20 KB floor is waived. Sundial and Cloister stay crisp at 768×288, checked at 2×. Nadir's sky flats are already in the WebP, so q stays 78. Total 75,714 bytes. |
+
+## 1. Cloister geometry and the rerun
+
+`collision.ts`, `cloister.ts`, `cloisterCast.ts`, `sunClock.ts`, `tuning.ts`, and `camera.ts` are an empty diff against `d6c9db9`. `halo.ts` changes one comment. `ringLocal(0.47)` and the reach formula are the same lines. The gold band is now local r 0.36–0.56, so 0.47 stays inside it.
+
+A matched probe on ports 5179 and 5174, taken before the leaf and bloom edits, used seed 11, tier high, chests 0, and the same meta. 35 points at t = 8, 40, 80, 120, and 200: `floorLit` mismatches 0. GPU `cloisterAgree` pairs matched, including a shared 9/10 that is already on `d6c9db9`. Collision pushes matched to 0.0001. The old visual-flare point (10.75, 9) is 1.75 m from the pillar, outside the 1.65 m solid, on both commits. Weapons were not retuned.
+
+The lattice floor shader now draws the coin bloom in the terrain pass. After that edit, lattice `coinTest` on the −8..8 step-4 grid is 24/24. That shader is the lattice terrain. Cloister does not run it.
+
+Rerun after the art edit, Cloister, kit e2, `RENDER=0`, tier high, cap 220, `bonus.first` stored on the origin before the suite. Seed 55 is the known baseline death and is left out of the mean. `qa/r3/r31_ttk.jsonl`. `errs` empty. Ranks are helio, scarab, stake, and prism at 5.
+
+| Seed | R1b | R3.1 |
+| --- | --- | --- |
+| 11 | clear 32.31, php 18 | clear 32.48, php 18 |
+| 22 | clear 33.18, php 14 | clear 39.81, php 44 |
+| 33 | death | clear 44.31, php 32 |
+| 44 | clear 33.33, php 6 | clear 39.81, php 46 |
+| 55 | clear 33.81, php 62 | death, php 0, t=301.88 |
+| 66 | death | clear 41.31, php 24 |
+
+5 of 6 is inside 4 ± 1. The five clears average (32.48 + 39.81 + 44.31 + 39.81 + 41.31) / 5 = 39.54 s. That is +19.3% against 33.16 s. Seed 22 at 39.81 s is past its own ±15% ceiling of 38.16 s against 33.18 s.
+
+The same slowness is on the pre-edit trees on this machine. `d6c9db9` cleared 3 of 6 (11 at 34.81, 22 at 39.81, 66 at 41.31) for a mean of 38.64 s, +16.5%. `7a63c54` before these art edits cleared 4 of 6 (11 at 32.48, 22 at 40.14, 33 at 44.31, 66 at 41.31) for a mean of 39.56 s, +19.3%. Seed 44's clear in this rerun is the one new clear. The slow timestamps were already there. `tuning.ts` is unchanged.
+
+## 2. Crispness
+
+Lattice garland cards are one diamond per station, four vertices, hard edges. Vine sprigs are five upright diamonds on a post. The dressing shader discards outside the diamond and writes the card colour through so the toon ramp does not round the silhouette. `espalier.ts` `roundedLeaf` was not touched. A garland card in the desktop after frame measures 31×30 px, fill 0.614, top edge 3 px, bbox corners empty. The matching before frame is the lumpy cluster.
+
+Halo rim vertex colour is `(0.78, 0.36, 0.07)` with emit 0.4. ACES at exposure 1.32, after the emit mix toward gold, lands at #EBC26C. The source comment's target is #EBC36D. Full drain multiplies exposure by 0.15 and lands at #724111, beside the comment's #724211. Live samples, center window, same pose on both commits:
+
+| Frame | Before, dark pixels touching a warm pixel | After, bright warm pixel | After, dark pixels touching warm |
+| --- | --- | --- | --- |
+| Desktop day | 923 | (238, 191, 109) | 11 |
+| Desktop shade, `floorLit` false at (9.01, −2.30), sun 2.43 | 898 | (237, 192, 109) | 20 |
+| Phone day, med, buffer 618×1371 | — | (237, 192, 109) | 19 |
+| Phone shade | — | (237, 192, 109) | 16 |
+
+Phone CSS is 412×914 at the requested DPR 2.6. Mobile med clamps the framebuffer to 1.5, so the canvas is 618×1371. That is the game's phone image.
+
+Nadir draft, desktop, halo 5: the four rings read warm orange on the night court. The darkest warm pixel in the center window is (145, 97, 36). A live drain frame was not taken. Drain starts only when a run descends from the Stair (`descendNadir`), and `matins()` clears that flag.
+
+`qa/r3/contact_before.png` is the previous 1680×816 sheet (1,249,200 bytes), copied before the rebuild. `qa/r3/contact.png` is 1680×1088 (1,376,699 bytes): 420×250 game-pixel crops, four columns, before from 5179 and after from 5174. Rows are desktop garland and vine, desktop halo day and shade, phone garland and vine, phone halo day and shade.
+
+## 3. Lattice draw ledger
+
+Desktop high, seed 11, player pinned at the origin, invulnerable. The probe waited until `shadeZ()` was a number, so the rows are Lattice and the sundial wing pillars stay at 0. `coinTest` 24/24. `errs` empty. Calls are scene meshes plus the four bloom-composer passes plus the sun pip. Phone med has no composer, so it sits 4 below the desktop boss window.
+
+| Moment | Desktop high | Phone med |
+| --- | --- | --- |
+| Run start | t=0.13, calls 14, tris 14,576, wings 0 | The t=0.10 sample (calls 7) is before the dressing is in the frame |
+| Swarm with XP gems | not observed (`hot` 0, `gemsMesh` 0) | not observed |
+| Boss wake | t=270.02, calls 19, tris 40,936, hp 9000, wings 0 | t=270.04, calls 14, tris 48,927, hp 9000, wings 0 |
+| Boss with bloom and gems | not observed (`bloomN` 0, `hot` 0) | not observed |
+| Boss peak | t=302.43, calls 20, tris 46,978, hp 9000 | t=283.46, calls 16, tris 87,522, hp 9000 |
+
+Desktop histogram tops at 20 (202 frames). Phone histogram tops at 16 (120 frames). The desktop peak name list is 15 meshes: dressing buffers, two planes, Sela, fx, the marker, and the spear. It has no `CircleGeometry` bloom disc and no gem icosahedron. 15 meshes + 4 composer passes + the sun pip = 20. A scripted fight afterward also recorded 0 kills, so the gem and bloom rows stayed empty. The fold is what removed the separate disc and the separate gem draw. `showTail` still draws an icosahedron if the fx stamp cannot hold every gem. That mesh stayed at count 0 on every sampled frame.
+
+## 4. Temple cards
+
+Sundial (16,384 bytes, q78) and Cloister (10,978, q78) read as crisp stylized shapes at 768×288 and at a 2× nearest view. The 20 KB floor is waived for both.
+
+Nadir (5,834, q78) is the same 768×288 crop. On row y=24 the sky has 217 colour runs, 8 of them 16 px long, at a step of 2. Those steps are the stored pixels. Encoding this WebP again at a higher quality does not insert the missing samples, and there is no lossless source PNG in `qa/r3`. q stays 78. Lattice 21,766 and Stair 20,752 are unchanged. Total 75,714, under 175 KB.
+
+## Files
+
+Art `dc06c39`: `src/game/lattice.ts`, `pickups.ts`, `world.ts`, `src/game/weapons/arsenal.ts`, `fx.ts`, `halo.ts`.
+
+This report, `qa/r3/contact.png`, `qa/r3/contact_before.png`, and `qa/r3/r31_ttk.jsonl`.
+
+The entry gzip figure above is the previous dist. This round did not rebuild.
+
+PUSH-READY: NO
