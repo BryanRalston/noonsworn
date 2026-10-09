@@ -7,11 +7,9 @@ import {
   CylinderGeometry,
   DataTexture,
   DoubleSide,
-  IcosahedronGeometry,
-  InstancedMesh,
   Mesh,
-  MeshBasicMaterial,
   MeshToonMaterial,
+  type InstancedMesh,
   NearestFilter,
   NoColorSpace,
   Object3D,
@@ -29,7 +27,7 @@ import { COLOR } from '../data/palette'
 import type { FloorUniforms } from '../render/floorShader'
 import { toonMap } from '../render/toon'
 import { PILLARS, setBeds, setOpenStrips, type AABB } from './collision'
-import { createEspalier, roundedLeaf, type EspalierInfo } from './espalier'
+import { createEspalier, type EspalierInfo } from './espalier'
 import { createShutters } from './shutters'
 import { noteBlocks, writeFloorPillars } from './temple'
 import type { DamageSource } from '../data/tuning'
@@ -143,18 +141,45 @@ function paintFaces(geo: BufferGeometry, side: Color, top: Color) {
   geo.setAttribute('color', new BufferAttribute(colors, 3))
 }
 
-function paintFoliage(geo: BufferGeometry) {
+/** Diamond in the XZ plane. Four hard edges, one normal, so it stays a flat card at play zoom. */
+function leafCard(w: number, h: number, color: Color): BufferGeometry {
+  const hw = w * 0.5
+  const hh = h * 0.5
+  const geo = new BufferGeometry()
+  geo.setAttribute('position', new BufferAttribute(new Float32Array([
+    0, 0, hh,
+    hw, 0, 0,
+    0, 0, -hh,
+    -hw, 0, 0,
+  ]), 3))
+  geo.setAttribute('uv', new BufferAttribute(new Float32Array([
+    0.5, 1,
+    1, 0.5,
+    0.5, 0,
+    0, 0.5,
+  ]), 2))
+  geo.setIndex([0, 1, 2, 0, 2, 3])
+  geo.computeVertexNormals()
+  paint(geo, color)
+  geo.userData.card = true
+  return geo
+}
+
+function tag(geo: BufferGeometry, card: boolean) {
   const pos = geo.getAttribute('position')
-  const colors = new Float32Array(pos.count * 3)
-  let maxY = -1e9
-  for (let i = 0; i < pos.count; i++) maxY = Math.max(maxY, pos.getY(i))
-  for (let i = 0; i < pos.count; i++) {
-    const c = pos.getY(i) < maxY - 0.18 ? COLOR.foliageDeep : COLOR.foliage
-    colors[i * 3] = c.r
-    colors[i * 3 + 1] = c.g
-    colors[i * 3 + 2] = c.b
+  const n = pos.count
+  const cards = new Float32Array(n)
+  const leaf = new Float32Array(n * 2)
+  if (card) {
+    cards.fill(1)
+    const uv = geo.getAttribute('uv')
+    for (let i = 0; i < n; i++) {
+      leaf[i * 2] = uv?.getX(i) ?? 0
+      leaf[i * 2 + 1] = uv?.getY(i) ?? 0
+    }
   }
-  geo.setAttribute('color', new BufferAttribute(colors, 3))
+  geo.setAttribute('aCard', new BufferAttribute(cards, 1))
+  geo.setAttribute('aLeafUv', new BufferAttribute(leaf, 2))
 }
 
 function addBox(parts: BufferGeometry[], w: number, h: number, d: number, x: number, y: number, z: number, color: Color, rotX = 0, top?: Color) {
@@ -423,10 +448,11 @@ void main() {
       if (uBloomN > 0.5) {
         for (int i = 0; i < ${BLOOM_N}; i++) {
           if (float(i) >= uBloomN) break;
-          bloom = max(bloom, 1.0 - smoothstep(${(BLOOM_R * 0.45).toFixed(2)}, ${BLOOM_R.toFixed(1)}, distance(p, uBloom[i].xy)));
+          float bd = distance(p, uBloom[i].xy);
+          bloom = max(bloom, 1.0 - smoothstep(${(BLOOM_R - 0.12).toFixed(2)}, ${BLOOM_R.toFixed(1)}, bd));
         }
       }
-      col += vec3(1.0, 0.78, 0.28) * bloom * 0.55;
+      col = mix(col, vec3(1.0, 0.86, 0.32), bloom * 0.72);
     }
     float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
     col = mix(col, uFogColor, fogF);
@@ -571,12 +597,6 @@ export function createLattice(opts: {
     beams.push(geo)
   }
   const pergolaGeo = merged(beams)
-  const clumpA = new IcosahedronGeometry(0.28, 0)
-  const clumpB = new IcosahedronGeometry(0.2, 0)
-  clumpB.translate(0.2, 0.08, 0.08)
-  const clumpC = new IcosahedronGeometry(0.16, 0)
-  clumpC.translate(-0.14, 0.14, -0.1)
-  const clump = merged([clumpA, clumpB, clumpC])
   const potGeo = new CylinderGeometry(0.42, 0.3, 0.48, 6)
   const potSpots: { x: number; y: number; z: number }[] = []
   const vineGeos: BufferGeometry[] = []
@@ -592,16 +612,32 @@ export function createLattice(opts: {
     }
   }
   const dummy = new Object3D()
+  // Upright diamonds around the stem. Spread past the card width so they stay separate leaves.
+  const sprigs = [
+    { dx: 0.55, dy: 0.35, dz: 0.02, tilt: 1.15, yaw: 0.3, s: 0.85 },
+    { dx: -0.52, dy: 0.55, dz: 0.1, tilt: 1.05, yaw: 2.1, s: 0.78 },
+    { dx: 0.06, dy: 0.15, dz: 0.55, tilt: 1.2, yaw: 1.15, s: 0.8 },
+    { dx: 0.08, dy: 0.72, dz: -0.5, tilt: 1.1, yaw: 3.5, s: 0.74 },
+    { dx: -0.12, dy: 0.02, dz: -0.52, tilt: 1.18, yaw: 4.7, s: 0.82 },
+  ]
   for (let i = 0; i < LATTICE_POSTS.length; i++) {
     const post = LATTICE_POSTS[i]
     if (!post) continue
-    const geo = clump.clone()
-    geo.rotateY(i * 0.7)
-    geo.scale(0.75, 0.7, 2.65)
-    geo.computeVertexNormals()
-    paintFoliage(geo)
-    geo.translate(post.x, 3.48, post.z)
-    vineGeos.push(geo)
+    const stem = new BoxGeometry(0.06, 1.2, 0.06)
+    paint(stem, COLOR.foliage)
+    stem.translate(post.x, 2.95, post.z)
+    vineGeos.push(stem)
+    for (let k = 0; k < sprigs.length; k++) {
+      const off = sprigs[k]
+      if (!off) continue
+      const card = leafCard(0.48, 0.64, k % 2 === 0 ? COLOR.foliage : COLOR.foliageRim)
+      dummy.position.set(post.x + off.dx, 3.35 + off.dy, post.z + off.dz)
+      dummy.rotation.set(off.tilt, off.yaw + i * 0.35, 0)
+      dummy.scale.set(off.s, 1, off.s)
+      dummy.updateMatrix()
+      card.applyMatrix4(dummy.matrix)
+      vineGeos.push(card)
+    }
   }
   for (let i = 0; i < potSpots.length; i++) {
     const spot = potSpots[i]
@@ -611,18 +647,10 @@ export function createLattice(opts: {
     geo.translate(spot.x, spot.y, spot.z)
     potGeos.push(geo)
   }
-  clump.dispose()
   potGeo.dispose()
-  const leafGeo = roundedLeaf(0.52, 0.62, COLOR.leafInk, COLOR.foliage, COLOR.foliage)
-  const leafSpots: { x: number; y: number; z: number; yaw: number; tilt: number; roll: number; s: number }[] = []
+  // One diamond per station. Five full-size cards on a 7 m span overlap into one lump at the play camera.
+  const leafSpots: { x: number; y: number; z: number; yaw: number; tilt: number }[] = []
   const stations = [0.16, 0.32, 0.48, 0.64, 0.8]
-  const cluster: [number, number, number, number, number, number][] = [
-    [0, 0.28, 0, 0.2, 0.35, 1.35],
-    [0.42, 0.16, 0.22, 0.9, 0.55, 1.15],
-    [-0.4, 0.2, -0.18, 1.6, -0.4, 1.2],
-    [0.16, -0.05, 0.95, 0.45, 0.9, 1.05],
-    [-0.18, -0.08, -0.92, 2.2, -0.85, 1.1],
-  ]
   for (let e = 0; e < EDGES.length; e++) {
     const zc = EDGES[e] ?? 0
     const lip = zc < 0 ? 1.12 : 0.82
@@ -632,47 +660,29 @@ export function createLattice(opts: {
       const width = span[1] - span[0]
       for (let t = 0; t < stations.length; t++) {
         const cx = span[0] + width * (stations[t] ?? 0)
-        for (let k = 0; k < cluster.length; k++) {
-          const off = cluster[k]
-          if (!off) continue
-          leafSpots.push({
-            x: cx + off[0],
-            y: lip + off[1],
-            z: zc + off[2],
-            yaw: off[3] + t * 0.17,
-            tilt: off[4],
-            roll: (k % 2 === 0 ? 0.4 : -0.35) + e * 0.1,
-            s: off[5],
-          })
-        }
+        leafSpots.push({
+          x: cx,
+          y: lip + 0.06,
+          z: zc + (t % 2 === 0 ? 0.16 : -0.12),
+          yaw: 0.35 + t * 0.5 + e * 0.2,
+          tilt: t % 2 === 0 ? 0.1 : -0.08,
+        })
       }
     }
   }
   const leafGeos: BufferGeometry[] = []
-  const leafTint = new Color()
   for (let i = 0; i < leafSpots.length; i++) {
     const spot = leafSpots[i]
     if (!spot) continue
-    const geo = leafGeo.clone()
+    const geo = leafCard(0.92, 1.12, i % 2 === 0 ? COLOR.foliage : COLOR.foliageRim)
     dummy.position.set(spot.x, spot.y, spot.z)
-    dummy.rotation.set(spot.tilt, spot.yaw, spot.roll)
-    dummy.scale.set(spot.s, spot.s * 0.85, spot.s)
+    dummy.rotation.set(spot.tilt, spot.yaw, 0)
+    dummy.scale.set(1, 1, 0.92)
     dummy.updateMatrix()
     geo.applyMatrix4(dummy.matrix)
-    const col = geo.getAttribute('color')
-    const band = i % 3
-    if (band === 0) leafTint.setRGB(0.62, 0.82, 0.58)
-    else if (band === 1) leafTint.setRGB(0.85, 1.0, 0.78)
-    else leafTint.setRGB(0.74, 0.96, 0.66)
-    for (let v = 0; v < col.count; v++) {
-      col.setXYZ(v, col.getX(v) * leafTint.r, col.getY(v) * leafTint.g, col.getZ(v) * leafTint.b)
-    }
-    const count = geo.getAttribute('position').count
-    geo.setAttribute('uv', new BufferAttribute(new Float32Array(count * 2), 2))
     leafGeos.push(geo)
   }
-  const foliageTris = trisOf(leafGeo) * leafSpots.length
-  leafGeo.dispose()
+  const foliageTris = leafGeos.reduce((sum, geo) => sum + trisOf(geo), 0)
   const basin = new CylinderGeometry(0.9, 0.72, 0.28, 8)
   paint(basin, COLOR.sandstone)
   basin.translate(0, 0.44, 0)
@@ -684,17 +694,6 @@ export function createLattice(opts: {
   paint(spire, COLOR.gold)
   spire.translate(0, 0.86, 0)
   const fountainGeo = merged([basin, water, spire])
-  const bloomGeo = new CircleGeometry(BLOOM_R, 12)
-  bloomGeo.rotateX(-Math.PI / 2)
-  const bloomMesh = new InstancedMesh(
-    bloomGeo,
-    new MeshBasicMaterial({ color: COLOR.gold, transparent: true, opacity: 0.8, depthWrite: false }),
-    BLOOM_N,
-  )
-  bloomMesh.count = 0
-  bloomMesh.visible = false
-  bloomMesh.renderOrder = 2
-  bloomMesh.frustumCulled = false
   const probeGeo = new PlaneGeometry(46, 46)
   probeGeo.rotateX(-Math.PI / 2)
   paint(probeGeo, COLOR.linen)
@@ -788,10 +787,11 @@ void main() {
   if (uBloomN > 0.5) {
     for (int i = 0; i < ${BLOOM_N}; i++) {
       if (float(i) >= uBloomN) break;
-      bloom = max(bloom, 1.0 - smoothstep(${(BLOOM_R * 0.45).toFixed(2)}, ${BLOOM_R.toFixed(1)}, distance(vWorld.xz, uBloom[i].xy)));
+      float bd = distance(vWorld.xz, uBloom[i].xy);
+      bloom = max(bloom, 1.0 - smoothstep(${(BLOOM_R - 0.12).toFixed(2)}, ${BLOOM_R.toFixed(1)}, bd));
     }
   }
-  col += vec3(1.0, 0.78, 0.28) * bloom * 0.55;
+  col = mix(col, vec3(1.0, 0.86, 0.32), bloom * 0.72);
   float fogF = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld)) * uFog;
   col = mix(col, uFogColor, fogF);
   gl_FragColor = vec4(col, 1.0);
@@ -818,16 +818,54 @@ void main() {
     vertexColors: true,
     side: DoubleSide,
   })
-  dressingMat.customProgramCacheKey = () => 'lattice-dressing'
+  dressingMat.customProgramCacheKey = () => 'lattice-cards'
   dressingMat.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <color_fragment>',
-      `#include <color_fragment>
-if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
-    )
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+attribute float aCard;
+attribute vec2 aLeafUv;
+varying float vCard;
+varying vec2 vLeafUv;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vCard = aCard;
+vLeafUv = aLeafUv;`,
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying float vCard;
+varying vec2 vLeafUv;`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+if (vCard > 0.5) {
+  vec2 q = vLeafUv * 2.0 - 1.0;
+  if (abs(q.x) + abs(q.y) > 0.9) discard;
+  if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.82, 0.90, 0.74);
+} else if (!gl_FrontFacing) {
+  diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);
+}`,
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        `if (vCard > 0.5) outgoingLight = diffuseColor.rgb;
+#include <opaque_fragment>`,
+      )
+  }
+  const dressParts = [backdropGeo, pergolaGeo, fountainGeo, ...vineGeos, ...potGeos, ...leafGeos]
+  for (let i = 0; i < dressParts.length; i++) {
+    const geo = dressParts[i]
+    if (geo) tag(geo, geo.userData.card === true)
   }
   const dressing = new Mesh(
-    merged([backdropGeo, pergolaGeo, fountainGeo, ...vineGeos, ...potGeos, ...leafGeos].map(unroll)),
+    merged(dressParts.map(unroll)),
     dressingMat,
   )
   const probe = new Mesh(probeGeo, material)
@@ -840,7 +878,7 @@ if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
     mesh.receiveShadow = false
     mesh.visible = false
   }
-  opts.scene.add(terrain, dressing, bloomMesh, probe)
+  opts.scene.add(terrain, dressing, probe)
   const lifted = opts.enemyMat.clone()
   const sharedTime = opts.enemyMat.uniforms.uTime
   if (sharedTime) lifted.uniforms.uTime = sharedTime
@@ -865,6 +903,7 @@ if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
   let heldZ = Number.NaN
   let heldDirX = Number.NaN
   let heldDirZ = Number.NaN
+  let bloomShown = false
   const dressingTris = vineTris + potTris + fountainTris + foliageTris
 
   function fract(v: number): number {
@@ -927,23 +966,6 @@ if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
     uBloomN.value = n
   }
 
-  function placeBlooms() {
-    let n = 0
-    for (let i = 0; i < blooms.length; i++) {
-      const b = blooms[i]
-      if (!b || b.life <= 0) continue
-      dummy.position.set(b.x, floorY(b.z) + 0.08, b.z)
-      dummy.rotation.set(0, 0, 0)
-      dummy.scale.set(1, 1, 1)
-      dummy.updateMatrix()
-      bloomMesh.setMatrixAt(n, dummy.matrix)
-      n++
-    }
-    bloomMesh.count = n
-    bloomMesh.instanceMatrix.needsUpdate = true
-    bloomMesh.visible = n > 0
-  }
-
   function sync(sun: { z: number; dirX: number; dirZ: number; time: number }) {
     const phase = sun.time * 0.2 * Math.PI * 2
     const mag = PERGOLA_H * TAN_ELEV
@@ -999,7 +1021,7 @@ if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
   })
   opts.scene.add(shutters.mesh, espalier.mesh, espalier.tele)
 
-  const own = [terrain, dressing, bloomMesh, probe, shutters.mesh, espalier.mesh, espalier.tele]
+  const own = [terrain, dressing, probe, shutters.mesh, espalier.mesh, espalier.tele]
   const pixel = new Uint8Array(4)
   const ndc = new Vector3()
   const drawSize = new Vector2()
@@ -1102,13 +1124,13 @@ if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
       }
       const same = sun.time === heldTime && sun.z === heldZ && sun.dirX === heldDirX && sun.dirZ === heldDirZ
       beam = beamFn
-      if (!same || live || bloomMesh.count > 0) {
+      if (!same || live || bloomShown) {
         heldTime = sun.time
         heldZ = sun.z
         heldDirX = sun.dirX
         heldDirZ = sun.dirZ
         sync(sun)
-        if (live || bloomMesh.count > 0) placeBlooms()
+        bloomShown = live
       }
       shutters.update(dt, px, pz)
       espalier.update(dt, time, px, pz, upperOpen)
@@ -1159,7 +1181,7 @@ if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
       picked.z = z
       picked.life = BLOOM_LIFE
       uploadBlooms()
-      placeBlooms()
+      bloomShown = true
       return true
     },
     sample(base, step) {

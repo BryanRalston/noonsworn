@@ -10,6 +10,15 @@ export interface Pickups {
   update: (dt: number, px: number, pz: number, radius: number, cap: number, gain: (value: number) => void) => void
   spawn: (x: number, z: number, value: number, cap: number, px: number, pz: number) => void
   sync: (litAt?: (x: number, z: number) => boolean) => void
+  gemN: () => number
+  gemX: Float32Array
+  gemY: Float32Array
+  gemZ: Float32Array
+  gemR: Float32Array
+  gemG: Float32Array
+  gemB: Float32Array
+  /** Draw the gems that did not fit in the shared fx buffer. */
+  showTail: (start: number) => void
   clear: () => void
   used: () => number
   visit: (fn: (x: number, z: number) => void) => void
@@ -21,7 +30,15 @@ export function createPickups(): Pickups {
   const teal = new Color(0x5fb8a8)
   const gem = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false })
   const mesh = makeCrowd(new IcosahedronGeometry(0.096, 0), gem, MAX)
+  mesh.name = 'gems'
   mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX * 3), 3)
+  const gemX = new Float32Array(MAX)
+  const gemY = new Float32Array(MAX)
+  const gemZ = new Float32Array(MAX)
+  const gemR = new Float32Array(MAX)
+  const gemG = new Float32Array(MAX)
+  const gemB = new Float32Array(MAX)
+  let gemCount = 0
   const gemTint = new Color()
   const x = new Float32Array(MAX)
   const z = new Float32Array(MAX)
@@ -33,10 +50,20 @@ export function createPickups(): Pickups {
 
   const pickups: Pickups = {
     mesh,
+    gemX,
+    gemY,
+    gemZ,
+    gemR,
+    gemG,
+    gemB,
+    gemN: () => gemCount,
     used: () => free.used,
     clear() {
       alive.fill(0)
       age.fill(0)
+      gemCount = 0
+      mesh.count = 0
+      mesh.visible = false
       free.reset()
     },
     visit(fn) {
@@ -128,10 +155,26 @@ export function createPickups(): Pickups {
       let n = 0
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
-        const gemY = lift ? lift(x[i] ?? 0, z[i] ?? 0) : 0.35
-        writeInstance(mesh, n, x[i] ?? 0, gemY, z[i] ?? 0, 0, 1)
+        const gy = lift ? lift(x[i] ?? 0, z[i] ?? 0) : 0.35
+        gemX[n] = x[i] ?? 0
+        gemY[n] = gy
+        gemZ[n] = z[i] ?? 0
         const gain = litAt?.(x[i] ?? 0, z[i] ?? 0) ? 0.35 : 0.2
         gemTint.copy(teal).multiplyScalar(gain)
+        gemR[n] = gemTint.r
+        gemG[n] = gemTint.g
+        gemB[n] = gemTint.b
+        n++
+      }
+      gemCount = n
+      mesh.count = 0
+      mesh.visible = false
+    },
+    showTail(start) {
+      let n = 0
+      for (let i = start; i < gemCount; i++) {
+        writeInstance(mesh, n, gemX[i] ?? 0, gemY[i] ?? 0.35, gemZ[i] ?? 0, 0, 1)
+        gemTint.setRGB(gemR[i] ?? 0, gemG[i] ?? 0, gemB[i] ?? 0)
         mesh.setColorAt(n, gemTint)
         n++
       }

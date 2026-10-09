@@ -57,8 +57,9 @@ const SPINE = [0.045, 0.018, 0.006]
 // Dark bronze above hue 26 so a rim sample is not a red telegraph.
 // (0.04, 0.023, 0) → about #312000, hue 39, contrast > 4:1 on lit sandstone.
 const BRONZE = [0.03, 0.016, 0.0]
-// Lighter bronze for the halo rim. The old dark bronze read as a black cookie.
-const RIM = [0.45, 0.24, 0.06]
+// Warm bronze for the halo rim. ACES at exposure 1.32 lands near #EBC36D.
+// Drain exposure (0.15 of that) stays near #724211, a dark bronze.
+const RIM = [0.78, 0.36, 0.07]
 
 function pushTri(
   part: number,
@@ -123,8 +124,8 @@ function discArrays(pos: number[], col: number[], emit: number[], parts: number[
   const n = 16
   const y = 0.03
   const r0 = 0.36
-  const r1 = 0.58
-  const r2 = 0.64
+  const r1 = 0.56
+  const r2 = 0.86
   for (let i = 0; i < n; i++) {
     const a0 = (i / n) * Math.PI * 2
     const a1 = ((i + 1) / n) * Math.PI * 2
@@ -133,7 +134,7 @@ function discArrays(pos: number[], col: number[], emit: number[], parts: number[
     const c1 = Math.cos(a1)
     const s1 = Math.sin(a1)
     quad(part, pos, col, emit, parts, [c0 * r0, y, s0 * r0], [c1 * r0, y, s1 * r0], [c1 * r1, y, s1 * r1], [c0 * r1, y, s0 * r1], GOLD, 0.85)
-    quad(part, pos, col, emit, parts, [c0 * r1, y, s0 * r1], [c1 * r1, y, s1 * r1], [c1 * r2, y, s1 * r2], [c0 * r2, y, s0 * r2], RIM, 0.2)
+    quad(part, pos, col, emit, parts, [c0 * r1, y, s0 * r1], [c1 * r1, y, s1 * r1], [c1 * r2, y, s1 * r2], [c0 * r2, y, s0 * r2], RIM, 0.4)
   }
 }
 

@@ -188,6 +188,16 @@ export interface WeaponFx {
   tele: (x: number, z: number, yaw: number) => void
   setFocus: (x: number, z: number) => void
   update: (dt: number) => void
+  /** Draw XP gems in this instance buffer. Returns how many fit. */
+  stampGems: (
+    n: number,
+    xs: Float32Array,
+    ys: Float32Array,
+    zs: Float32Array,
+    rs: Float32Array,
+    gs: Float32Array,
+    bs: Float32Array,
+  ) => number
   clear: () => void
   /** Weapon-off captures keep Sela's ring. It is not a weapon. */
   maskToHero: () => void
@@ -227,6 +237,12 @@ function makeMaterial(map: ReturnType<TextureLoader['load']>): ShaderMaterial {
       varying vec3 vCol;
       varying float vHot;
       void main() {
+        if (vHot > 1.5) {
+          vec2 p = vFxUv * 2.0 - 1.0;
+          if (abs(p.x) + abs(p.y) > 0.92) discard;
+          gl_FragColor = vec4(vCol, 1.0);
+          return;
+        }
         vec4 tex = texture2D(uMap, vFxUv);
         if (vHot > 0.5) {
           vec3 col = vCol * tex.rgb * tex.a;
@@ -276,6 +292,7 @@ export function createWeaponFx(): WeaponFx {
   map.flipY = true
   const geo = new PlaneGeometry(1, 1)
   const mesh = new InstancedMesh(geo, makeMaterial(map), MAX)
+  mesh.name = 'fx'
   mesh.count = 0
   mesh.frustumCulled = false
   mesh.renderOrder = 5
@@ -704,6 +721,40 @@ export function createWeaponFx(): WeaponFx {
         stageFx(hotA, nA, fxRange.hot)
         if (mesh.instanceColor) stageFx(mesh.instanceColor, nA * 3, fxRange.color)
       }
+    },
+    stampGems(n, xs, ys, zs, rs, gs, bs) {
+      const room = MAX - mesh.count
+      const take = Math.min(n, Math.max(0, room))
+      if (take <= 0) return 0
+      const face = TUNING.camera.yaw
+      const pitch = TUNING.camera.pitch
+      const horiz = Math.cos(pitch)
+      let slot = mesh.count
+      for (let i = 0; i < take; i++) {
+        const gx = xs[i] ?? 0
+        const gy = ys[i] ?? 0.35
+        const gz = zs[i] ?? 0
+        dummy.position.set(gx, gy, gz)
+        dummy.rotation.set(0, 0, 0)
+        dummy.scale.set(0.22, 0.22, 1)
+        dummy.lookAt(gx + Math.sin(face) * horiz, gy + Math.sin(pitch), gz + Math.cos(face) * horiz)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(slot, dummy.matrix)
+        uvA.setXYZW(slot, 0, 0, 1, 1)
+        flagA.setX(slot, 0)
+        hotA.setX(slot, 2)
+        tint.setRGB(rs[i] ?? 0, gs[i] ?? 0, bs[i] ?? 0)
+        mesh.setColorAt(slot, tint)
+        slot++
+      }
+      mesh.count = slot
+      mesh.visible = true
+      stageFx(mesh.instanceMatrix, slot * 16, fxRange.matrix)
+      stageFx(uvA, slot * 4, fxRange.uv)
+      stageFx(flagA, slot, fxRange.flag)
+      stageFx(hotA, slot, fxRange.hot)
+      if (mesh.instanceColor) stageFx(mesh.instanceColor, slot * 3, fxRange.color)
+      return take
     },
     maskToHero() {
       if (masked) return

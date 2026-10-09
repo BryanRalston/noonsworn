@@ -3503,6 +3503,8 @@ diffuseColor.a = 1.0;
         arsenal.mesh.visible = false
         fx.maskToHero()
       }
+      const gemFit = fx.stampGems(pickups.gemN(), pickups.gemX, pickups.gemY, pickups.gemZ, pickups.gemR, pickups.gemG, pickups.gemB)
+      if (gemFit < pickups.gemN()) pickups.showTail(gemFit)
       if (quality.tier === 'high') bloom.render(gpu.renderer, gpu.scene, follow.camera)
       else gpu.renderer.render(gpu.scene, follow.camera)
       if (hideWeaponDraw) {
