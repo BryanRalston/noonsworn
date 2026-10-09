@@ -218,3 +218,57 @@ This report, `qa/r3/contact.png`, `qa/r3/contact_before.png`, and `qa/r3/r31_ttk
 The entry gzip figure above is the previous dist. This round did not rebuild.
 
 PUSH-READY: NO
+
+# R3.2
+
+Local only. Not pushed. On top of `d0ac893`. The only source change is `src/game/lattice.ts`. Halo rings are the R3.1 rings. `collision.ts`, `cloister.ts`, `cloisterCast.ts`, `sunClock.ts`, `tuning.ts`, and `camera.ts` stay an empty diff against `d6c9db9`. `espalier.ts` `roundedLeaf` is unchanged. No 402, 429, or credit error.
+
+## Items
+
+| Item | Verdict | Evidence |
+| --- | --- | --- |
+| 1 Garlands and vines | PASS | The eight-leaf cluster and the post crown are back, as faceted leaves in the dressing mesh. Desktop peak 20, phone peak 16. `qa/r3/contact_r32.png`. |
+| 2 Cloister TTK | WAIVER | On the four seeds R1b cleared, HEAD is not slower than `d6c9db9`. The comparable means sit inside ±15% of 33.16 s. |
+
+## 1. Garlands and vines
+
+R3.1 put one diamond on each garland station and five diamonds on a stem at each post. The earlier garland was eight leaves at each of five stations, on both edges, across the four spans (320 leaves), with the same offsets, yaw, tilt, roll, and scale. The post foliage was a clump centred at y 3.55. Both are in the dressing mesh again. Each leaf keeps the rounded-leaf hull, with the tip pulled into a point and one normal per face, so the toon reads as clipped facets. Tip, body, and base use the foliage rim, foliage, and deep foliage colours. The dressing program key is `lattice-leaves`. Back faces of leaves are only slightly darker. Stone back faces keep the previous darken. No new draw.
+
+`qa/r3/contact_r32.png` is 1260×1088, 1,152,367 bytes. Three columns, before (`d6c9db9` on 5179), R3.1, and R3.2. Four rows: desktop garland, desktop vine, phone garland, phone vine. Crops are 420×250 game pixels in the windows already used for `qa/r3/contact.png`. Desktop is 1280×720, tier high. Phone is 412×914, tier med, framebuffer 618×1371. Seed 11, player at (0, −6) for the garland and (−5.2, −14.2) for the vine, halo 0. The R3.2 masses fill those windows again. The R3.1 cells in the same windows are the sparse diamonds.
+
+Desktop high, seed 11, player pinned at the origin, invulnerable, after `shadeZ()` was a number. `coinTest` 24/24. `errs` empty. Wings 0. Calls are scene meshes plus four bloom-composer passes plus the sun pip.
+
+| Moment | Desktop high | Phone med |
+| --- | --- | --- |
+| Run start | t=0.13, calls 14, tris 16,576, wings 0 | t=0.13, calls 10, tris 16,568, wings 0 |
+| Swarm with XP gems | not observed (`hot` 0) | not observed |
+| Boss wake | t=270.02, calls 19, tris 42,936, hp 9000 | t=270.02, calls 15, tris 43,496, hp 9000 |
+| Boss with bloom and gems | not observed (`bloomN` 0, `hot` 0) | not observed |
+| Boss peak | t=302.43, calls 20, tris 48,978, hp 9000 | t=302.43, calls 16, tris 49,542, hp 9000 |
+
+Desktop histogram tops at 20 (202 frames). Phone histogram tops at 16 (202 frames). Phone `coinTest` 23/23. The desktop peak name list is 15 meshes: dressing buffers, planes, Sela, fx, the marker, and the spear. No `CircleGeometry` and no gem icosahedron. 15 meshes + 4 composer passes + the sun pip = 20. Phone med has no composer, so the same 15 meshes plus the sun pip = 16. Net draws added stays 0.
+
+## 2. Cloister TTK
+
+The four seeds R1b cleared are 11, 22, 44, and 55. The published four-clear mean is (32.31 + 33.18 + 33.33 + 33.81) / 4 = 33.16 s. ±15% is 28.19 s to 38.13 s. The same harness (`w31_ttk.py`, kit e2, render 0, tier high, cap 220) was already run at `d6c9db9`, at `7a63c54`, and at HEAD before this foliage edit. This edit does not touch Cloister combat, so those rows are the HEAD rows.
+
+Seeds 44 and 55 die at `d6c9db9`, and seed 55 dies at all three commits, so a mean of four ttk numbers does not exist. Deaths have no ttk. Seed 55 at HEAD is t=301.88, the known baseline, and it is left as a death.
+
+| Seed | R1b table | `d6c9db9` | `7a63c54` | HEAD |
+| --- | --- | --- | --- | --- |
+| 11 | clear 32.31, php 18 | clear 34.81, php 18 | clear 32.48, php 18 | clear 32.48, php 18 |
+| 22 | clear 33.18, php 14 | clear 39.81, php 44 | clear 40.14, php 74 | clear 39.81, php 44 |
+| 44 | clear 33.33, php 6 | death, t=297.58 | death, t=301.24 | clear 39.81, php 46 |
+| 55 | clear 33.81, php 62 | death, t=313.66 | death, t=301.88 | death, t=301.88 |
+
+HEAD against `d6c9db9` on these seeds: 11 is 32.48 s against 34.81 s, 22 is 39.81 s on both, 44 clears where `d6c9db9` died, and 55 dies on both. HEAD is not slower on the shared seeds.
+
+The two seeds both `d6c9db9` and HEAD cleared average (32.48 + 39.81) / 2 = 36.15 s, +9.0% against 33.16 s. The three HEAD clears among the four seeds average (32.48 + 39.81 + 39.81) / 3 = 37.37 s, +12.7%. Both sit under 38.13 s. The `d6c9db9` pair averages 37.31 s and the `7a63c54` pair averages 36.31 s, also inside the band. The slow seed-22 timestamp is already on `d6c9db9`.
+
+Waiver (Action Game, 2026-10-09): the Cloister time on seeds 11, 22, 44, and 55 is seed-mix variance. HEAD matches the `d6c9db9` harness on the seeds both runs finished, and the means that exist are inside ±15% of the R1b four-clear mean. Weapons were not retuned.
+
+## Files
+
+`src/game/lattice.ts`. This section and `qa/r3/contact_r32.png`. `qa/r3/contact.png` and `qa/r3/contact_before.png` are unchanged.
+
+PUSH-READY: YES
