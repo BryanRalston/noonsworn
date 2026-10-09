@@ -1,0 +1,29 @@
+{
+  "menu": 0,
+  "credits": 0,
+  "wheel": 0,
+  "wheelLabel": {
+    "text": "with Noon Print",
+    "disabled": true
+  },
+  "picker": 0,
+  "count": [
+    "Next print 6:36:10",
+    "Next print 6:36:05"
+  ],
+  "pause": 834,
+  "results": 0,
+  "printButtons": {
+    "copy": "menu-item primary",
+    "save": "Share image",
+    "end": "menu-item",
+    "progress": "same conditions",
+    "record": "Practice"
+  },
+  "errs": [],
+  "ownedLabel": {
+    "text": "5 distinct Noon Prints",
+    "disabled": true
+  },
+  "errs2": []
+}

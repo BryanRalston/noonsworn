@@ -1,0 +1,6 @@
+{"seed": 11, "ok": true, "ttk": 32.48, "php": 18, "mode": "clear", "t": 302.4766666666362, "killT": 302.4766666666362, "bhp": null, "on": null, "phase": null, "wallS": 0.31, "errs": [], "tier": "high"}
+{"seed": 22, "ok": true, "ttk": 39.81, "php": 44, "mode": "clear", "t": 309.8099999999629, "killT": 309.8099999999629, "bhp": null, "on": null, "phase": null, "wallS": 0.39, "errs": [], "tier": "high"}
+{"seed": 33, "ok": true, "ttk": 43.98, "php": 26, "mode": "clear", "t": 313.97666666662576, "killT": 313.97666666662576, "bhp": null, "on": null, "phase": null, "wallS": 0.41, "errs": [], "tier": "high"}
+{"seed": 44, "ok": true, "ttk": null, "php": 0, "mode": "playing", "t": 297.5766666666407, "killT": 297.5766666666407, "bhp": null, "on": null, "phase": null, "wallS": 0.3, "errs": [], "tier": "high"}
+{"seed": 55, "ok": true, "ttk": null, "php": 0, "mode": "playing", "t": 313.6599999999594, "killT": 313.6599999999594, "bhp": null, "on": null, "phase": null, "wallS": 0.41, "errs": [], "tier": "high"}
+{"seed": 66, "ok": true, "ttk": null, "php": 0, "mode": "playing", "t": 303.6933333333018, "killT": 303.6933333333018, "bhp": null, "on": null, "phase": null, "wallS": 0.33, "errs": [], "tier": "high"}

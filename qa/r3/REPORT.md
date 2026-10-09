@@ -1,0 +1,135 @@
+# R3 Art cleanup
+
+Local only. Not pushed. Base `origin/main` is `d6c9db9`. Geometry is `efa9543`. Temple cards and the phone tip are `82f72b6`. Measured on this computer against Vite `http://127.0.0.1:5174/noonsworn/` and the production preview `http://127.0.0.1:5180/noonsworn/` (`index--zWJKOCu.js`). Chrome 154, CDP 9224, profile `chrome-f21`, background throttling off. `src/render/camera.ts` and `src/data/tuning.ts` have an empty diff against `d6c9db9`.
+
+The Cloister seed-55 death is the known baseline for the balance pass. It is reported below and was not fixed.
+
+## Items
+
+| Item | Verdict | Evidence |
+| --- | --- | --- |
+| 1 Corona | PASS | Open 48-segment floor ring, three shared rings (gold at 2.8 m and 3.52 m, bronze edge at 3.6 m), 144 verts. Placed at y 0.05. The 0.08 m edge is why the mesh is 144 verts rather than a single 96-vert annulus. Phone Meridian stretch is capped at 9; desktop stays 12. Twelvefold bell is placed at 0.6×, 1.2 m behind Sela. Damage still uses the player position. The stair contact crop shows the open gold arc. |
+| 2 Halo discs | PASS | 16-segment open annulus, gold from r 0.36 to 0.58, bronze `(0.45, 0.24, 0.06)` out to r 0.64, opaque, same arsenal draw. Hit radius unchanged. At play scale the bronze edge reads dark next to the gold. |
+| 3 Sun Chests | PASS | 108 verts, 36 tris, under the 80-tri cap. Bevelled lid, gold band, keyhole, 8-ray sun, charge ring and hit box kept. Arsenal part verts sum to 1125 (cap 1500). Instance cap stays 128. |
+| 4 Sundial pillars | PASS | Shaft radius 1.2 and positions ±9 still come from `TUNING.arena`. Base flare 1.15 / 1.2, echinus 0.3 m at 1.25×, square abacus 1.4× by 0.18 m, gem removed, 24 segments, flute shade ±8%, pillar texture tiling 1×1. The sundial card and the phone shot show the fluted shaft and the square capital. |
+| 5 Extra soft assets | PASS | Coin spokes closed in memory (the PNG is untouched) plus a shader rim. Leaf cards are 5 per station, 1200 tris, baked into the dressing draw, darker on the back. Vines are scaled long on Z. Stair stools are braziers in the arch mesh. The out-of-bounds plane uses the sky colour. Wall posts have one flat gold cap. The wall base is a sandstone strip plus seven warm-stone niche frames. The inlay discards below alpha 0.5. The phone tip now clears the HUD: see the measurement below. |
+| 6 Temple cards | PARTIAL | One crop, Sela at a third, Nadir left midnight. 768×288, q70–78, decode gate with a flat swatch until `img.decode()` resolves. Total 75,714 bytes, under 175 KB. Three files stay under the 20 KB floor at q78: Sundial 16,384, Cloister 10,978, Nadir 5,834. Lattice is 21,766 at q74. Stair is 20,752 at q78. No noise was added to push the small files up. |
+| 7 Sela visibility | PASS | 120 / 120 desktop and 120 / 120 phone, max-evo, silhouette against the floor, `Sela` in the draw ledger on every sample. No linen rim was added. |
+| 8 Sweep | PARTIAL | Both cameras, every temple and the finale. The one S-effort fix is the tip, which at 136px covered the objective. Everything else that is still soft is deferred below. Sela, enemies, Compline, Newel, Matins, their GLBs, and the Espalier lemon tree were not touched. |
+| 9 Lattice draw peak | PARTIAL | Desktop high boss window peaks at 21. The target is ≤ 20. Phone med at the same moment is 19. Bloom, XP gems, the boss, and the player stayed. |
+
+Part verts, both tiers: lance 36, disc 192, bell 105, clapper 6, mirror 78, scarab 30, stake 54, prism 168, obelisk 36, sunball 96, chest 108, tongue 72, corona 144. Sum 1125. Lattice tris after the merge: terrain 720, pergola 960, dressing 2124, foliage 1200.
+
+## Gates
+
+1. Phone worst start-to-start ≥ 30 and gap 1% low ≥ 39. **PASS.** Foreground Chrome, throttling off, 5-run alternating, iPhone UA, 412×914, DPR 2.6, `tier=med`, `setTimeout(0)` in place of rAF, 4× CPU only while recording, 1400 gaps after the first is dropped, horde fill 250. Scenes: sundial, lattice, cloister-brim, stair-k4, daily, nadir-p1. The URL base carries `arsenal=l5x8&evo=all` on every scene except the stock nadir URL. 0 console errors. Kept worst window is sundial, rep 0: start-to-start 33.90, gap 1% low 80.60. The lowest kept 1% low is sundial rep 3 at 66.83.
+
+| Scene | worst start-to-start | worst kept 1% low |
+| --- | --- | --- |
+| sundial | 33.90 | 66.83 |
+| lattice | 35.97 | 72.13 |
+| cloister-brim | 39.06 | 68.43 |
+| stair-k4 | 41.32 | 72.95 |
+| daily | 40.16 | 72.20 |
+| nadir-p1 | 66.67 | 73.96 |
+
+Nadir rep 3 is one unreproduced hole: start-to-start 5.79, 1% low 35.85, one 172.7 ms gap at sample 842, mode `playing`, stage `fight`, callback work max 14.0 ms. A 3-rep rerun was 50.51 / 67.90, 52.08 / 70.64, and 60.61 / 80.55. The hole is reported and left out of the kept floor. Rows are in `qa/r3/r3_fps_phone.json` and `qa/r3/r3_fps_nadir_rerun.json`.
+
+2. Desktop work 1% low ≥ 60. **PASS.** One foreground pass, 1280×720, DPR 1, `tier=high`, CPU throttle 1×, n 1400, 0 errors. Work 1% low: sundial 390.62, lattice 403.23, cloister-brim 373.13, stair-k4 313.81, daily 361.45, nadir-p1 432.28. Lowest is stair-k4 at 313.81. `qa/r3/r3_fps_desk.json`.
+
+3. Draws ≤ 20 peak on every map, net 0 added. **PARTIAL.** The Lattice desktop peak is 21. No rim was added, so the added-draw count is 0. The Lattice lost two scene meshes (scatter hidden, foliage baked into dressing). The remaining 21 is 16 scene meshes plus the four bloom quads and the sun pip. Those meshes are the player, the marker, the spear, the arsenal, the enemies, the Espalier, the bloom disc when it is up, the XP gems when they are up, the terrain, the dressing, the shadows, the sky, and the outer. None of those were cut. Desktop fps on the filled Lattice wake also recorded max calls 21. Sundial's filled window peaked at 20. Cloister-brim 18, stair-k4 14, daily 18, nadir-p1 12.
+
+4. Entry ≤ 300 KB gzip. **PASS.** Python gzip level 9 of the files referenced from `dist/index.html`, WebP excluded. `index--zWJKOCu.js` 205,697, `collision-Ds6aN4-z.js` 68,029, `tuning-DNSzWLer.js` 3,380, `palette-JdJxxuJ1.js` 2,358. JS sum 279,464. CSS `index-3vEny91h.css` 6,414. Sum 285,878. Cap 300,000. `noonprint` and `featureMap` stay lazy. The title WebP in the `og:image` tag is not part of the JS entry.
+
+5. 0 console errors. **PASS.** Phone rows 0, desktop rows 0, draw/agree/Sela rows 0, static `errs` empty, TTK `errs` empty. Production preview without `?dev=1` loaded `index--zWJKOCu.js`, left `__nw` undefined, and recorded no page errors. `?seed` and `?arsenal` did not open the dev API.
+
+6. H1 touch at 390×844. **PASS.** Inner size 390×844. All five cards decoded to 768×288 and the swatch hid. Noon Print is 358×96 at (16, 50). Card buttons are 173 wide; the shortest is Nadir at 168 px tall. `qa/r3/r3_h1.json` and `qa/r3/contact.png`.
+
+7. Sunspear hit ≥ 90%. **SKIPPED.** `tuning.ts` was not retuned and hit radii were not changed. R1a worst is 98.22% (221/225), the same citation R1b used.
+
+8. Boss TTK ±15% over seeds 11, 22, 33, 44, 55, 66. **PARTIAL.** Cloister, kit e2 (helio, scarab, stake, prism), `RENDER=0`, tier high. Weapons were not retuned. Bosses were not retuned. Seed 55 died on both samples and is the known baseline, so it is not a regression and it is not in the mean. Kit e2 does not drive the corona or the bell, and the evolve diff against `d6c9db9` is placement, scale, and ray height.
+
+| Seed | R1b (`d1a66d1` table) | This round | Rerun |
+| --- | --- | --- | --- |
+| 11 | clear 32.31, php 18 | clear 32.48, php 18. An earlier sample before Chrome restarted was clear 32.31, php 18 | — |
+| 22 | clear 33.18, php 14 | clear 39.81, php 44 (+20.0% vs 33.18) | clear 39.81, php 44, same timestamp |
+| 33 | death | clear 43.98, php 26 | death, php 0, t=304.86 |
+| 44 | clear 33.33, php 6 | death, php 0, t=297.58 | death, same timestamp |
+| 55 | clear 33.81, php 62 | death, php 0, t=313.66 | death, same timestamp |
+| 66 | death | death, php 0, t=303.69 | death, same timestamp |
+
+The mean of the three first-pass clears other than seed 55 is 38.76 s. That is +16.9% against the R1b four-clear mean of 33.16 s, and +9.4% against the R1a.1 five-clear mean of 35.44 s. Seed 33's clear did not reproduce, so the mean of the clears that reproduced (11 and 22) is 36.15 s, +9.0% vs 33.16 s. Seed 22's own band against 33.18 s tops out at 38.16 s, and 39.81 s sits past it. The weapons stay: `tuning.ts` is unchanged, and this kit does not use the meshes this round rebuilt. Files: `qa/r3/r3_ttk.jsonl`, `qa/r3/r3_ttk_rerun.jsonl`.
+
+9. Shadow/lit agreement. **PASS.** Pillar radius and ±9 positions are unchanged. Lattice `coinTest` 12/12, cloister 11/11, nadir 12/12, on both tiers (`qa/r3/r3_gates.json`). Stair was 11/12 in that first batch. A point-by-point pass at t=6 was 12/12, and a rerun at the same 8-tick timing as the first batch was 12/12 with no missing point. The 11/12 did not reproduce.
+
+10. `camera.ts` unchanged. **PASS.** Empty diff against `d6c9db9`, and against `HEAD` before the report commit. The tuning camera object was not edited.
+
+11. Static screens, 0 frames over 5 s. **PASS.** After a 0.7 s settle, rAF requests over 5.05 s: menu 0, credits 0, Hour Wheel 0, picker 0, results 0. Pause still renders (834 frames) and is outside the hold. No busy-wait was added. `qa/r3/r3_static.json`.
+
+12. Crispness contact sheet. **PARTIAL.** `qa/r3/contact.png` is the before row from `briefs/outside_review/r123_attach/` and the after row at both cameras, with a 3× nearest crop of the corona, the discs, and the chests. The corona is an open gold arc. The discs are crisp 16-gons. The pillars, the inlay, the plain coins, the niche openings, the midnight Nadir, and the phone tip are in the sheet. The vine clumps and the leaf cards still read as dark masses at the play camera. The bronze disc edge reads near-black. Those are listed under deferred.
+
+## Lattice draw ledger
+
+Seed 11. Desktop is `tier=high` (scene meshes plus 4 bloom quads plus the sun pip). Phone is `tier=med` (scene meshes plus the sun pip). A phone URL that forces `tier=high` is not a phone measurement; one early capture did that and is not quoted here.
+
+Before, the waiver ledger at the Lattice late window is peak 25, mode 23. On this machine, before the geometry edit, the dense window around t=271 peaked at 23 with mode 20.
+
+After, desktop high:
+
+| Moment | Peak calls | Mode | Notes |
+| --- | --- | --- | --- |
+| Run start, t=0.42 | 14 | 14 | Sela is in the ledger. Arsenal is not up yet. 16,000 tris. |
+| Swarm, t=73.62 | 19 | 17 | 1 XP gem, bloom disc up, 47,264 tris. |
+| Boss wake, t=271.23 | 20 | 17 | Boss hp 9000, phase 1. This sample had no gem and no bloom disc. The mode is the level card. |
+| Boss window from t=250, player at the origin, 3600 ticks | 21 | 19 in the paired histogram | Peak with gems present 21. Peak with the bloom disc present 20. A frame with both at once did not occur (`sawBoth` 0, gems on 626 samples, bloom on 93, boss on 1199). `qa/r3/r3_overlap2.json`. |
+
+After, phone med, same boss timestamp t=271.23: 19 calls, 18 meshes, 3 XP gems, bloom disc up, boss hp 9000. Histogram mode of that phone window is 16. That is the matched moment with bloom and gems together, and it is under 20.
+
+Early max-evo windows from t=6 (240 ticks, not the late fight): desktop sundial 19, lattice 16, cloister 17, stair 15, nadir 15. Phone 15, 12, 13, 11, 11.
+
+## Phone tip
+
+The first placement was `top: 136px`. On a 390×844 phone the objective "Hold the court until noon." runs from y 108 to y 150, so the tip covered the second line. It is now `top: calc(160px + env(safe-area-inset-top))`. Measured gap under the objective is 10 px. The sundial ends at y 78. On Nadir the objective is at 200 px, so the tip is at 236 px, including while the boss card is open. The other maps keep the boss-card override at 196 px.
+
+## Sela
+
+| Camera | Visible | Tested | Sample |
+| --- | --- | --- | --- |
+| Desktop high, 1280×720 | 120 | 120 | Body pixel (88, 0, 1) against floor (241, 227, 192) |
+| Phone med, iPhone UA | 120 | 120 | Body pixel (89, 0, 1) against the same floor |
+
+`ledgerMiss` is empty on both. The rim was not added. Lattice desktop is already at 21, so a rim would have been disallowed there anyway.
+
+## Sweep
+
+Fixed in this round: corona, halo rings, chests, pillars, coin spokes, leaf-card count and underside, vine scale, stair braziers, sky-coloured ground plane, flat post caps, niche frames and the sandstone strip, hard inlay, temple cards, phone tip position.
+
+Deferred:
+
+- Vine clumps still read as dark low-poly masses from the play camera. The mesh is scaled 0.75, 0.7, 2.65 and painted leaf green. More silhouette work would add draws or tris past the dressing budget.
+- Leaf cards read as one dark mass at this distance. They are 1200 tris inside the dressing draw, under the 1600 topiary cap.
+- The halo bronze edge reads near-black beside the gold. The vertex colour is the specified `(0.45, 0.24, 0.06)`.
+- The lattice coin's gold rim is about one texel and does not read at card scale.
+- Pavilion roof finial and cypress cones were left as they were.
+- Espalier, Sela, mites, hounds, darters, Compline, Newel, and Matins were not redrawn.
+
+## Card bytes
+
+| Card | Bytes | Quality |
+| --- | --- | --- |
+| sundial-key.webp | 16,384 | 78 |
+| lattice-key.webp | 21,766 | 74 |
+| cloister-key.webp | 10,978 | 78 |
+| stair-key.webp | 20,752 | 78 |
+| nadir-key.webp | 5,834 | 78 |
+| Total | 75,714 |  |
+
+## Files
+
+Geometry `efa9543`: `src/game/weapons/arsenal.ts`, `evolve.ts`, `halo.ts`, `probe.ts`, `src/game/arena.ts`, `lattice.ts`, `stair.ts`, `world.ts`, `src/render/art.ts`, `src/styles.css` (the first tip rule), and the R1b waiver sentence in `qa/r1b/REPORT.md`.
+
+Cards `82f72b6`: `src/ui/mapSelect.ts`, `src/data/maps.ts`, `src/styles.css`, and the five WebP cards.
+
+Briefs under `briefs/` stayed untracked.
+
+PUSH-READY: NO
