@@ -1,0 +1,331 @@
+{
+ "_note": "Loop points are per format, in seconds of the decoded buffer (48 kHz reference; samples given at 48 kHz). Use AudioBufferSourceNode.loop=true, loopStart/loopEnd as given, and start(when, loopStart). Each loop file has 0.5 s padding on both sides, so it stays seamless if a decoder shifts both points by the same priming offset.",
+ "targetLUFS": -18,
+ "targetTPdBTP": -1.5,
+ "sampleRate": 48000,
+ "channels": 2,
+ "bitrateKbps": 80,
+ "files": {
+  "music_menu": {
+   "kind": "loop",
+   "source": "A New Town (RPG Theme)",
+   "author": "cynicmusic (The Cynic Project)",
+   "page": "https://opengameart.org/content/a-new-town-rpg-theme",
+   "licence": "CC0 1.0",
+   "sourceCut": "1.750 s + 47.956 s",
+   "ogg": {
+    "bytes": 409433,
+    "sha256": "39ce99dd4fd84740e933cb79dece388d2be92f906f51ccb36efa9ff197f246dd",
+    "LUFS": -18.1,
+    "TPdBTP": -2.79,
+    "decodedSamples48k": 2349906,
+    "loopStart": 0.568312,
+    "loopEnd": 48.524687,
+    "loopStartSample": 27279,
+    "loopEndSample": 2329185,
+    "loopLen": 47.956375
+   },
+   "m4a": {
+    "bytes": 502953,
+    "sha256": "fd06d597cbc1806990eee48f757617017610e16b0ce1446540e98a3949efea2c",
+    "LUFS": -18.1,
+    "TPdBTP": -2.71,
+    "decodedSamples48k": 2350080,
+    "loopStart": 0.604521,
+    "loopEnd": 48.560896,
+    "loopStartSample": 29017,
+    "loopEndSample": 2330923,
+    "loopLen": 47.956375
+   }
+  },
+  "music_sundial": {
+   "kind": "loop",
+   "source": "Relics of Past",
+   "author": "Centurion_of_war",
+   "page": "https://opengameart.org/content/relics-of-past",
+   "licence": "CC0 1.0",
+   "sourceCut": "29.820 s + 36.024 s",
+   "ogg": {
+    "bytes": 351719,
+    "sha256": "f12733f5f70a55914fad8cac4203bdfe1dad751927ec71e8264dbc2f5a641e2e",
+    "LUFS": -18.84,
+    "TPdBTP": -2.36,
+    "decodedSamples48k": 1777170,
+    "loopStart": 0.631625,
+    "loopEnd": 36.656,
+    "loopStartSample": 30318,
+    "loopEndSample": 1759488,
+    "loopLen": 36.024375
+   },
+   "m4a": {
+    "bytes": 381670,
+    "sha256": "d7220755680a15ed3295c283ec57c5115f6ff5e769c5634ca998dd6ecd046390",
+    "LUFS": -18.66,
+    "TPdBTP": -1.74,
+    "decodedSamples48k": 1777664,
+    "loopStart": 0.697646,
+    "loopEnd": 36.722021,
+    "loopStartSample": 33487,
+    "loopEndSample": 1762657,
+    "loopLen": 36.024375
+   }
+  },
+  "music_lattice": {
+   "kind": "loop",
+   "source": "Mystical Enigmatic Background Music",
+   "author": "CleytonKauffman",
+   "page": "https://opengameart.org/content/mystical-enigmatic-background-music",
+   "licence": "CC0 1.0",
+   "sourceCut": "40.960 s + 43.636 s",
+   "ogg": {
+    "bytes": 438747,
+    "sha256": "e0832da7223e43809634ba77f8c7f5c9897c14d5d3102351ecc981e1363327af",
+    "LUFS": -18.21,
+    "TPdBTP": -4.11,
+    "decodedSamples48k": 2142546,
+    "loopStart": 0.357625,
+    "loopEnd": 43.994,
+    "loopStartSample": 17166,
+    "loopEndSample": 2111712,
+    "loopLen": 43.636375
+   },
+   "m4a": {
+    "bytes": 457724,
+    "sha256": "841ed075b79124cd176f83eb9d3a25e2ab92eff8635db02edb9d68e593e4e55d",
+    "LUFS": -18.12,
+    "TPdBTP": -3.93,
+    "decodedSamples48k": 2143232,
+    "loopStart": 0.681292,
+    "loopEnd": 44.317667,
+    "loopStartSample": 32702,
+    "loopEndSample": 2127248,
+    "loopLen": 43.636375
+   }
+  },
+  "music_cloister": {
+   "kind": "loop",
+   "source": "Kokopelli's Labyrinth Theme (Main Loop)",
+   "author": "CleytonKauffman",
+   "page": "https://opengameart.org/content/kokopellis-labyrinth-theme",
+   "licence": "CC0 1.0",
+   "sourceCut": "0.020 s + 43.652 s",
+   "ogg": {
+    "bytes": 468620,
+    "sha256": "a6c271bd40c05226fb2edb8328414d4de2f23669c1bc34ccf5fe9a1bfbd01046",
+    "LUFS": -18.02,
+    "TPdBTP": -5.07,
+    "decodedSamples48k": 2143286,
+    "loopStart": 0.692833,
+    "loopEnd": 44.344625,
+    "loopStartSample": 33256,
+    "loopEndSample": 2128542,
+    "loopLen": 43.651792
+   },
+   "m4a": {
+    "bytes": 459058,
+    "sha256": "2510f766faa02f2197b8e08f728b903a4d498e55e286a022295da4c945042be4",
+    "LUFS": -17.99,
+    "TPdBTP": -4.53,
+    "decodedSamples48k": 2144256,
+    "loopStart": 0.284687,
+    "loopEnd": 43.936479,
+    "loopStartSample": 13665,
+    "loopEndSample": 2108951,
+    "loopLen": 43.651792
+   }
+  },
+  "music_stair": {
+   "kind": "loop",
+   "source": "Unexplored Expansion",
+   "author": "Bo Jingles (expansion of TAD's \"Unexplored (short ver.)\", CC0: https://opengameart.org/content/unexplored-short-ver-orchestra-music)",
+   "page": "https://opengameart.org/content/unexplored-expansion",
+   "licence": "CC0 1.0",
+   "sourceCut": "27.390 s + 53.333 s",
+   "ogg": {
+    "bytes": 512949,
+    "sha256": "d89d82e70a1e93336d863af022481751403973395b7d0b77aee23a5bd100a443",
+    "LUFS": -18.14,
+    "TPdBTP": -7.31,
+    "decodedSamples48k": 2608002,
+    "loopStart": 0.587833,
+    "loopEnd": 53.921208,
+    "loopStartSample": 28216,
+    "loopEndSample": 2588218,
+    "loopLen": 53.333375
+   },
+   "m4a": {
+    "bytes": 556187,
+    "sha256": "2dbaa038784752edc3f0e004185d0d216c9a7bd0cd266ce96e1f5da4bc2cbfc5",
+    "LUFS": -18.07,
+    "TPdBTP": -7.49,
+    "decodedSamples48k": 2608128,
+    "loopStart": 0.562667,
+    "loopEnd": 53.896042,
+    "loopStartSample": 27008,
+    "loopEndSample": 2587010,
+    "loopLen": 53.333375
+   }
+  },
+  "music_boss": {
+   "kind": "loop",
+   "source": "Battle Theme A",
+   "author": "cynicmusic (The Cynic Project)",
+   "page": "https://opengameart.org/content/battle-theme-a",
+   "licence": "CC0 1.0",
+   "sourceCut": "13.590 s + 52.603 s",
+   "ogg": {
+    "bytes": 499268,
+    "sha256": "4dc9be78a1781cb09ec5a6ac645c9cc9bbc8bdb989687541d7d17f6271672747",
+    "LUFS": -18.15,
+    "TPdBTP": -7.85,
+    "decodedSamples48k": 2572944,
+    "loopStart": 0.585521,
+    "loopEnd": 53.188521,
+    "loopStartSample": 28105,
+    "loopEndSample": 2553049,
+    "loopLen": 52.603
+   },
+   "m4a": {
+    "bytes": 548643,
+    "sha256": "665a83aaa221ff9ae10971a369b60fe6ecb8133dc79f45209e269ac7607a74f2",
+    "LUFS": -17.96,
+    "TPdBTP": -7.06,
+    "decodedSamples48k": 2573312,
+    "loopStart": 0.683229,
+    "loopEnd": 53.286229,
+    "loopStartSample": 32795,
+    "loopEndSample": 2557739,
+    "loopLen": 52.603
+   }
+  },
+  "music_nadir": {
+   "kind": "loop",
+   "source": "Sirens in Darkness",
+   "author": "cynicmusic (The Cynic Project)",
+   "page": "https://opengameart.org/content/sirens-in-darkness",
+   "licence": "CC0 1.0",
+   "sourceCut": "26.070 s + 39.382 s",
+   "ogg": {
+    "bytes": 399397,
+    "sha256": "6508697b9940e5b51811c31f07bafa0f49fdc61a4786c474e5e57ae675bba957",
+    "LUFS": -18.05,
+    "TPdBTP": -4.79,
+    "decodedSamples48k": 1938352,
+    "loopStart": 0.608354,
+    "loopEnd": 39.990687,
+    "loopStartSample": 29201,
+    "loopEndSample": 1919553,
+    "loopLen": 39.382333
+   },
+   "m4a": {
+    "bytes": 413480,
+    "sha256": "0471df17239bd1d73e419aff97024c763353f33158d32e4ab44474586ca02219",
+    "LUFS": -18.02,
+    "TPdBTP": -5.14,
+    "decodedSamples48k": 1938432,
+    "loopStart": 0.700979,
+    "loopEnd": 40.083312,
+    "loopStartSample": 33647,
+    "loopEndSample": 1923999,
+    "loopLen": 39.382333
+   }
+  },
+  "sfx_sunrise": {
+   "kind": "oneshot",
+   "source": "Fantasy Orchestral Theme",
+   "author": "Joth",
+   "page": "https://opengameart.org/content/fantasy-orchestral-theme",
+   "licence": "CC0 1.0",
+   "sourceCut": "Fantasy Orchestral Theme 147.08-161.80 s",
+   "ogg": {
+    "bytes": 120991,
+    "sha256": "83ce3e0cd5dbffa3562fb6b993aeb9c6d1ba6843fc2db9d946eb988a20e44eff",
+    "LUFS": -18.16,
+    "TPdBTP": -6.09,
+    "decodedSamples48k": 706560,
+    "duration": 14.72
+   },
+   "m4a": {
+    "bytes": 150660,
+    "sha256": "b9ea72575d5b5f9ce737fc80a5564b61a44a5ed2ee07374ff6bcd9c791ee16af",
+    "LUFS": -18.13,
+    "TPdBTP": -6.37,
+    "decodedSamples48k": 706560,
+    "duration": 14.72
+   },
+   "arrivalAt": 4.3
+  },
+  "sfx_boss_sting_a": {
+   "kind": "oneshot",
+   "source": "Battle Theme A",
+   "author": "cynicmusic (The Cynic Project)",
+   "page": "https://opengameart.org/content/battle-theme-a",
+   "licence": "CC0 1.0",
+   "sourceCut": "Battle Theme A 0.515-3.130 s",
+   "ogg": {
+    "bytes": 27276,
+    "sha256": "08b705aa482a8d8426eb5c2b7e2eac900dbe169eaf5f880820c10259baaecccc",
+    "LUFS": -16.15,
+    "TPdBTP": -5.1,
+    "decodedSamples48k": 125520,
+    "duration": 2.615
+   },
+   "m4a": {
+    "bytes": 27523,
+    "sha256": "e55eab5f4a1f51559ee96408e89fd43805827537b6657eafc8d95b551e1821ac",
+    "LUFS": -16.16,
+    "TPdBTP": -5.27,
+    "decodedSamples48k": 125952,
+    "duration": 2.615
+   }
+  },
+  "sfx_boss_sting_b": {
+   "kind": "oneshot",
+   "source": "Battle Theme A",
+   "author": "cynicmusic (The Cynic Project)",
+   "page": "https://opengameart.org/content/battle-theme-a",
+   "licence": "CC0 1.0",
+   "sourceCut": "Battle Theme A 37.115-39.730 s",
+   "ogg": {
+    "bytes": 28146,
+    "sha256": "d7dd7bf5aa383a6ee7ab1746d06ddde232b92f3c05b5799521f93a65a87c0c2e",
+    "LUFS": -16.12,
+    "TPdBTP": -7.17,
+    "decodedSamples48k": 125520,
+    "duration": 2.615
+   },
+   "m4a": {
+    "bytes": 27658,
+    "sha256": "47c9602242450af3bdaedbe5cf49d3f1a8a17309300a65426772c478a63094b5",
+    "LUFS": -16.13,
+    "TPdBTP": -6.29,
+    "decodedSamples48k": 125952,
+    "duration": 2.615
+   }
+  },
+  "sfx_boss_sting_c": {
+   "kind": "oneshot",
+   "source": "Battle Theme A",
+   "author": "cynicmusic (The Cynic Project)",
+   "page": "https://opengameart.org/content/battle-theme-a",
+   "licence": "CC0 1.0",
+   "sourceCut": "Battle Theme A 71.635-74.250 s",
+   "ogg": {
+    "bytes": 28418,
+    "sha256": "9d15099194e21f7616563c92bc82687c9e582cf2be47b9c6b56458dff0f33779",
+    "LUFS": -16.18,
+    "TPdBTP": -5.73,
+    "decodedSamples48k": 125520,
+    "duration": 2.615
+   },
+   "m4a": {
+    "bytes": 27629,
+    "sha256": "bf72182458fc14408c6d63cb7f68e9ce7b29345839f4ee5e8cd58746657b6bf5",
+    "LUFS": -16.17,
+    "TPdBTP": -6.01,
+    "decodedSamples48k": 125952,
+    "duration": 2.615
+   }
+  }
+ }
+}

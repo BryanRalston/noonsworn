@@ -97,7 +97,7 @@ export default defineConfig({
     modulePreload: {
       resolveDependencies(filename, deps) {
         void filename
-        return deps.filter((dep) => !dep.includes('arsenal') && !dep.includes('/meta-') && !dep.includes('noonprint') && !dep.includes('featureMap'))
+        return deps.filter((dep) => !dep.includes('arsenal') && !dep.includes('/meta-') && !dep.includes('noonprint') && !dep.includes('featureMap') && !dep.includes('/music-'))
       },
     },
     rollupOptions: {
@@ -108,6 +108,7 @@ export default defineConfig({
           if (id.endsWith('/src/ui/metaUi.ts')) return 'assets/meta-[hash].js'
           if (id.endsWith('/src/ui/noonprint.ts')) return 'assets/noonprint-[hash].js'
           if (id.endsWith('/src/ui/featureMap.ts')) return 'assets/featureMap-[hash].js'
+          if (id.endsWith('/src/audio/music.ts')) return 'assets/music-[hash].js'
           return 'assets/[name]-[hash].js'
         },
       },

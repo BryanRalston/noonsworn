@@ -1033,6 +1033,7 @@ diffuseColor.a = 1.0;
       bossBeat = 0.6
       bossCardT = 2.5
       bossShown = ''
+      audio.wakeBoss(activeMap)
       if (activeMap === 'nadir') storageSet('noonsworn.nadir.hint', '1')
     }
     bossView = live
@@ -1287,7 +1288,7 @@ diffuseColor.a = 1.0;
     } else {
       screens.setToast(null)
       if (next === 'paused') metaUi?.syncPause()
-      if (next === 'menu' || next === 'splash') audio.stopMusic()
+      if (next === 'menu' || next === 'splash') audio.leaveMap()
     }
     if (next !== 'level') levelUp.hide()
   }
@@ -1550,7 +1551,7 @@ diffuseColor.a = 1.0;
 
   function staticScreen(): boolean {
     if (metaHeld || mapSelect.isOpen()) return true
-    if (mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits') return true
+    if (mode === 'splash' || mode === 'menu' || mode === 'howto' || mode === 'settings' || mode === 'credits' || mode === 'paused') return true
     if (mode === 'dead' || mode === 'clear') {
       const end = document.getElementById('end-screen')
       return !!end && !end.hidden
@@ -1797,13 +1798,12 @@ diffuseColor.a = 1.0;
     audio.weaponDuck(view.duck)
     if (view.music === nadirMusic) return
     nadirMusic = view.music
-    if (view.music === 'cut') audio.stopMusic()
+    if (view.music === 'cut') audio.fadeMusic(6.2)
     else if (view.music === 'dawn') {
-      audio.startMusic()
+      audio.playSunrise()
       audio.musicRate(1)
       audio.lowpass(18000, 4)
     } else if (view.music === 'night') {
-      audio.startMusic()
       audio.musicRate(0.85)
       audio.lowpass(500)
     } else if (view.music === 'hold') {
@@ -2173,8 +2173,8 @@ diffuseColor.a = 1.0;
         }
       }
     }
-    audio.startMusic()
     activeMap = wantMap
+    audio.enterMap(wantMap)
     applyOfferFilter()
     nadir?.setSliver(liveMeta().lineLive('line.sliver', activeMap))
     lineFx?.draw(liveMeta().armed().length)
@@ -2671,6 +2671,7 @@ diffuseColor.a = 1.0;
   }, true)
   window.addEventListener('pointerdown', () => audio.unlock())
   window.addEventListener('keydown', () => audio.unlock())
+  window.addEventListener('touchend', () => audio.unlock())
   document.addEventListener('visibilitychange', () => {
     audio.setMuted(document.hidden || storageGet('noonsworn.mute') === '1')
     screens.setBeamPaused(document.hidden)
@@ -2882,6 +2883,7 @@ diffuseColor.a = 1.0;
       }
       const steppedFrom = time
       if (!(activeMap === 'nadir' && nadirView?.freezeTime)) time += dt
+      if (activeMap !== 'nadir' && time >= 240) audio.prefetchBoss()
       if (printRun) {
         const sec = time | 0
         if (sec !== litMark && sec >= 0 && sec < 512) {
@@ -3376,6 +3378,7 @@ diffuseColor.a = 1.0;
       sun.pushUniforms(floor.uniforms, quality.tier !== 'low')
       enemyTime().value = performance.now() * 0.001
       setEnemyLegSwing(quality.tier === 'high')
+      audio.setLit(mode === 'playing' || mode === 'level' ? litAt(player.x, player.z) : true)
       audio.sample()
       const moving = Math.hypot(player.vx, player.vz)
       if (mode === 'playing' && moving > 0.8) {
@@ -4104,6 +4107,8 @@ diffuseColor.a = 1.0;
     setSunElevation: (e: number, glideSeconds: number) => {
       stair?.setSunElevation(e, glideSeconds)
     },
+    musicState: () => audio.musicState(),
+    renderFrames: () => gpu.renderer.info.render.frame,
     drawLedger: () => {
       const names: string[] = []
       gpu.scene.traverse((obj) => {

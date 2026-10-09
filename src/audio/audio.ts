@@ -1,5 +1,7 @@
 /** Sampled CC0 audio. Core events never use a raw oscillator as the primary sound. */
 
+import type { MusicHandle, MusicState } from './music'
+
 const NAMES = [
   'spear_throw_1', 'spear_throw_2', 'spear_throw_3',
   'cut_swish_1', 'cut_swish_2', 'cut_blade_1', 'cut_blade_2', 'cut_blade_3', 'cloth_1',
@@ -19,6 +21,33 @@ const NAMES = [
   'coin_bloom', 'shutter_open', 'shutter_close', 'darter_dart',
   'espalier_rake', 'espalier_slam', 'espalier_wake',
 ] as const
+
+/** Map-only cues. Resident only while that map is current, so a Stair boss crossfade stays under 48 MiB. */
+const MAP_FOLEY: Record<string, readonly string[]> = {
+  sundial: [
+    'gate_rumble', 'mirror_hum_loop', 'mirror_fire', 'slab_warn', 'slab_slam',
+    'spring_launch', 'spring_land', 'mirage_step', 'relic_get',
+  ],
+  lattice: [
+    'coin_bloom', 'shutter_open', 'shutter_close', 'darter_dart',
+    'espalier_rake', 'espalier_slam', 'espalier_wake',
+  ],
+  cloister: [
+    'water_fill', 'water_ebb', 'brim_chime', 'brimwash_warn', 'brimwash_crash',
+    'blot_rise', 'blot_spit', 'votary_cowl', 'compline_wake', 'compline_pour',
+    'compline_drink', 'compline_slam',
+  ],
+  stair: [
+    'westering_bell', 'sun_glide', 'seal_set', 'seal_fade', 'pitch_bubble',
+    'courser_pounce', 'hushmaw_feed', 'hushmaw_burst',
+    'newel_wake', 'newel_cast', 'newel_sweep', 'newel_bow', 'newel_break', 'newel_fall',
+  ],
+}
+
+const FOLEY_OWNER = new Map<string, string>()
+for (const [map, names] of Object.entries(MAP_FOLEY)) {
+  for (const name of names) FOLEY_OWNER.set(name, map)
+}
 
 const PENTA = [1, 1.122, 1.26, 1.335, 1.414, 1.498]
 
@@ -73,11 +102,19 @@ export interface AudioBus {
   lowpassHz: () => number
   musicRate: (rate: number) => void
   weaponDuck: (on: boolean) => void
+  enterMap: (map: string) => void
+  leaveMap: () => void
+  prefetchBoss: () => void
+  wakeBoss: (map: string) => void
+  setLit: (lit: boolean) => void
+  fadeMusic: (seconds: number) => void
+  playSunrise: () => void
+  musicState: () => { sfx: number; peak: number; ext: string; music: MusicState | null }
 }
 
 function preferOgg(): boolean {
   if (typeof Audio === 'undefined') return true
-  return new Audio().canPlayType('audio/ogg; codecs=vorbis') !== ''
+  return new Audio().canPlayType('audio/ogg; codecs="vorbis"') !== ''
 }
 
 export function createAudio(fxRng: () => number): AudioBus {
@@ -97,12 +134,9 @@ export function createAudio(fxRng: () => number): AudioBus {
   let muted = false
   let loading = false
   let loaded = false
-  let musicStarted = false
-  let musicFailed = false
   let musicLevel = 0.45
   let sfxLevel = 0.9
   let ambLoop: AudioBufferSourceNode | null = null
-  let musicLoop: AudioBufferSourceNode | null = null
   const ext = preferOgg() ? 'ogg' : 'm4a'
   const buffers = new Map<string, AudioBuffer>()
   const failed = new Set<string>()
@@ -166,31 +200,166 @@ export function createAudio(fxRng: () => number): AudioBus {
       sfxBus.gain.value = sfxLevel
       musicBus.gain.value = musicLevel
       duckGain.gain.value = 1
-      ambBus.gain.value = 0.12
+      ambBus.gain.value = 0.12 * sfxLevel
     }
     return ctx
   }
 
-  async function loadOne(name: string) {
-    if (buffers.has(name) || failed.has(name)) return
-    const c = ensure()
-    const base = import.meta.env.BASE_URL
-    try {
-      const res = await fetch(`${base}assets/audio/${name}.${ext}`)
-      if (!res.ok) {
-        failed.add(name)
-        return
-      }
-      const data = await res.arrayBuffer()
-      const buf = await c.decodeAudioData(data.slice(0))
-      buffers.set(name, buf)
-    } catch {
-      failed.add(name)
-    }
+  const CORE = new Set<string>(NAMES.slice(0, 15))
+  let ducked = false
+  let masterLevel = 1
+  let musicHandle: MusicHandle | null = null
+  let opening: Promise<MusicHandle | null> | null = null
+  let chain: Promise<void> = Promise.resolve()
+  let musicBytes = 0
+  let peakDecoded = 0
+  let mapLive = false
+  let menuAsked = false
+  let bossAsked = false
+  let litWant = true
+  let foleyMap = ''
+  const inflight = new Map<string, Promise<void>>()
+
+  function foleyAllowed(name: string): boolean {
+    const owner = FOLEY_OWNER.get(name)
+    if (!owner) return true
+    return owner === foleyMap
   }
 
-  async function loadSet(names: readonly string[]) {
-    await Promise.all(names.map((name) => loadOne(name)))
+  function clampVol(n: number): number {
+    if (!Number.isFinite(n)) return 0
+    if (n < 0) return 0
+    if (n > 1) return 1
+    return n
+  }
+
+  function sfxDecoded(): number {
+    let n = 0
+    for (const buf of buffers.values()) n += buf.length * buf.numberOfChannels * 4
+    return n
+  }
+
+  function noteDecoded(music = musicBytes) {
+    musicBytes = music
+    const total = music + sfxDecoded()
+    if (total > peakDecoded) peakDecoded = total
+  }
+
+  function applySfx() {
+    if (sfxBus) sfxBus.gain.value = sfxLevel * (ducked ? 0.75 : 1)
+    if (ambBus) ambBus.gain.value = 0.12 * sfxLevel
+  }
+
+  function hearNow(): number {
+    return muted ? 0 : masterLevel
+  }
+
+  function readyMusic(): Promise<MusicHandle | null> {
+    if (musicHandle) return Promise.resolve(musicHandle)
+    if (!opening) {
+      const c = ensure()
+      const bus = musicBus
+      const low = musicLow
+      const duck = duckGain
+      if (!bus || !low || !duck) return Promise.resolve(null)
+      opening = import('./music')
+        .then((mod) => {
+          musicHandle = mod.attachMusic(c, {
+            musicBus: bus,
+            musicLow: low,
+            duck,
+            ext,
+            base: import.meta.env.BASE_URL,
+            hear: hearNow(),
+            onBytes: (n) => noteDecoded(n),
+          })
+          musicHandle.setMusic(musicLevel)
+          musicHandle.setHear(hearNow())
+          musicHandle.rate(musicWant)
+          musicHandle.setLit(litWant)
+          return musicHandle
+        })
+        .catch(() => null)
+    }
+    return opening
+  }
+
+  function useMusic(fn: (bus: MusicHandle) => void) {
+    chain = chain
+      .then(async () => {
+        const bus = await readyMusic()
+        if (bus) fn(bus)
+      })
+      .catch(() => undefined)
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return
+    if (ctx && ctx.state === 'suspended') void ctx.resume()
+  })
+
+  async function loadOne(name: string) {
+    if (!foleyAllowed(name)) return
+    if (buffers.has(name) || failed.has(name)) return
+    const pending = inflight.get(name)
+    if (pending) return pending
+    const run = (async () => {
+      const c = ensure()
+      const base = import.meta.env.BASE_URL
+      const url = `${base}assets/audio/${name}.${ext}`
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => window.setTimeout(resolve, 150 * attempt))
+        try {
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(String(res.status))
+          const data = await res.arrayBuffer()
+          const buf = await c.decodeAudioData(data.slice(0))
+          if (!foleyAllowed(name)) return
+          buffers.set(name, buf)
+          noteDecoded()
+          return
+        } catch {
+          if (attempt === 2) failed.add(name)
+        }
+      }
+    })().finally(() => {
+      inflight.delete(name)
+    })
+    inflight.set(name, run)
+    return run
+  }
+
+  async function pump(queue: string[]) {
+    let cursor = 0
+    const workers = Math.min(4, queue.length)
+    const worker = async () => {
+      while (cursor < queue.length) {
+        const name = queue[cursor]
+        cursor += 1
+        if (name) await loadOne(name)
+      }
+    }
+    if (workers > 0) await Promise.all(Array.from({ length: workers }, () => worker()))
+  }
+
+  let loadChain: Promise<void> = Promise.resolve()
+
+  async function loadSetNow(names: readonly string[]) {
+    const core: string[] = []
+    const rest: string[] = []
+    for (const name of names) {
+      if (!foleyAllowed(name)) continue
+      if (CORE.has(name)) core.push(name)
+      else rest.push(name)
+    }
+    await pump(core)
+    await pump(rest)
+  }
+
+  function loadSet(names: readonly string[]): Promise<void> {
+    const run = loadChain.then(() => loadSetNow(names))
+    loadChain = run.then(() => undefined, () => undefined)
+    return run
   }
 
   function mark(name: string) {
@@ -348,12 +517,55 @@ export function createAudio(fxRng: () => number): AudioBus {
     }
     while (hums.length > want) {
       const src = hums.pop()
+      if (!src) continue
       try {
-        src?.stop()
+        src.stop()
       } catch {
         /* already ended */
       }
+      src.buffer = null
+      try {
+        src.disconnect()
+      } catch {
+        /* already disconnected */
+      }
     }
+  }
+
+  function stopHeld(src: AudioBufferSourceNode, gain?: GainNode) {
+    try {
+      src.stop()
+    } catch {
+      /* already ended */
+    }
+    src.buffer = null
+    try {
+      src.disconnect()
+    } catch {
+      /* already disconnected */
+    }
+    try {
+      gain?.disconnect()
+    } catch {
+      /* already disconnected */
+    }
+  }
+
+  /** Drop every other map's decoded cues, then load this map's set. Menu keeps none. */
+  function keepFoley(map: string) {
+    foleyMap = map
+    if (map !== 'sundial') setHums(0)
+    for (const [name, row] of beds) {
+      if (foleyAllowed(name)) continue
+      stopHeld(row.src, row.gain)
+      beds.delete(name)
+    }
+    for (const name of [...buffers.keys()]) {
+      if (!foleyAllowed(name)) buffers.delete(name)
+    }
+    noteDecoded()
+    const extra = MAP_FOLEY[map]
+    if (extra && extra.length) void loadSet(extra)
   }
 
   function duck() {
@@ -398,6 +610,10 @@ export function createAudio(fxRng: () => number): AudioBus {
       unlocked = true
       const c = ensure()
       if (c.state === 'suspended') void c.resume()
+      if (!menuAsked && !mapLive) {
+        menuAsked = true
+        useMusic((bus) => bus.menu())
+      }
       if (!loading && !loaded) {
         loading = true
         void loadSet(NAMES).then(() => {
@@ -408,43 +624,73 @@ export function createAudio(fxRng: () => number): AudioBus {
     },
     setMuted(next) {
       muted = next
-      if (master) master.gain.value = next ? 0 : 1
+      const g = hearNow()
+      if (master) master.gain.value = g
+      if (musicHandle) musicHandle.setHear(g)
     },
     setVolumes(m, s) {
-      if (master && !muted) master.gain.value = m
-      sfxLevel = s
-      if (sfxBus) sfxBus.gain.value = s
+      masterLevel = clampVol(m)
+      const g = hearNow()
+      if (master) master.gain.value = g
+      if (musicHandle) musicHandle.setHear(g)
+      sfxLevel = clampVol(s)
+      applySfx()
     },
     setMusic(value) {
-      musicLevel = value
-      if (musicBus) musicBus.gain.value = value
+      musicLevel = clampVol(value)
+      if (musicHandle) musicHandle.setMusic(musicLevel)
+      else if (musicBus) musicBus.gain.value = musicLevel
     },
     setSfx(value) {
-      sfxLevel = value
-      if (sfxBus) sfxBus.gain.value = value
+      sfxLevel = clampVol(value)
+      applySfx()
     },
     startMusic() {
-      if (musicStarted || musicFailed) return
-      musicStarted = true
-      const base = import.meta.env.BASE_URL
-      void fetch(`${base}assets/audio/music_desert_loop.${ext}`)
-        .then((res) => {
-          if (!res.ok) throw new Error('music')
-          return res.arrayBuffer()
-        })
-        .then((data) => ensure().decodeAudioData(data.slice(0)))
-        .then((buf) => {
-          buffers.set('music_desert_loop', buf)
-          if (!musicLoop) musicLoop = loop('music_desert_loop', musicBus)
-        })
-        .catch(() => {
-          musicFailed = true
-        })
+      if (mapLive || menuAsked) return
+      menuAsked = true
+      useMusic((bus) => bus.menu())
     },
     stopMusic() {
-      musicLoop?.stop()
-      musicLoop = null
-      musicStarted = false
+      mapLive = false
+      menuAsked = false
+      bossAsked = false
+      useMusic((bus) => bus.stop())
+    },
+    enterMap(map) {
+      mapLive = true
+      menuAsked = true
+      bossAsked = false
+      keepFoley(map)
+      useMusic((bus) => bus.enter(map))
+    },
+    leaveMap() {
+      mapLive = false
+      bossAsked = false
+      menuAsked = true
+      keepFoley('')
+      useMusic((bus) => bus.leave())
+    },
+    prefetchBoss() {
+      if (bossAsked) return
+      bossAsked = true
+      useMusic((bus) => bus.prefetchBoss())
+    },
+    wakeBoss(map) {
+      useMusic((bus) => bus.wakeBoss(map))
+    },
+    setLit(lit) {
+      if (lit === litWant) return
+      litWant = lit
+      useMusic((bus) => bus.setLit(litWant))
+    },
+    fadeMusic(seconds) {
+      useMusic((bus) => bus.fadeOut(seconds))
+    },
+    playSunrise() {
+      useMusic((bus) => bus.sunrise())
+    },
+    musicState() {
+      return { sfx: sfxDecoded(), peak: peakDecoded, ext, music: musicHandle ? musicHandle.state() : null }
     },
     counts() {
       return { ...counts }
@@ -498,11 +744,12 @@ export function createAudio(fxRng: () => number): AudioBus {
     lowpassHz: () => lowHz,
     musicRate(rate) {
       musicWant = rate
-      if (musicLoop) musicLoop.playbackRate.value = rate
+      if (musicHandle) musicHandle.rate(rate)
+      else useMusic((bus) => bus.rate(musicWant))
     },
     weaponDuck(on) {
-      if (!sfxBus) return
-      sfxBus.gain.value = sfxLevel * (on ? 0.75 : 1)
+      ducked = on
+      applySfx()
     },
     meter() {
       const db = 20 * Math.log10(Math.max(held, 1e-5))

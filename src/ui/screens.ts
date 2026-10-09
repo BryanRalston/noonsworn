@@ -132,7 +132,7 @@ export function createScreens(parent: HTMLElement): Screens {
       <h2>CREDITS</h2>
       <p>Original Lapis Noon illustrations and models for Sela, the Dusk Mite, and the Shade Hound. No CC0 model packs.</p>
       <p>Sound: Kenney, and artisticdude, StarNinjas, Fupi, PWL, SketchMan3 via OpenGameArt. All CC0.</p>
-      <p>Music: "Desert Loop (Lo-Fi Remaster)" by iamoneabe, via OpenGameArt. CC0.</p>
+      <p>Music: cynicmusic, Centurion_of_war, CleytonKauffman, Bo Jingles (after TAD), and Joth, via OpenGameArt. All CC0.</p>
       <p>Three.js is MIT.</p>
       <button type="button" id="credits-back">Back</button>
     </section>
