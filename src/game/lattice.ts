@@ -6,8 +6,8 @@ import {
   Color,
   CylinderGeometry,
   DataTexture,
+  DoubleSide,
   IcosahedronGeometry,
-  InstancedBufferAttribute,
   InstancedMesh,
   Mesh,
   MeshBasicMaterial,
@@ -114,9 +114,7 @@ function paintPost(geo: BufferGeometry) {
   for (let i = 0; i < pos.count; i++) maxY = Math.max(maxY, pos.getY(i))
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i)
-    const radial = Math.hypot(pos.getX(i), pos.getZ(i))
-    if (y > maxY - 0.08 && radial > 0.28) tmp.copy(COLOR.gold)
-    else if (y > maxY - 0.08) tmp.copy(COLOR.goldHot)
+    if (y > maxY - 0.08) tmp.copy(COLOR.gold)
     else tmp.copy(COLOR.bronze).lerp(COLOR.sandstone, 0.4)
     colors[i * 3] = tmp.r
     colors[i * 3 + 1] = tmp.g
@@ -147,13 +145,11 @@ function paintFaces(geo: BufferGeometry, side: Color, top: Color) {
 
 function paintFoliage(geo: BufferGeometry) {
   const pos = geo.getAttribute('position')
-  const norm = geo.getAttribute('normal')
   const colors = new Float32Array(pos.count * 3)
   let maxY = -1e9
   for (let i = 0; i < pos.count; i++) maxY = Math.max(maxY, pos.getY(i))
   for (let i = 0; i < pos.count; i++) {
-    const up = (norm?.getY(i) ?? 0) > 0.4 || pos.getY(i) > maxY - 0.06
-    const c = up ? COLOR.foliageRim : pos.getY(i) < maxY - 0.22 ? COLOR.foliageDeep : COLOR.foliage
+    const c = pos.getY(i) < maxY - 0.18 ? COLOR.foliageDeep : COLOR.foliage
     colors[i * 3] = c.r
     colors[i * 3 + 1] = c.g
     colors[i * 3 + 2] = c.b
@@ -168,6 +164,52 @@ function addBox(parts: BufferGeometry[], w: number, h: number, d: number, x: num
   if (rotX !== 0) geo.rotateX(rotX)
   geo.translate(x, y, z)
   parts.push(geo)
+}
+
+/** Fill thin dark spokes inside the coin discs. CPU cookieAt and the GPU texture share this mask. */
+function closeCookie(src: Uint8Array, radius: number): Uint8Array<ArrayBuffer> {
+  const n = 256
+  const dil = new Uint8Array(n * n)
+  for (let y = 0; y < n; y++) {
+    const y0 = Math.max(0, y - radius)
+    const y1 = Math.min(n - 1, y + radius)
+    for (let x = 0; x < n; x++) {
+      let on = 0
+      const x0 = Math.max(0, x - radius)
+      const x1 = Math.min(n - 1, x + radius)
+      for (let yy = y0; yy <= y1 && on === 0; yy++) {
+        const row = yy * n
+        for (let xx = x0; xx <= x1; xx++) {
+          if ((src[row + xx] ?? 0) >= 128) {
+            on = 255
+            break
+          }
+        }
+      }
+      dil[y * n + x] = on
+    }
+  }
+  const out = new Uint8Array(n * n)
+  for (let y = 0; y < n; y++) {
+    const y0 = y - radius
+    const y1 = y + radius
+    for (let x = 0; x < n; x++) {
+      const x0 = x - radius
+      if (y0 < 0 || y1 >= n || x0 < 0 || x + radius >= n) continue
+      let on = 255
+      for (let yy = y0; yy <= y1 && on === 255; yy++) {
+        const row = yy * n
+        for (let xx = x0; xx <= x + radius; xx++) {
+          if ((dil[row + xx] ?? 0) < 128) {
+            on = 0
+            break
+          }
+        }
+      }
+      out[y * n + x] = on
+    }
+  }
+  return out
 }
 
 function trisOf(geo: BufferGeometry): number {
@@ -257,6 +299,15 @@ float cookieHard(vec2 roof) {
   c = max(c, cookieAt(roof + vec2(0.0, d)));
   c = max(c, cookieAt(roof - vec2(0.0, d)));
   return c;
+}
+
+float cookieEdge(vec2 roof) {
+  float c = cookieVis(roof);
+  if (c < 0.55) return 0.0;
+  float o = 0.016;
+  float w = min(min(cookieVis(roof + vec2(o, 0.0)), cookieVis(roof - vec2(o, 0.0))),
+                min(cookieVis(roof + vec2(0.0, o)), cookieVis(roof - vec2(0.0, o))));
+  return w < 0.45 ? 1.0 : 0.0;
 }
 
 float cookieSoft(vec2 roof) {
@@ -352,9 +403,11 @@ void main() {
         }
       }
       float gap = 1.0;
+      float rim = 0.0;
       if (vUp > 0.5 && abs(p.x) < 24.0 && abs(p.y) < 24.0 && !inOpen(p.x)) {
         gap = smoothstep(0.47, 0.53, cookieSoft(p - uOff));
         gap *= 0.92 + 0.08 * sin(uTime * 2.0 + p.x * 0.15);
+        rim = cookieEdge(p - uOff);
       }
       vec3 slat = stone * vec3(0.18, 0.14, 0.20);
       vec3 sunlit = stone * 1.24;
@@ -364,6 +417,7 @@ void main() {
         gap = 1.0;
       }
       col = mix(slat, sunlit, light * gap);
+      if (rim > 0.5) col = mix(col, vec3(0.95, 0.71, 0.20), 0.8);
       col += vec3(1.0, 0.86, 0.32) * uCoinFlash * gap;
       float bloom = 0.0;
       if (uBloomN > 0.5) {
@@ -479,7 +533,14 @@ export function createLattice(opts: {
     addBox(parts, w, 0.1, 0.14, mid, 0.12, 8.46, COLOR.shade)
   }
   addBox(backdropParts, 64, 10, 2.2, 0, 5, -28.2, COLOR.sandstoneDeep)
-  for (let i = -3; i <= 3; i++) addBox(backdropParts, 1.4, 2.4, 0.25, i * 6, 3.2, -26.85, COLOR.shade)
+  addBox(backdropParts, 60, 0.5, 3.05, 0, 0.32, -25.6, COLOR.sandstone)
+  const nicheStone = COLOR.sandstoneDeep.clone().lerp(COLOR.bronze, 0.35)
+  for (let i = -3; i <= 3; i++) {
+    const x = i * 6
+    addBox(backdropParts, 0.28, 2.15, 0.28, x - 0.72, 2.85, -26.72, nicheStone)
+    addBox(backdropParts, 0.28, 2.15, 0.28, x + 0.72, 2.85, -26.72, nicheStone)
+    addBox(backdropParts, 1.72, 0.26, 0.32, x, 4.05, -26.7, nicheStone)
+  }
   const terrainGeo = merged(parts)
   const backdropGeo = merged(backdropParts)
   const beams: BufferGeometry[] = []
@@ -535,9 +596,11 @@ export function createLattice(opts: {
     const post = LATTICE_POSTS[i]
     if (!post) continue
     const geo = clump.clone()
-    paintFoliage(geo)
     geo.rotateY(i * 0.7)
-    geo.translate(post.x, 3.55, post.z)
+    geo.scale(0.75, 0.7, 2.65)
+    geo.computeVertexNormals()
+    paintFoliage(geo)
+    geo.translate(post.x, 3.48, post.z)
     vineGeos.push(geo)
   }
   for (let i = 0; i < potSpots.length; i++) {
@@ -550,7 +613,7 @@ export function createLattice(opts: {
   }
   clump.dispose()
   potGeo.dispose()
-  const leafGeo = roundedLeaf(0.52, 0.62, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
+  const leafGeo = roundedLeaf(0.52, 0.62, COLOR.leafInk, COLOR.foliage, COLOR.foliage)
   const leafSpots: { x: number; y: number; z: number; yaw: number; tilt: number; roll: number; s: number }[] = []
   const stations = [0.16, 0.32, 0.48, 0.64, 0.8]
   const cluster: [number, number, number, number, number, number][] = [
@@ -559,9 +622,6 @@ export function createLattice(opts: {
     [-0.4, 0.2, -0.18, 1.6, -0.4, 1.2],
     [0.16, -0.05, 0.95, 0.45, 0.9, 1.05],
     [-0.18, -0.08, -0.92, 2.2, -0.85, 1.1],
-    [0.5, 0.1, 0.12, 1.15, 0.6, 0.95],
-    [-0.48, 0.24, 0.36, 2.5, -0.3, 1.25],
-    [0.05, 0.36, -0.1, 0.55, 0.2, 1.45],
   ]
   for (let e = 0; e < EDGES.length; e++) {
     const zc = EDGES[e] ?? 0
@@ -588,35 +648,31 @@ export function createLattice(opts: {
       }
     }
   }
-  const foliage = new InstancedMesh(
-    leafGeo,
-    new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true, side: 2 }),
-    Math.max(1, leafSpots.length),
-  )
-  foliage.frustumCulled = false
-  foliage.castShadow = false
-  foliage.receiveShadow = false
-  foliage.instanceColor = new InstancedBufferAttribute(new Float32Array(Math.max(1, leafSpots.length) * 3), 3)
+  const leafGeos: BufferGeometry[] = []
   const leafTint = new Color()
   for (let i = 0; i < leafSpots.length; i++) {
     const spot = leafSpots[i]
     if (!spot) continue
+    const geo = leafGeo.clone()
     dummy.position.set(spot.x, spot.y, spot.z)
     dummy.rotation.set(spot.tilt, spot.yaw, spot.roll)
     dummy.scale.set(spot.s, spot.s * 0.85, spot.s)
     dummy.updateMatrix()
-    foliage.setMatrixAt(i, dummy.matrix)
+    geo.applyMatrix4(dummy.matrix)
+    const col = geo.getAttribute('color')
     const band = i % 3
-    if (band === 0) leafTint.setRGB(0.72, 0.88, 0.68)
-    else if (band === 1) leafTint.setRGB(1, 1, 1)
-    else leafTint.setRGB(1.05, 1.16, 0.72)
-    foliage.setColorAt(i, leafTint)
+    if (band === 0) leafTint.setRGB(0.62, 0.82, 0.58)
+    else if (band === 1) leafTint.setRGB(0.85, 1.0, 0.78)
+    else leafTint.setRGB(0.74, 0.96, 0.66)
+    for (let v = 0; v < col.count; v++) {
+      col.setXYZ(v, col.getX(v) * leafTint.r, col.getY(v) * leafTint.g, col.getZ(v) * leafTint.b)
+    }
+    const count = geo.getAttribute('position').count
+    geo.setAttribute('uv', new BufferAttribute(new Float32Array(count * 2), 2))
+    leafGeos.push(geo)
   }
-  foliage.count = leafSpots.length
-  foliage.instanceMatrix.needsUpdate = true
-  if (foliage.instanceColor) foliage.instanceColor.needsUpdate = true
-  foliage.visible = false
   const foliageTris = trisOf(leafGeo) * leafSpots.length
+  leafGeo.dispose()
   const basin = new CylinderGeometry(0.9, 0.72, 0.28, 8)
   paint(basin, COLOR.sandstone)
   basin.translate(0, 0.44, 0)
@@ -756,9 +812,23 @@ void main() {
     geo.dispose()
     return next
   }
+  const dressingMat = new MeshToonMaterial({
+    color: 0xffffff,
+    gradientMap: toonMap(),
+    vertexColors: true,
+    side: DoubleSide,
+  })
+  dressingMat.customProgramCacheKey = () => 'lattice-dressing'
+  dressingMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);`,
+    )
+  }
   const dressing = new Mesh(
-    merged([backdropGeo, pergolaGeo, fountainGeo, ...vineGeos, ...potGeos].map(unroll)),
-    new MeshToonMaterial({ color: 0xffffff, gradientMap: toonMap(), vertexColors: true }),
+    merged([backdropGeo, pergolaGeo, fountainGeo, ...vineGeos, ...potGeos, ...leafGeos].map(unroll)),
+    dressingMat,
   )
   const probe = new Mesh(probeGeo, material)
   probe.position.y = 2
@@ -770,7 +840,7 @@ void main() {
     mesh.receiveShadow = false
     mesh.visible = false
   }
-  opts.scene.add(terrain, dressing, foliage, bloomMesh, probe)
+  opts.scene.add(terrain, dressing, bloomMesh, probe)
   const lifted = opts.enemyMat.clone()
   const sharedTime = opts.enemyMat.uniforms.uTime
   if (sharedTime) lifted.uniforms.uTime = sharedTime
@@ -795,7 +865,7 @@ void main() {
   let heldZ = Number.NaN
   let heldDirX = Number.NaN
   let heldDirZ = Number.NaN
-  const dressingTris = vineTris + potTris + fountainTris
+  const dressingTris = vineTris + potTris + fountainTris + foliageTris
 
   function fract(v: number): number {
     return v - Math.floor(v)
@@ -929,7 +999,7 @@ void main() {
   })
   opts.scene.add(shutters.mesh, espalier.mesh, espalier.tele)
 
-  const own = [terrain, dressing, foliage, bloomMesh, probe, shutters.mesh, espalier.mesh, espalier.tele]
+  const own = [terrain, dressing, bloomMesh, probe, shutters.mesh, espalier.mesh, espalier.tele]
   const pixel = new Uint8Array(4)
   const ndc = new Vector3()
   const drawSize = new Vector2()
@@ -951,10 +1021,11 @@ void main() {
       ctx.drawImage(bmp, 0, 0, 256, 256)
       bmp.close()
       const img = ctx.getImageData(0, 0, 256, 256)
-      bytes = new Uint8Array(256 * 256)
+      const raw = new Uint8Array(256 * 256)
+      for (let i = 0; i < raw.length; i++) raw[i] = img.data[i * 4] ?? 0
+      bytes = closeCookie(raw, 2)
       for (let i = 0; i < bytes.length; i++) {
-        const v = img.data[i * 4] ?? 0
-        bytes[i] = v
+        const v = bytes[i] ?? 0
         rgba[i * 4] = v
         rgba[i * 4 + 1] = v
         rgba[i * 4 + 2] = v
@@ -979,7 +1050,6 @@ void main() {
       }
       terrain.visible = true
       dressing.visible = true
-      foliage.visible = true
       probe.visible = false
       opts.darter.material = lifted
       shutters.reset()
@@ -1163,11 +1233,10 @@ void main() {
       renderer.compile(terrain, camera)
       terrain.material = prevMat
       terrain.visible = prevVis
-      const show = foliage.visible
-      foliage.visible = true
-      renderer.compile(foliage, camera)
+      const show = dressing.visible
+      dressing.visible = true
       renderer.compile(dressing, camera)
-      foliage.visible = show
+      dressing.visible = show
       const showS = shutters.mesh.visible
       const showE = espalier.mesh.visible
       const showT = espalier.tele.visible

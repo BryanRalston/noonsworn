@@ -28,6 +28,7 @@ export const ARSENAL_PART = {
   sunball: 9,
   chest: 10,
   tongue: 11,
+  corona: 12,
 } as const
 
 const CAP = 128
@@ -56,6 +57,8 @@ const SPINE = [0.045, 0.018, 0.006]
 // Dark bronze above hue 26 so a rim sample is not a red telegraph.
 // (0.04, 0.023, 0) → about #312000, hue 39, contrast > 4:1 on lit sandstone.
 const BRONZE = [0.03, 0.016, 0.0]
+// Lighter bronze for the halo rim. The old dark bronze read as a black cookie.
+const RIM = [0.45, 0.24, 0.06]
 
 function pushTri(
   part: number,
@@ -117,42 +120,49 @@ function lanceArrays(pos: number[], col: number[], emit: number[], parts: number
 
 function discArrays(pos: number[], col: number[], emit: number[], parts: number[]) {
   const part = ARSENAL_PART.disc
-  const n = 8
+  const n = 16
+  const y = 0.03
+  const r0 = 0.36
+  const r1 = 0.58
+  const r2 = 0.64
   for (let i = 0; i < n; i++) {
     const a0 = (i / n) * Math.PI * 2
     const a1 = ((i + 1) / n) * Math.PI * 2
-    const rIn = 0.36
-    const y = 0.03
-    const rOut = 0.64
-    const lip = 0.16
-    pushTri(part, pos, col, emit, parts, [0, y, 0], [Math.cos(a0) * rIn, y, Math.sin(a0) * rIn], [Math.cos(a1) * rIn, y, Math.sin(a1) * rIn], GOLD, GOLD, GOLD, 1, 0.7, 0.7)
-    pushTri(part, pos, col, emit, parts, [0, -y, 0], [Math.cos(a1) * rIn, -y, Math.sin(a1) * rIn], [Math.cos(a0) * rIn, -y, Math.sin(a0) * rIn], BRONZE, BRONZE, BRONZE, 0, 0, 0)
-    quad(
-      part,
-      pos,
-      col,
-      emit,
-      parts,
-      [Math.cos(a0) * rIn, y, Math.sin(a0) * rIn],
-      [Math.cos(a1) * rIn, y, Math.sin(a1) * rIn],
-      [Math.cos(a1) * rOut, y, Math.sin(a1) * rOut],
-      [Math.cos(a0) * rOut, y, Math.sin(a0) * rOut],
-      BRONZE,
-      0,
-    )
-    quad(
-      part,
-      pos,
-      col,
-      emit,
-      parts,
-      [Math.cos(a0) * rOut, y, Math.sin(a0) * rOut],
-      [Math.cos(a1) * rOut, y, Math.sin(a1) * rOut],
-      [Math.cos(a1) * rOut, y + lip, Math.sin(a1) * rOut],
-      [Math.cos(a0) * rOut, y + lip, Math.sin(a0) * rOut],
-      BRONZE,
-      0,
-    )
+    const c0 = Math.cos(a0)
+    const s0 = Math.sin(a0)
+    const c1 = Math.cos(a1)
+    const s1 = Math.sin(a1)
+    quad(part, pos, col, emit, parts, [c0 * r0, y, s0 * r0], [c1 * r0, y, s1 * r0], [c1 * r1, y, s1 * r1], [c0 * r1, y, s0 * r1], GOLD, 0.85)
+    quad(part, pos, col, emit, parts, [c0 * r1, y, s0 * r1], [c1 * r1, y, s1 * r1], [c1 * r2, y, s1 * r2], [c0 * r2, y, s0 * r2], RIM, 0.2)
+  }
+}
+
+/** Sun-band ring, local metres. Placed at scale radius/3.2 so shade tracks the same band. */
+function coronaArrays(pos: number[], col: number[], emit: number[], parts: number[], index: number[]) {
+  const part = ARSENAL_PART.corona
+  const n = 48
+  const base = pos.length / 3
+  const rings = [
+    { r: 2.8, color: GOLD, edge: 0.9 },
+    { r: 3.52, color: GOLD, edge: 0.9 },
+    { r: 3.6, color: RIM, edge: 0.15 },
+  ]
+  for (let k = 0; k < rings.length; k++) {
+    const ring = rings[k]
+    if (!ring) continue
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2
+      pos.push(Math.cos(a) * ring.r, 0, Math.sin(a) * ring.r)
+      col.push(ring.color[0] ?? 0, ring.color[1] ?? 0, ring.color[2] ?? 0)
+      emit.push(ring.edge)
+      parts.push(part)
+    }
+  }
+  const ringAt = (k: number) => base + k * n
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    index.push(ringAt(0) + i, ringAt(1) + i, ringAt(1) + j, ringAt(0) + i, ringAt(1) + j, ringAt(0) + j)
+    index.push(ringAt(1) + i, ringAt(2) + i, ringAt(2) + j, ringAt(1) + i, ringAt(2) + j, ringAt(1) + j)
   }
 }
 
@@ -197,27 +207,44 @@ function bellArrays(pos: number[], col: number[], emit: number[], parts: number[
 
 function chestArrays(pos: number[], col: number[], emit: number[], parts: number[]) {
   const part = ARSENAL_PART.chest
-  const gold = GOLD
-  const x = 0.8
-  const z = 0.52
-  const y0 = 0.06
-  const y1 = 0.7
-  quad(part, pos, col, emit, parts, [-x, y0, -z], [x, y0, -z], [x, y0, z], [-x, y0, z], BRONZE, 0)
-  quad(part, pos, col, emit, parts, [-x, y1, z], [x, y1, z], [x, y1, -z], [-x, y1, -z], gold, 0.8)
-  quad(part, pos, col, emit, parts, [-x, y0, z], [x, y0, z], [x, y1, z], [-x, y1, z], gold, 0.35)
-  quad(part, pos, col, emit, parts, [x, y0, -z], [-x, y0, -z], [-x, y1, -z], [x, y1, -z], gold, 0.2)
-  quad(part, pos, col, emit, parts, [x, y0, z], [x, y0, -z], [x, y1, -z], [x, y1, z], gold, 0.2)
-  quad(part, pos, col, emit, parts, [-x, y0, -z], [-x, y0, z], [-x, y1, z], [-x, y1, -z], gold, 0.2)
-  const rim = 0.06
-  quad(part, pos, col, emit, parts, [-(x + rim), y0, z + rim], [x + rim, y0, z + rim], [x + rim, y1 + 0.04, z + rim], [-(x + rim), y1 + 0.04, z + rim], BRONZE, 0)
-  quad(part, pos, col, emit, parts, [x + rim, y0, -(z + rim)], [-(x + rim), y0, -(z + rim)], [-(x + rim), y1 + 0.04, -(z + rim)], [x + rim, y1 + 0.04, -(z + rim)], BRONZE, 0)
-  quad(part, pos, col, emit, parts, [-0.9, 0.74, 0.5], [0.9, 0.74, 0.5], [0.9, 0.74, 0.72], [-0.9, 0.74, 0.72], BRONZE, 0)
-  const lid = y1 + 0.16
-  quad(part, pos, col, emit, parts, [-0.72, y1, -0.44], [0.72, y1, -0.44], [0.66, lid, -0.28], [-0.66, lid, -0.28], EDGE, 1)
-  quad(part, pos, col, emit, parts, [-0.66, lid, -0.28], [0.66, lid, -0.28], [0.66, lid, 0.28], [-0.66, lid, 0.28], gold, 1)
-  quad(part, pos, col, emit, parts, [-0.66, lid, 0.28], [0.66, lid, 0.28], [0.72, y1, 0.44], [-0.72, y1, 0.44], EDGE, 0.6)
-  pushTri(part, pos, col, emit, parts, [0, y1 + 0.02, 0.5], [-0.16, y1 + 0.02, 0.28], [0.16, y1 + 0.02, 0.28], gold, gold, EDGE, 1, 0.7, 1)
-  pushTri(part, pos, col, emit, parts, [0, y1 + 0.02, 0.08], [0.16, y1 + 0.02, 0.28], [-0.16, y1 + 0.02, 0.28], BRONZE, gold, gold, 0, 0.5, 0.5)
+  const x = 0.72
+  const z = 0.46
+  const y0 = 0.08
+  const yb = 0.34
+  const y1 = 0.58
+  const band = RIM
+  quad(part, pos, col, emit, parts, [-x, y0, z], [x, y0, z], [x, yb, z], [-x, yb, z], GOLD, 0.25)
+  quad(part, pos, col, emit, parts, [x, y0, -z], [-x, y0, -z], [-x, yb, -z], [x, yb, -z], GOLD, 0.15)
+  quad(part, pos, col, emit, parts, [x, y0, z], [x, y0, -z], [x, yb, -z], [x, yb, z], GOLD, 0.15)
+  quad(part, pos, col, emit, parts, [-x, y0, -z], [-x, y0, z], [-x, yb, z], [-x, yb, -z], GOLD, 0.15)
+  quad(part, pos, col, emit, parts, [-x, yb, z], [x, yb, z], [x, y1, z], [-x, y1, z], band, 0.7)
+  quad(part, pos, col, emit, parts, [x, yb, -z], [-x, yb, -z], [-x, y1, -z], [x, y1, -z], band, 0.4)
+  quad(part, pos, col, emit, parts, [x, yb, z], [x, yb, -z], [x, y1, -z], [x, y1, z], band, 0.4)
+  quad(part, pos, col, emit, parts, [-x, yb, -z], [-x, yb, z], [-x, y1, z], [-x, y1, -z], band, 0.4)
+  const lx = 0.58
+  const lz = 0.34
+  const lid = 0.78
+  quad(part, pos, col, emit, parts, [-x, y1, z], [x, y1, z], [lx, lid, lz], [-lx, lid, lz], EDGE, 1)
+  quad(part, pos, col, emit, parts, [x, y1, -z], [-x, y1, -z], [-lx, lid, -lz], [lx, lid, -lz], GOLD, 0.5)
+  quad(part, pos, col, emit, parts, [x, y1, z], [x, y1, -z], [lx, lid, -lz], [lx, lid, lz], GOLD, 0.6)
+  quad(part, pos, col, emit, parts, [-x, y1, -z], [-x, y1, z], [-lx, lid, lz], [-lx, lid, -lz], GOLD, 0.6)
+  quad(part, pos, col, emit, parts, [-lx, lid, lz], [lx, lid, lz], [lx, lid, -lz], [-lx, lid, -lz], GOLD, 1)
+  const fz = z + 0.012
+  const sy = 0.46
+  for (let i = 0; i < 8; i++) {
+    const a0 = (i / 8) * Math.PI * 2
+    const a1 = ((i + 0.28) / 8) * Math.PI * 2
+    const ray = i % 2 === 0 ? EDGE : GOLD
+    pushTri(
+      part, pos, col, emit, parts,
+      [0, sy, fz],
+      [Math.cos(a0) * 0.05, sy + Math.sin(a0) * 0.05, fz],
+      [Math.cos(a1) * 0.2, sy + Math.sin(a1) * 0.2, fz],
+      ray, ray, ray, 1, 0.8, 0.4,
+    )
+  }
+  pushTri(part, pos, col, emit, parts, [0, 0.3, fz], [-0.035, 0.22, fz], [0.035, 0.22, fz], BRONZE, BRONZE, BRONZE, 0, 0, 0)
+  pushTri(part, pos, col, emit, parts, [0, 0.16, fz], [0.045, 0.24, fz], [-0.045, 0.24, fz], BRONZE, BRONZE, BRONZE, 0, 0, 0)
 }
 
 function buildGeometry(): BufferGeometry {
@@ -229,11 +256,16 @@ function buildGeometry(): BufferGeometry {
   discArrays(pos, col, emit, parts)
   bellArrays(pos, col, emit, parts)
   chestArrays(pos, col, emit, parts)
+  const index: number[] = []
+  const plain = pos.length / 3
+  for (let i = 0; i < plain; i++) index.push(i)
+  coronaArrays(pos, col, emit, parts, index)
   const geo = new BufferGeometry()
   geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3))
   geo.setAttribute('aColor', new BufferAttribute(new Float32Array(col), 3))
   geo.setAttribute('aEmit', new BufferAttribute(new Float32Array(emit), 1))
   geo.setAttribute('aPart', new BufferAttribute(new Float32Array(parts), 1))
+  geo.setIndex(index)
   return geo
 }
 
@@ -412,6 +444,14 @@ export function createArsenal(): Arsenal {
       fresh.setAttribute('aColor', new BufferAttribute(nextCol, 3))
       fresh.setAttribute('aEmit', new BufferAttribute(nextEm, 1))
       fresh.setAttribute('aPart', new BufferAttribute(nextPart, 1))
+      const prevIndex = old.getIndex()
+      if (prevIndex) {
+        const prev = prevIndex.array
+        const nextIndex = new Uint32Array(prev.length + add)
+        nextIndex.set(prev)
+        for (let i = 0; i < add; i++) nextIndex[prev.length + i] = base + i
+        fresh.setIndex(new BufferAttribute(nextIndex, 1))
+      }
       const kindAttr = old.getAttribute('iKind')
       const hotAttr = old.getAttribute('iHot')
       const swingAttr = old.getAttribute('iSwing')

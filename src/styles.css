@@ -644,7 +644,7 @@ canvas.fade-death { filter: saturate(0.2); }
 #coach[hidden] { display: none !important; }
 #jit {
   position: fixed;
-  top: calc(18px + env(safe-area-inset-top));
+  top: calc(136px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 6;

@@ -222,7 +222,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
           swing: 0,
         })
         if (!halo.sun && d === 0) fx.ward(px, pz, halo.orbit * (level >= 5 ? 1.18 : 1) * (1 + wardPulse * 0.08))
-        // Bronze annulus is local r 0.36–0.5. 0.47 sits in that band, not on the gold.
+        // Gold band is local r 0.36–0.58. 0.47 sits in that band.
         const rims = spinRims(dx, 1.05, dz, a, discScale, ringLocal(0.47, 0.03))
         const rim = rims[0] ?? { x: dx, y: 1.05, z: dz }
         const reach = 0.5 * discScale + 0.2

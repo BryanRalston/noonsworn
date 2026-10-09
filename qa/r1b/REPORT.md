@@ -193,3 +193,5 @@ PUSH-READY: YES
 - Cloister seeds 33/44/66: same spawn count and times, different positions, as the named streams require
 - Weapons and bosses: unchanged
 - Push: not done
+
+Waiver (Action Game, 2026-10-09): Lattice draw peak re-baselined at 25 (mode 23). It's a transient overlap of the existing bloom disc and XP gem, with no new mesh, and the matched 962c18f baseline is 23. The proper fix (target <=20) is in R3 art cleanup.

@@ -13,7 +13,6 @@ import {
   PlaneGeometry,
   Scene,
   ShaderMaterial,
-  SphereGeometry,
   Vector3,
   type Camera,
   type WebGLRenderer,
@@ -240,6 +239,27 @@ function paint(geo: BufferGeometry, r: number, g: number, b: number) {
   geo.setAttribute('color', new BufferAttribute(col, 3))
 }
 
+function fluteShaft(geo: BufferGeometry, cx: number, cz: number) {
+  const pos = geo.getAttribute('position')
+  const col = new Float32Array(pos.count * 3)
+  const segN = 24
+  for (let i = 0; i < pos.count; i++) {
+    const dx = pos.getX(i) - cx
+    const dz = pos.getZ(i) - cz
+    const radial = Math.hypot(dx, dz)
+    let shade = 1
+    if (radial > 0.2) {
+      const ang = Math.atan2(dz, dx)
+      const seg = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * segN + 0.5)
+      shade = Math.abs(seg) % 2 === 0 ? 1.08 : 0.92
+    }
+    col[i * 3] = shade
+    col[i * 3 + 1] = shade
+    col[i * 3 + 2] = shade
+  }
+  geo.setAttribute('color', new BufferAttribute(col, 3))
+}
+
 export function buildPillars(): BufferGeometry {
   const parts: BufferGeometry[] = []
   const at = TUNING.arena.pillarAt
@@ -251,24 +271,29 @@ export function buildPillars(): BufferGeometry {
   ]
   const h = TUNING.arena.pillarH
   const r = TUNING.arena.pillarR
+  const seg = 24
+  const baseH = 0.5
+  const echinusH = 0.3
+  const abacusH = 0.18
+  const shaftH = h - baseH - echinusH - abacusH
   for (let i = 0; i < centers.length; i++) {
     const c = centers[i]
     if (!c) continue
     const cx = c[0] ?? 0
     const cz = c[1] ?? 0
-    const base = new CylinderGeometry(r * 1.45, r * 1.55, 0.5, 12)
-    base.translate(cx, 0.25, cz)
-    const shaft = new CylinderGeometry(r, r, h - 1.05, TUNING.arena.pillarSeg)
-    shaft.translate(cx, 0.5 + (h - 1.05) / 2, cz)
-    const capital = new CylinderGeometry(r * 1.6, r * 1.25, 0.55, 12)
-    capital.translate(cx, h - 0.28, cz)
-    paint(base, 1, 1, 1)
-    paint(shaft, 1, 1, 1)
-    paint(capital, 1, 1, 1)
-    const gem = new SphereGeometry(0.34, 8, 6)
-    gem.translate(cx, h + 0.28, cz)
-    paint(gem, COLOR.gold.r, COLOR.gold.g, COLOR.gold.b)
-    parts.push(base, shaft, capital, gem)
+    const base = new CylinderGeometry(r * 1.15, r * 1.2, baseH, seg)
+    base.translate(cx, baseH * 0.5, cz)
+    paint(base, 0.94, 0.94, 0.94)
+    const shaft = new CylinderGeometry(r, r, shaftH, seg, 1, true)
+    shaft.translate(cx, baseH + shaftH * 0.5, cz)
+    fluteShaft(shaft, cx, cz)
+    const echinus = new CylinderGeometry(r * 1.25, r, echinusH, seg, 1, true)
+    echinus.translate(cx, baseH + shaftH + echinusH * 0.5, cz)
+    paint(echinus, 1, 1, 1)
+    const abacus = new BoxGeometry(r * 1.4 * 2, abacusH, r * 1.4 * 2)
+    abacus.translate(cx, h - abacusH * 0.5, cz)
+    paint(abacus, 0.88, 0.86, 0.82)
+    parts.push(base, shaft, echinus, abacus)
   }
   const merged = mergeGeometries(parts, false)
   for (let i = 0; i < parts.length; i++) parts[i]?.dispose()
@@ -439,7 +464,7 @@ export function buildRubble(): BufferGeometry {
 }
 
 export function buildInlay(): BufferGeometry {
-  const medallion = new CircleGeometry(7.5, 40)
+  const medallion = new CircleGeometry(7.5, 64)
   medallion.rotateX(-Math.PI / 2)
   medallion.translate(0, 0.03, 0)
   const half = TUNING.arena.size / 2 - 0.15

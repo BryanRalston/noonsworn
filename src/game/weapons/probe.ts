@@ -47,6 +47,7 @@ const PART_OF: Record<number, string> = {
   9: 'sunroller',
   10: 'chest',
   11: 'flare',
+  12: 'halo',
 }
 
 function canon(kind: string): string {

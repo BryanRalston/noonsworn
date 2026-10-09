@@ -1,4 +1,5 @@
 import { TUNING } from '../../data/tuning'
+import { detectMobile } from '../../render/quality'
 import { FreeList } from '../../core/pool'
 import { hashQuery } from '../spatialHash'
 import { insideArena, resolveCircle } from '../collision'
@@ -757,7 +758,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
                 horde.damage(s, stats?.damage ?? 18, 'weapon', might)
               }
               bossTouch(horde, hx, hz, 1.1, stats?.damage ?? 18, might, ROW.corona.boss, stamp++)
-              fx.ray(px, 1.1, pz, a, ROW.corona.burstRange, 0.35, 0.2)
+              fx.ray(px, 0.15, pz, a, ROW.corona.burstRange, 0.35, 0.12)
             }
           }
         }
@@ -1199,7 +1200,8 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           const big = lbig[i] === 1
           const scale = big ? 6.8 : 2.6
           // 24 m along the flight line so a broadside still covers 70% of 1280 px.
-          const stretch = big ? 12 : scale
+          // Phone caps the Meridian stretch at 9 so the opaque lance does not cover Sela.
+          const stretch = big ? (detectMobile() ? 9 : 12) : scale
           const ang = yawFromDirection(lvx[i] ?? 0, lvz[i] ?? 1) + Math.PI
           const ly = big ? 1.2 : 0.9
           arsenal.place(ARSENAL_PART.lance, lx[i] ?? 0, ly, lz[i] ?? 0, ang, scale, big ? 1 : 0.4, 0, undefined, stretch)
@@ -1214,22 +1216,25 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
       if (evoDriving('halo')) {
         const sun = mapLit(px, pz)
         const radius = sun ? ROW.corona.sun : ROW.corona.shade
-        const scale = radius / 0.5
-        arsenal.place(ARSENAL_PART.disc, px, 1.05, pz, time, scale, 1, 0)
-        const rims = spinRims(px, 1.05, pz, time, scale, ringLocal(0.5, 0.03))
-        const rim = rimAt(rims, 0, px + radius, 1.05, pz)
-        probePut('corona', 5, px, 1.05, pz, rim.x, rim.y, rim.z, px + radius + 0.4, 0.02, pz, rims)
+        const scale = radius / ROW.corona.sun
+        arsenal.place(ARSENAL_PART.corona, px, 0.05, pz, 0, scale, 1, 0)
+        const rims = spinRims(px, 0.05, pz, 0, scale, ringLocal(3.2, 0))
+        const rim = rimAt(rims, 0, px + radius, 0.05, pz)
+        probePut('corona', 5, px, 0.05, pz, rim.x, rim.y, rim.z, px + radius + 0.4, 0.02, pz, rims)
         for (let i = 0; i < 12; i++) {
           const a = time * 0.5 + (i / 12) * Math.PI * 2
-          fx.ray(px + Math.cos(a) * radius, 1.05, pz + Math.sin(a) * radius, a, sun ? 1.6 : 2.2, 0.28, 0.12)
+          fx.ray(px + Math.cos(a) * radius, 0.12, pz + Math.sin(a) * radius, a, sun ? 1.6 : 2.2, 0.22, 0.08)
         }
       }
       if (evoDriving('bell') && tolling) {
-        const sy = ROW.twelvefold.height / 1.15
-        arsenal.place(ARSENAL_PART.bell, px, 0, pz, 0, sy * 0.72, 0.8, 0, sy)
-        const rims = spinRims(px, 0, pz, 0, sy * 0.72, ringLocal(0.25, 0.85), sy)
-        const rim = rimAt(rims, 0, px, 2, pz)
-        probePut('twelvefold', 5, px, ROW.twelvefold.height * 0.5, pz, rim.x, rim.y, rim.z, px + 1.4, 0.02, pz, rims)
+        const sy = (ROW.twelvefold.height / 1.15) * 0.6
+        const yaw = TUNING.camera.yaw
+        const bx = px - Math.sin(yaw) * 1.2
+        const bz = pz - Math.cos(yaw) * 1.2
+        arsenal.place(ARSENAL_PART.bell, bx, 0, bz, 0, sy * 0.72, 0.8, 0, sy)
+        const rims = spinRims(bx, 0, bz, 0, sy * 0.72, ringLocal(0.25, 0.85), sy)
+        const rim = rimAt(rims, 0, bx, 2, bz)
+        probePut('twelvefold', 5, bx, ROW.twelvefold.height * 0.5 * 0.6, bz, rim.x, rim.y, rim.z, bx + 1.4, 0.02, bz, rims)
       }
       if (evoDriving('helio')) {
         for (let i = 0; i < 3; i++) {

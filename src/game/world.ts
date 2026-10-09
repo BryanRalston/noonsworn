@@ -412,7 +412,9 @@ if (uPillarN > 4.5) {
   }
 }
 float shadow = smoothstep(-0.4, 0.4, clearN);
-diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
+float cover = clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
+if (cover < 0.5) discard;
+diffuseColor.a = 1.0;
 #include <opaque_fragment>`,
       )
   }
@@ -1603,8 +1605,8 @@ diffuseColor.a *= clamp(cone, 0.0, 1.0) * clamp(shadow, 0.0, 1.0);
             mite: horde.miteMesh,
             hound: horde.houndMesh,
             darter: horde.darterMesh,
-            hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay],
-            restore: [floorMesh, shell, pillars, inlay],
+            hide: [floorMesh, shell, pillars, wingFloor, wingPillars, inlay, scatter],
+            restore: [floorMesh, shell, pillars, inlay, scatter],
             spawn: (kind, x, z) => {
               horde.spawn(kind, x, z, false, 56, player.x, player.z)
             },

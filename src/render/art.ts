@@ -44,7 +44,7 @@ export function loadArt(uniforms: FloorUniforms, bind: ArtBind, onReady: (slots:
       }
       if (slots.pillar) {
         loader.load(`${base}assets/art/${slots.pillar}`, (tex) => {
-          bind.pillar.map = tiling(tex, 1, 1.6)
+          bind.pillar.map = tiling(tex, 1, 1)
           bind.pillar.needsUpdate = true
         })
       }

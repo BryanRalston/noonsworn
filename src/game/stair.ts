@@ -815,10 +815,8 @@ export function createStair(opts: {
   putBox(0.9, 0.12, 21.1, 23.6, 1.06, -13.5, COLOR.stairTerracotta)
   putBox(0.9, 0.12, 21.1, 23.6, 1.06, 13.5, COLOR.stairTerracotta)
   for (const bz of [-4.4, 4.4]) {
-    putBox(0.08, 0.9, 0.08, 21.5, 0.45, bz - 0.28, COLOR.bronze)
-    putBox(0.08, 0.9, 0.08, 21.5, 0.45, bz + 0.28, COLOR.bronze)
-    putBox(0.08, 0.9, 0.08, 21.85, 0.45, bz, COLOR.bronze)
-    putCyl(0.34, 0.28, 0.22, 6, 21.6, 1.05, bz, COLOR.bronze)
+    putCyl(0.4, 0.22, 0.18, 8, 21.6, 1.16, bz, COLOR.bronze)
+    putCyl(0.44, 0.44, 0.045, 8, 21.6, 1.26, bz, COLOR.gold)
   }
   putBox(0.2, 0.2, 46, -23.85, 1.7, 0, COLOR.gold)
   putBox(2, 0.28, 1, -22.2, 1.74, 0, COLOR.stairStone)
@@ -843,7 +841,7 @@ export function createStair(opts: {
     putCyl(0.58, 0.58, 0.08, 6, c[0], base + 1.5, c[1], COLOR.gold)
     putCyl(0.5, 0.5, 0.08, 6, c[0], base + 3, c[1], COLOR.gold)
     putCyl(0.44, 0.44, 0.08, 6, c[0], base + 4.5, c[1], COLOR.gold)
-    putCone(0.36, 0.7, c[0], base + 6.35, c[1], COLOR.gold)
+    putCyl(0.42, 0.42, 0.1, 6, c[0], base + 6.05, c[1], COLOR.gold)
   }
   const benches = [
     [16, -20],
@@ -868,7 +866,7 @@ export function createStair(opts: {
   }
   putCone(2.3, 1.3, pxPav, 3.15, pzPav, COLOR.stairTerracotta)
   putCone(0.12, 0.45, pxPav, 3.9, pzPav, COLOR.gold)
-  putBox(220, 0.04, 220, 0, -0.2, 0, COLOR.sandstone)
+  putBox(220, 0.04, 220, 0, -0.2, 0, COLOR.sky)
 
   const archGeo = mergeGeometries(parts, false)
   if (!archGeo) throw new Error('stair architecture')
