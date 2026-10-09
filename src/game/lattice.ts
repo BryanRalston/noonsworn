@@ -27,7 +27,7 @@ import { COLOR } from '../data/palette'
 import type { FloorUniforms } from '../render/floorShader'
 import { toonMap } from '../render/toon'
 import { PILLARS, setBeds, setOpenStrips, type AABB } from './collision'
-import { createEspalier, type EspalierInfo } from './espalier'
+import { createEspalier, roundedLeaf, type EspalierInfo } from './espalier'
 import { createShutters } from './shutters'
 import { noteBlocks, writeFloorPillars } from './temple'
 import type { DamageSource } from '../data/tuning'
@@ -141,44 +141,86 @@ function paintFaces(geo: BufferGeometry, side: Color, top: Color) {
   geo.setAttribute('color', new BufferAttribute(colors, 3))
 }
 
-/** Diamond in the XZ plane. Four hard edges, one normal, so it stays a flat card at play zoom. */
-function leafCard(w: number, h: number, color: Color): BufferGeometry {
-  const hw = w * 0.5
-  const hh = h * 0.5
-  const geo = new BufferGeometry()
-  geo.setAttribute('position', new BufferAttribute(new Float32Array([
-    0, 0, hh,
-    hw, 0, 0,
-    0, 0, -hh,
-    -hw, 0, 0,
-  ]), 3))
-  geo.setAttribute('uv', new BufferAttribute(new Float32Array([
-    0.5, 1,
-    1, 0.5,
-    0.5, 0,
-    0, 0.5,
-  ]), 2))
-  geo.setIndex([0, 1, 2, 0, 2, 3])
-  geo.computeVertexNormals()
-  paint(geo, color)
-  geo.userData.card = true
+const leafDummy = new Object3D()
+
+/**
+ * Garland leaf. The hull matches roundedLeaf, the tip is pulled into a point,
+ * and each face has one normal so the toon stays clipped.
+ */
+function almondLeaf(w: number, h: number): BufferGeometry {
+  const src = roundedLeaf(w * 0.5, h * 0.5, COLOR.foliageDeep, COLOR.foliage, COLOR.foliageRim)
+  const geo = src.toNonIndexed()
+  src.dispose()
+  const pos = geo.getAttribute('position')
+  const n = pos.count
+  const nrm = new Float32Array(n * 3)
+  const point = (z: number) => (z > h * 0.85 ? z + (z - h * 0.5) * 0.22 : z)
+  for (let i = 0; i < n; i++) pos.setZ(i, point(pos.getZ(i)))
+  for (let i = 0; i < n; i += 3) {
+    const ax = pos.getX(i)
+    const ay = pos.getY(i)
+    const az = pos.getZ(i)
+    const bx = pos.getX(i + 1)
+    const by = pos.getY(i + 1)
+    const bz = pos.getZ(i + 1)
+    const cx = pos.getX(i + 2)
+    const cy = pos.getY(i + 2)
+    const cz = pos.getZ(i + 2)
+    let nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay)
+    let ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az)
+    let nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+    let len = Math.hypot(nx, ny, nz) || 1
+    nx /= len
+    ny /= len
+    nz /= len
+    if (ny < 0) {
+      nx = -nx
+      ny = -ny
+      nz = -nz
+    }
+    nx *= 0.7
+    nz *= 0.7
+    ny = ny * 0.7 + 0.3
+    len = Math.hypot(nx, ny, nz) || 1
+    nx /= len
+    ny /= len
+    nz /= len
+    for (let k = 0; k < 3; k++) {
+      nrm[(i + k) * 3] = nx
+      nrm[(i + k) * 3 + 1] = ny
+      nrm[(i + k) * 3 + 2] = nz
+    }
+  }
+  geo.setAttribute('normal', new BufferAttribute(nrm, 3))
+  geo.setAttribute('uv', new BufferAttribute(new Float32Array(n * 2), 2))
+  geo.userData.leaf = true
   return geo
 }
 
-function tag(geo: BufferGeometry, card: boolean) {
+function placeLeaf(
+  w: number, h: number,
+  x: number, y: number, z: number,
+  tilt: number, yaw: number, roll: number,
+  s: number,
+): BufferGeometry {
+  const geo = almondLeaf(w, h)
+  leafDummy.position.set(x, y, z)
+  leafDummy.rotation.set(tilt, yaw, roll)
+  leafDummy.scale.set(s, s * 0.85, s)
+  leafDummy.updateMatrix()
+  geo.applyMatrix4(leafDummy.matrix)
+  return geo
+}
+
+function tag(geo: BufferGeometry) {
   const pos = geo.getAttribute('position')
   const n = pos.count
   const cards = new Float32Array(n)
+  const leaves = new Float32Array(n)
   const leaf = new Float32Array(n * 2)
-  if (card) {
-    cards.fill(1)
-    const uv = geo.getAttribute('uv')
-    for (let i = 0; i < n; i++) {
-      leaf[i * 2] = uv?.getX(i) ?? 0
-      leaf[i * 2 + 1] = uv?.getY(i) ?? 0
-    }
-  }
+  if (geo.userData.leaf === true) leaves.fill(1)
   geo.setAttribute('aCard', new BufferAttribute(cards, 1))
+  geo.setAttribute('aLeaf', new BufferAttribute(leaves, 1))
   geo.setAttribute('aLeafUv', new BufferAttribute(leaf, 2))
 }
 
@@ -611,32 +653,27 @@ export function createLattice(opts: {
       potSpots.push({ x: span[0] + (span[1] - span[0]) * 0.65, y, z: zc })
     }
   }
-  const dummy = new Object3D()
-  // Upright diamonds around the stem. Spread past the card width so they stay separate leaves.
-  const sprigs = [
-    { dx: 0.55, dy: 0.35, dz: 0.02, tilt: 1.15, yaw: 0.3, s: 0.85 },
-    { dx: -0.52, dy: 0.55, dz: 0.1, tilt: 1.05, yaw: 2.1, s: 0.78 },
-    { dx: 0.06, dy: 0.15, dz: 0.55, tilt: 1.2, yaw: 1.15, s: 0.8 },
-    { dx: 0.08, dy: 0.72, dz: -0.5, tilt: 1.1, yaw: 3.5, s: 0.74 },
-    { dx: -0.12, dy: 0.02, dz: -0.52, tilt: 1.18, yaw: 4.7, s: 0.82 },
+  // Crown fills the old icosa clump (center y 3.55, about 0.55 m across). No stem.
+  const crown: [number, number, number, number, number, number, number][] = [
+    [0.00, 0.10, 0.00, 0.85, 0.30, 0.25, 1.05],
+    [0.16, 0.02, 0.06, 1.15, 0.90, -0.35, 0.95],
+    [-0.14, 0.06, -0.08, 1.05, 2.30, 0.40, 1.00],
+    [0.04, 0.14, 0.14, 0.65, 1.55, -0.15, 0.90],
+    [-0.06, -0.02, -0.16, 1.25, 3.50, 0.45, 0.92],
+    [0.18, 0.08, -0.10, 1.00, 4.40, -0.20, 0.88],
+    [-0.16, 0.12, 0.08, 0.80, 5.30, 0.20, 0.98],
   ]
   for (let i = 0; i < LATTICE_POSTS.length; i++) {
     const post = LATTICE_POSTS[i]
     if (!post) continue
-    const stem = new BoxGeometry(0.06, 1.2, 0.06)
-    paint(stem, COLOR.foliage)
-    stem.translate(post.x, 2.95, post.z)
-    vineGeos.push(stem)
-    for (let k = 0; k < sprigs.length; k++) {
-      const off = sprigs[k]
+    for (let k = 0; k < crown.length; k++) {
+      const off = crown[k]
       if (!off) continue
-      const card = leafCard(0.48, 0.64, k % 2 === 0 ? COLOR.foliage : COLOR.foliageRim)
-      dummy.position.set(post.x + off.dx, 3.35 + off.dy, post.z + off.dz)
-      dummy.rotation.set(off.tilt, off.yaw + i * 0.35, 0)
-      dummy.scale.set(off.s, 1, off.s)
-      dummy.updateMatrix()
-      card.applyMatrix4(dummy.matrix)
-      vineGeos.push(card)
+      vineGeos.push(placeLeaf(
+        0.52, 0.6,
+        post.x + off[0], 3.55 + off[1], post.z + off[2],
+        off[3], off[4] + i * 0.7, off[5], off[6],
+      ))
     }
   }
   for (let i = 0; i < potSpots.length; i++) {
@@ -648,9 +685,19 @@ export function createLattice(opts: {
     potGeos.push(geo)
   }
   potGeo.dispose()
-  // One diamond per station. Five full-size cards on a 7 m span overlap into one lump at the play camera.
-  const leafSpots: { x: number; y: number; z: number; yaw: number; tilt: number }[] = []
+  // Same stations and 8-leaf cluster as the rounded garland. Almond span matches roundedLeaf(0.52, 0.62): 1.04 by 1.24.
+  const leafGeos: BufferGeometry[] = []
   const stations = [0.16, 0.32, 0.48, 0.64, 0.8]
+  const cluster: [number, number, number, number, number, number][] = [
+    [0, 0.28, 0, 0.2, 0.35, 1.35],
+    [0.42, 0.16, 0.22, 0.9, 0.55, 1.15],
+    [-0.4, 0.2, -0.18, 1.6, -0.4, 1.2],
+    [0.16, -0.05, 0.95, 0.45, 0.9, 1.05],
+    [-0.18, -0.08, -0.92, 2.2, -0.85, 1.1],
+    [0.5, 0.1, 0.12, 1.15, 0.6, 0.95],
+    [-0.48, 0.24, 0.36, 2.5, -0.3, 1.25],
+    [0.05, 0.36, -0.1, 0.55, 0.2, 1.45],
+  ]
   for (let e = 0; e < EDGES.length; e++) {
     const zc = EDGES[e] ?? 0
     const lip = zc < 0 ? 1.12 : 0.82
@@ -660,27 +707,19 @@ export function createLattice(opts: {
       const width = span[1] - span[0]
       for (let t = 0; t < stations.length; t++) {
         const cx = span[0] + width * (stations[t] ?? 0)
-        leafSpots.push({
-          x: cx,
-          y: lip + 0.06,
-          z: zc + (t % 2 === 0 ? 0.16 : -0.12),
-          yaw: 0.35 + t * 0.5 + e * 0.2,
-          tilt: t % 2 === 0 ? 0.1 : -0.08,
-        })
+        for (let k = 0; k < cluster.length; k++) {
+          const off = cluster[k]
+          if (!off) continue
+          leafGeos.push(placeLeaf(
+            1.04, 1.24,
+            cx + off[0], lip + off[1], zc + off[2],
+            off[4], off[3] + t * 0.17,
+            (k % 2 === 0 ? 0.4 : -0.35) + e * 0.1,
+            off[5],
+          ))
+        }
       }
     }
-  }
-  const leafGeos: BufferGeometry[] = []
-  for (let i = 0; i < leafSpots.length; i++) {
-    const spot = leafSpots[i]
-    if (!spot) continue
-    const geo = leafCard(0.92, 1.12, i % 2 === 0 ? COLOR.foliage : COLOR.foliageRim)
-    dummy.position.set(spot.x, spot.y, spot.z)
-    dummy.rotation.set(spot.tilt, spot.yaw, 0)
-    dummy.scale.set(1, 1, 0.92)
-    dummy.updateMatrix()
-    geo.applyMatrix4(dummy.matrix)
-    leafGeos.push(geo)
   }
   const foliageTris = leafGeos.reduce((sum, geo) => sum + trisOf(geo), 0)
   const basin = new CylinderGeometry(0.9, 0.72, 0.28, 8)
@@ -818,21 +857,24 @@ void main() {
     vertexColors: true,
     side: DoubleSide,
   })
-  dressingMat.customProgramCacheKey = () => 'lattice-cards'
+  dressingMat.customProgramCacheKey = () => 'lattice-leaves'
   dressingMat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
         `#include <common>
 attribute float aCard;
+attribute float aLeaf;
 attribute vec2 aLeafUv;
 varying float vCard;
+varying float vLeaf;
 varying vec2 vLeafUv;`,
       )
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
 vCard = aCard;
+vLeaf = aLeaf;
 vLeafUv = aLeafUv;`,
       )
     shader.fragmentShader = shader.fragmentShader
@@ -840,6 +882,7 @@ vLeafUv = aLeafUv;`,
         '#include <common>',
         `#include <common>
 varying float vCard;
+varying float vLeaf;
 varying vec2 vLeafUv;`,
       )
       .replace(
@@ -849,6 +892,8 @@ if (vCard > 0.5) {
   vec2 q = vLeafUv * 2.0 - 1.0;
   if (abs(q.x) + abs(q.y) > 0.9) discard;
   if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.82, 0.90, 0.74);
+} else if (vLeaf > 0.5) {
+  if (!gl_FrontFacing) diffuseColor.rgb *= vec3(0.88, 0.94, 0.82);
 } else if (!gl_FrontFacing) {
   diffuseColor.rgb *= vec3(0.40, 0.46, 0.34);
 }`,
@@ -862,7 +907,7 @@ if (vCard > 0.5) {
   const dressParts = [backdropGeo, pergolaGeo, fountainGeo, ...vineGeos, ...potGeos, ...leafGeos]
   for (let i = 0; i < dressParts.length; i++) {
     const geo = dressParts[i]
-    if (geo) tag(geo, geo.userData.card === true)
+    if (geo) tag(geo)
   }
   const dressing = new Mesh(
     merged(dressParts.map(unroll)),
