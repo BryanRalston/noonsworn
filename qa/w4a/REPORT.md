@@ -411,3 +411,81 @@ PUSH-READY: NO
 - camera.ts: unchanged versus `b70fc90`.
 
 Local commits only. This round was not pushed.
+
+## W4a.2
+
+Measurement only, on `d9001a3` against `b70fc90`. No game file changed. The per-seed ±15% rule is retired. For each boss the mean TTK of the clears must sit within ±15% of base, and the clear count within ±1 seed of base. If pass A and pass B of the base already disagree by more than that, the band becomes the observed base-vs-base spread plus 5%. They did not, so the band stays ±15% and ±1 seed.
+
+Pass A and pass B are `b70fc90` on port 5183. Pass H is `d9001a3` on port 5182 (`index-CAF0mxFV.js`). Same harness, `RENDER=0`, tier high, kit e2, cap 220, seeds 11, 22, 33, 44, 55, 66. 90 rows, 0 console errors, no wall cut. A clear is a numeric TTK with player HP above 0. The mean is the average of those times. The spread is the max clear minus the min clear. The base mean is the midpoint of A and B. Head must land within ±15% of that midpoint, and within 1 seed of both A and B.
+
+Lattice, Cloister, Stair, and Sundial use the official ring, seek to t=269, and TTK = kill time − 270. Sundial has no boss HP. A Sundial clear is reaching t=300. Nadir's fight clock enrages at 240, so a seek to 269 would start the fight already enraged. On Nadir only, the same script calls `nadirPhase(1)`, writes the e2 ranks back over the draft grant, and sets time to 0. Nadir TTK is the time when boss HP reaches 0. A, B, and H all used that path.
+
+A and B matched on every Lattice, Stair, Nadir, and Sundial row. Cloister seed 66 cleared on B (41.31) and died on A (t=303.86). Cloister seed 44 died on both, at t=301.24 and t=297.58. Cloister means are 38.87 and 39.48 (1.6% apart) and the clear counts are 3 and 4. That is inside the gate, so the band was not widened.
+
+### Sundial
+
+Deaths are player HP at 0 between t=283.05 and t=288.72, before noon. Five of the six base deaths happen with a level offer open. The harness does not pick cards. Head reaches noon on every seed at 30.02 s, player HP 92 or 100.
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 0/6 | — | — | death | death | death | death | death | death |
+| B | 0/6 | — | — | death | death | death | death | death | death |
+| H | 6/6 | 30.02 | 0.00 | 30.02 | 30.02 | 30.02 | 30.02 | 30.02 | 30.02 |
+
+FAIL. Clear rate moves by 6 seeds. There is no base mean of clears to compare with 30.02.
+
+### Lattice
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 4/6 | 55.67 | 29.01 | 49.36 | 59.36 | death | death | 71.49 | 42.48 |
+| B | 4/6 | 55.67 | 29.01 | 49.36 | 59.36 | death | death | 71.49 | 42.48 |
+| H | 6/6 | 60.01 | 5.33 | 61.49 | 60.83 | 56.66 | 57.66 | 61.99 | 61.43 |
+
+Mean +7.8% PASS. Clear rate 6 versus 4 FAIL. Seeds 33 and 44 die on base (t=281.74, boss 8358; t=283.09, boss 8412) and clear here.
+
+### Cloister
+
+Seed 55 dies on A, B, and H.
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 3/6 | 38.87 | 11.50 | 32.48 | 40.14 | 43.98 | death | death | death |
+| B | 4/6 | 39.48 | 11.50 | 32.48 | 40.14 | 43.98 | death | death | 41.31 |
+| H | 1/6 | 32.48 | 0.00 | 32.48 | death | death | death | death | death |
+
+Mean −17.1% FAIL. Clear rate 1 versus 3 and 1 versus 4 FAIL. Seed 11 stays 32.48. Seeds 22, 33, and 66 die here (t=308.38, t=310.68, t=295.41).
+
+### Stair
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 6/6 | 106.59 | 60.10 | 144.26 | 104.09 | 84.16 | 86.16 | 117.54 | 103.33 |
+| B | 6/6 | 106.59 | 60.10 | 144.26 | 104.09 | 84.16 | 86.16 | 117.54 | 103.33 |
+| H | 6/6 | 107.54 | 80.00 | 74.49 | 119.16 | 78.33 | 105.91 | 154.49 | 112.83 |
+
+Mean +0.9% PASS. Clear rate 6 versus 6 PASS. The clear times still swing (base spread 60.10 s, head spread 80.00 s). The mean does not.
+
+### Nadir
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 6/6 | 133.01 | 1.03 | 132.31 | 133.34 | 133.14 | 132.98 | 132.98 | 133.34 |
+| B | 6/6 | 133.01 | 1.03 | 132.31 | 133.34 | 133.14 | 132.98 | 132.98 | 133.34 |
+| H | 5/6 | 137.71 | 0.17 | 137.64 | death | 137.81 | 137.64 | 137.64 | 137.81 |
+
+Mean +3.5% PASS. Clear rate 5 versus 6 PASS. Seed 22 dies at t=154.71 with 1251 boss HP left. The five clears sit between 137.64 and 137.81.
+
+## Push
+
+PUSH-READY: NO
+
+- Sundial: FAIL. Base dies 0/6 before noon. Head clears 6/6 at 30.02 s.
+- Lattice: FAIL on clear rate. Mean of clears is +7.8%. Seeds 33 and 44 flip from death to clear, so the count moves by 2.
+- Cloister: FAIL. Mean −17.1%. Clears fall from 3 and 4 to 1. Seed 11 is unchanged at 32.48.
+- Stair: PASS. Mean +0.9%, 6/6 on every pass.
+- Nadir: PASS. Mean +3.5%, 5/6 against 6/6.
+- Gate width: unchanged. Base A versus B stayed inside ±15% and ±1 seed. Cloister seed 66 was the only clear-or-death disagreement.
+- Game code: unchanged. No clip was re-recorded.
+
+Local commits only. This round was not pushed.
