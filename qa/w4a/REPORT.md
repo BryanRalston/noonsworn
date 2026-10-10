@@ -340,3 +340,74 @@ PUSH-READY: NO
 - e1 TTK: SKIPPED (invalid under RENDER=0)
 
 Local commits only. This round was not pushed.
+
+## W4a.1
+
+On top of `b7bbd42`. Weapon boss scales are unchanged (`solar` 1.7, `sunroller` 0.3, `obelisk` 0.18, `mocksun` 0.25). Boss HP, contact, and speed were left alone. `camera.ts` is still identical to `b70fc90`. Sundial clips do not run with a tracked boss, and Sundial does not call `horde.shove`, so the weapon clips were not re-recorded.
+
+While `horde.bossAt` is set, per-enemy hit-hold returns immediately, and `knockFrom`, `pullTo`, and `nudge` place the authored delta instead of adding spring velocity. `shove` places that delta on every map that calls it. Hit-stop still counts down in `beginFrame`, and the sim step still runs while a boss is tracked, so the stop does not eat boss-damage time. `RENDER=0` never included the stop, because the stop decays before `step`.
+
+### Nadir phase 1, phone
+
+Same clean setup as the W4a phone pass: foreground Chrome, med tier, 1400 frames, 5 reps. Measured canvas 618×1371 (inner 412×914). Worst start-to-start is `gapMin`. Gap 1% low is `gapLow`. Both files have `errors: []`.
+
+The 2.30 fps window did not reproduce on `b7bbd42`. Worst rep there is 91.74, and every rep clears 30 fps and a gap 1% low of 39. `b70fc90` rep 4 hits 6.18 fps on one frame (161.9 ms, work 0.4 ms) in the same scene, with gap 1% low still 42.39. That hitch is an outside stall.
+
+| Build | Rep | Worst fps | Gap 1% low | Work 1% low |
+| --- | ---: | ---: | ---: | ---: |
+| b7bbd42 | 0 | 136.99 | 152.51 | 417.83 |
+| b7bbd42 | 1 | 96.15 | 148.46 | 378.79 |
+| b7bbd42 | 2 | 91.74 | 147.99 | 471.70 |
+| b7bbd42 | 3 | 98.04 | 147.21 | 468.75 |
+| b7bbd42 | 4 | 116.28 | 150.70 | 501.67 |
+| b70fc90 | 0 | 78.74 | 143.59 | 470.22 |
+| b70fc90 | 1 | 120.48 | 148.62 | 364.08 |
+| b70fc90 | 2 | 133.33 | 152.51 | 354.61 |
+| b70fc90 | 3 | 95.24 | 142.86 | 383.63 |
+| b70fc90 | 4 | 6.18 | 42.39 | 372.21 |
+
+### Boss TTK
+
+`RENDER=0`, tier high, kit e2, six seeds. Before is `qa/w4a/ttk_before.jsonl`. After is `qa/w4a/ttk_w4a1.jsonl` (0 console errors), measured on the feedback build above. A fresh pass of the same harness against `b70fc90` on port 5183 is `qa/w4a/ttk_base_fresh.jsonl`. It matches the archive on every lattice and stair row. Cloister seed 66 in that single pass died at t=303.86. Four immediate repeats all cleared at 41.31. Cloister seed 33 cleared on three of four repeats (43.98–45.31) and died once. On this build, cloister 33 died four times at t=310.68, and cloister 66 died four times (three at 295.41, one at 299.98).
+
+| Map | Seed | Before | After | PHP after | Verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| lattice | 11 | 49.36 clear | 61.49 clear | 86 | +24.6% FAIL |
+| lattice | 22 | 59.36 clear | 60.83 clear | 86 | +2.5% PASS |
+| lattice | 33 | death | 56.66 clear | 7 | survival flip FAIL |
+| lattice | 44 | death | 57.66 clear | 39 | survival flip FAIL |
+| lattice | 55 | 71.49 clear | 61.99 clear | 72 | −13.3% PASS |
+| lattice | 66 | 42.48 clear | 61.43 clear | 72 | +44.6% FAIL |
+| cloister | 11 | 32.48 clear | 32.48 clear | 40 | 0% PASS |
+| cloister | 22 | 39.98 clear | 45.64 clear | 6 | +14.2% PASS |
+| cloister | 33 | 44.31 clear | death | 0 | new death FAIL |
+| cloister | 44 | death | death | 0 | matched death |
+| cloister | 55 | death | death | 0 | known baseline |
+| cloister | 66 | 41.31 clear | death | 0 | new death FAIL |
+| stair | 11 | 144.26 | 74.49 | 100 | −48.4% FAIL |
+| stair | 22 | 104.09 | 119.16 | 100 | +14.5% PASS |
+| stair | 33 | 84.16 | 78.33 | 100 | −6.9% PASS |
+| stair | 44 | 86.16 | 105.91 | 80 | +22.9% FAIL |
+| stair | 55 | 117.54 | 154.49 | 100 | +31.4% FAIL |
+| stair | 66 | 103.33 | 112.83 | 100 | +9.2% PASS |
+
+Named seeds 33 and 66: stair passes both. Lattice 33 is a survival flip. Lattice 66 is +44.6%. Cloister 33 and 66 are new deaths.
+
+Fresh-base boss calls explain the lattice spread. Prism (`4.75`) calls were 338, 336, 13, 13, 139, and 482 across seeds 11–66. This build lands 62–72 prism calls on every lattice seed, and the six clears sit between 56.66 s and 61.99 s. Seed 66's 42.48 s clear is the 482-call fight. Helio calls on that seed are 254 on base and 368 here, so the missing damage is the prism burst. A prism scale large enough to replace it speeds seeds 22 and 55, which are already inside the band, and stair 66, where prism damage is 604 of 14000. Stair 11 is already −48.4%. There is no single `boss_new = boss_old × dmg_old / dmg_new`.
+
+The burst is the ring kite, not a boss-stat change. Lattice slides the player about 5.35 m off an out-of-arena ring point on every tick (`shoves` equals `samples` on both builds). Prism samples the post-slide position, so that slide does not fill `runLeft`. Base seed 66 still produces 11 prism boss hits per second because 0-HP chasers keep the ring choice moving. Slay removes those chasers. They are the zombie bug: alive, HP ≤ 0, state not DYING. Restoring contact would fail the zombie gate. Lattice 33's base death is that contact (php 100 to 0 by t=281.74, boss still at 8358). A damage scale cannot turn the current clear back into that death.
+
+Two crowd experiments were measured and dropped. A 15 s invisible slot hold left lattice 66 at 60.49 s with 69 prism calls and moved stair 33 from 78.33 s to 137.99 s. An 8 s non-contact chase during DYING, boss fights only, cleared cloister 66 at 41.48 s and left lattice 66 at 61.49 s with 70 prism calls. Stair 33 and 66 moved to 132.16 s and 136.33 s. Neither stayed in the tree.
+
+Stair 44 moved from 169.16 s on `b7bbd42` to 105.91 s with the placed knock. It is still +22.9%.
+
+## Push
+
+PUSH-READY: NO
+
+- Nadir phone stall: outside stall. Five reps on `b7bbd42` pass. `b70fc90` rep 4 hit 6.18 fps on one frame.
+- Boss TTK: FAIL. Stair 33 is −6.9% and stair 66 is +9.2%. Lattice 33 flips death to clear. Lattice 66 is +44.6%. Cloister 33 and 66 die. No weapon boss multiplier was changed. Bosses were not retuned.
+- Feel clips: unchanged. No after-clip was re-recorded.
+- camera.ts: unchanged versus `b70fc90`.
+
+Local commits only. This round was not pushed.

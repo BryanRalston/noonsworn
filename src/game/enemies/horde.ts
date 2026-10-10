@@ -468,6 +468,17 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     kvz[i] = kz * decay
   }
 
+  function placeBy(i: number, dx: number, dz: number) {
+    kvx[i] = 0
+    kvz[i] = 0
+    const ox = x[i] ?? 0
+    const oz = z[i] ?? 0
+    const spec = specOf(type[i] ?? 0)
+    const slid = slideCircle(ox, oz, ox + dx, oz + dz, spec.radius)
+    x[i] = slid.x
+    z[i] = slid.z
+  }
+
   function aimDir(i: number, dirX: number, dirZ: number): { x: number; z: number } {
     let dx = dirX
     let dz = dirZ
@@ -777,17 +788,22 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     },
     knockFrom(cx, cz, radius, dist) {
       const r2 = radius * radius
+      const tracked = horde.bossAt != null
       for (let i = 0; i < MAX; i++) {
         if (!alive[i] || state[i] === DYING || bench[i]) continue
         const dx = (x[i] ?? 0) - cx
         const dz = (z[i] ?? 0) - cz
         const d2 = dx * dx + dz * dz
         if (d2 > r2 || d2 < 1e-6) continue
-        addKv(i, dx, dz, dist)
+        if (tracked) {
+          const d = Math.sqrt(d2)
+          placeBy(i, (dx / d) * dist, (dz / d) * dist)
+        } else addKv(i, dx, dz, dist)
       }
     },
     pullTo(cx, cz, radius, dist) {
       const r2 = radius * radius
+      const tracked = horde.bossAt != null
       for (let i = 0; i < MAX; i++) {
         if (!alive[i] || state[i] === DYING || bench[i]) continue
         const dx = cx - (x[i] ?? 0)
@@ -797,13 +813,15 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const d = Math.sqrt(d2)
         const step = Math.min(dist, d)
         if (!allowControl(i, clock)) continue
-        addKv(i, dx, dz, step)
+        if (tracked) placeBy(i, (dx / d) * step, (dz / d) * step)
+        else addKv(i, dx, dz, step)
       }
     },
     nudge(index, dx, dz) {
       if (!alive[index] || state[index] === DYING || bench[index]) return
       if (!allowControl(index, clock)) return
-      addKv(index, dx, dz, Math.hypot(dx, dz))
+      if (horde.bossAt) placeBy(index, dx, dz)
+      else addKv(index, dx, dz, Math.hypot(dx, dz))
     },
     slow(cx, cz, radius, seconds) {
       const r2 = radius * radius
@@ -901,10 +919,11 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if (!allowControl(i, clock)) continue
         const ox = x[i] ?? 0
         const oz = z[i] ?? 0
-        addKv(i, next.x - ox, next.z - oz, Math.hypot(next.x - ox, next.z - oz))
+        placeBy(i, next.x - ox, next.z - oz)
       }
     },
     hold(index, seconds) {
+      if (horde.bossAt) return
       if (seconds <= 0 || !alive[index] || state[index] === DYING) return
       holdHit[index] = Math.max(holdHit[index] ?? 0, seconds)
     },

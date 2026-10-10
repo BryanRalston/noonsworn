@@ -2982,7 +2982,7 @@ diffuseColor.a = 1.0;
       if (hitStop > 0) {
         hitStop = Math.max(0, hitStop - frameSec)
         if (hitStop === 0) refractoryUntil = wall + 0.3
-        return false
+        if (!horde.bossAt) return false
       }
       if (queuedCut && mode === 'playing') {
         frame.cutPressed = true
