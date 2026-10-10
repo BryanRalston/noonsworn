@@ -132,3 +132,39 @@ In-game credits and `CREDITS.md` name cynicmusic, Centurion_of_war, CleytonKauff
 WebKit / iOS Safari decode lengths, seams, and the first-input console check. Playwright WebKit is not installed, and this PC has no Safari.
 
 PUSH-READY: NO
+
+Waiver (Action Game, 2026-10-09): Cloister TTK PARTIAL (seeds 22/33 over the 38.13 s ceiling) is the same seed-mix pattern waived in R3.2. Music cannot change combat; tuning.ts, weapons and bosses are unchanged. A real iPhone Safari check comes later; an approximate WebKit check is below.
+
+## WebKit approx + GI QC
+
+Independent pass by Grok Interface on 2026-10-09, on build `53fadf3` (temp worktree, served locally). Clips and data are on the GI box in `/workspace/noonsworn-r2/`.
+
+**WebKit (approximate; not iOS Safari)**
+
+- Windows Playwright WebKit (27.2) has no Web Audio API (`AudioContext` and `OfflineAudioContext` are undefined). It is not usable for audio. In it, `canPlayType` gives ogg `""` and m4a `probably`, so the game picks **m4a**, as iOS would. The menu still renders. The first input throws `new (AudioContext||webkitAudioContext)` because the constructor is not defined. That unguarded constructor is the same at `1d5929d` and `d6c9db9`, so it predates R2 and only matters in a browser without Web Audio.
+- Linux Playwright WebKit (26.6, GStreamer) has Web Audio. It was used for the audio checks below.
+- **Decode, 22 of 22 cues, both formats: PASS.** ogg lengths match `decodedSamples48k` within 1 sample. m4a is 96 to 960 samples short (the same as Chrome), and `music.ts` shifts both loop points by diff/2. Peaks are 0.40 to 0.82.
+- **Loop seams, 7 loops × 2 formats, rendered through `OfflineAudioContext` across the loop point: PASS.**
+  - Best lag between the loop points and the padding content is 0 on all 14.
+  - Click ratio (largest sample step at the seam ÷ the clip's 99.9th-percentile step) is 0.05 to 0.75.
+  - The 10 ms RMS at the seam is within the unlooped source's own dip at that point.
+  - The three m4a loops whose shift lands on a half sample (sundial, lattice, boss) render with WebKit's sub-sample interpolation. That gives the same residual before and after the seam (for example boss 0.107 / 0.102), so it is a phase offset, not a seam artefact.
+- **In game, menu music on first input, 0 console errors: PASS.** Natural (ogg) and with ogg hidden from `canPlayType` (m4a, iOS-like): music started 0.5 s after the first click, `AudioContext` running at 44.1 kHz, `currentTime` advancing. The game's loop points equal the manifest plus the priming shift (m4a −193 samples, −2.0 ms).
+
+**GI QC (Chrome 154 on this PC, Intel UHD, headless, fresh profiles)**
+
+| Check | Result |
+| --- | --- |
+| Console errors (boot, first input, static screens, 5 temples × 2 tiers, Nadir boss and ending, phone) | **PASS**, 0 |
+| Entry ≤ 300 KB gzip, no audio in the entry chunk | **PASS**. 287,546 B (index 207,365 + collision 68,029 + tuning 3,380 + palette 2,358 + css 6,414, gzip -9). `loopStart`, `music_manifest`, `.ogg`, `.m4a`, and cue names each appear 0 times in the entry. Music lives in `music-ye4d3uV8.js`. |
+| Delivered audio = `briefs/r2_audio` | **PASS**. 22 of 22 sha256 equal. `music_manifest.json` is semantically identical (whitespace only). |
+| Loop seams, 7 loops, ogg (Chrome's pick) and m4a | **PASS**. Best lag 0 on all 14. Click ratio 0.05 to 0.70. Engine output vs ideal splice ≤ 0.0013. The deepest seam RMS dip is boss.ogg at −6.38 dB, which is in the source itself (−5.67 dB unlooped at the same point). 28 WAV seam clips saved (Chrome + WebKit). |
+| Sunrise timing | **PASS**. `sfx_sunrise` starts at endingT 6.225 s (target 6.2, one frame) and lands at 6.225 + 4.3 = 10.525 s (target 10.5). The music loop fades out over 6.2 s first. |
+| Boss stinger | **PASS**. `sfx_boss_sting_c` (2.615 s) starts when the Nadir boss wakes. |
+| Decoded audio ≤ 48 MiB | **PASS**. Peak 42.54 MiB after visiting all five temples (music 36.25 MiB, sfx 4.38 MiB). |
+| Static screens draw 0 frames while music plays | **PASS**. Menu 0 frames in 3 s. Settings, How to Play, and Credits 0 frames in 2 s each. One music source playing throughout. |
+| Draws ≤ 20 (music on, sim advancing about 8 s per window) | **PASS**. Natural tier (med): sundial 15, lattice 12, cloister 12, stair 10, nadir 11. `tier=high`: 19 / 16 / 17 / 14 / 15. |
+| `camera.ts` unchanged | **PASS**. `src/render/camera.ts` has an empty diff against `1d5929d` and `0390849`. `tuning.ts` and `weapons/` have an empty diff against `1d5929d`. |
+| Phone fps spot check, music on (worst ≥ 30) | **PASS**. 390×844, DPR 3, touch, iPhone UA, tier med, 8 s per temple, `AudioContext` running with 1 source. Worst 1 s window: lattice 165.04, sundial 165.04, cloister 165.04, stair 165.04 fps. 1% low ≥ 158.73 fps, longest gap 6.7 ms. This is a desktop GPU without CPU throttling, so it is a spot check, not a phone measurement. |
+
+Note: a run started with `__nw.setMap()` + `__nw.startRun()` alone leaves sim time at 0 (the clock never starts). All numbers above come from runs started through the picker (Play, then the temple card), with sim time checked advancing.
