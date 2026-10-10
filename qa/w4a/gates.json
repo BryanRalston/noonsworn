@@ -1,0 +1,280 @@
+{
+  "build": "http://127.0.0.1:5182/noonsworn/assets/index-D31xCrvy.js",
+  "high60": {
+    "started": {
+      "mode": "playing",
+      "foes": 200,
+      "tier": "high",
+      "t": 0,
+      "spear": 5,
+      "evo": true
+    },
+    "n": 61,
+    "modes": [
+      "playing"
+    ],
+    "t0": 0,
+    "t1": 57.2166666666647,
+    "frames0": 18,
+    "frames1": 58992,
+    "stop": {
+      "stops": 41,
+      "maxRolling1s": 0.12,
+      "refractoryBreaks": 0,
+      "maxD": 0.12
+    },
+    "fx": {
+      "ambientShare": 0.0824,
+      "impactDrop": 0,
+      "deathDrop": 0,
+      "peak": 627,
+      "cap": 680,
+      "ambientSkip": 511
+    },
+    "audio2s": {
+      "hit": 115,
+      "hitPlay": 13,
+      "exposed": 0,
+      "exposedPlay": 0,
+      "armored": 1,
+      "armoredPlay": 1,
+      "kill": 102,
+      "killPlay": 11,
+      "clustered": 103,
+      "crackThrottle": 0
+    },
+    "maxCalls": 20,
+    "foes": 200,
+    "errs": []
+  },
+  "med20": {
+    "started": {
+      "mode": "playing",
+      "foes": 200,
+      "tier": "med",
+      "t": 0,
+      "spear": 5,
+      "evo": true
+    },
+    "n": 21,
+    "modes": [
+      "playing"
+    ],
+    "t0": 0,
+    "t1": 18.800000000000214,
+    "frames0": 10,
+    "frames1": 6604,
+    "stop": {
+      "stops": 10,
+      "maxRolling1s": 0.12,
+      "refractoryBreaks": 0,
+      "maxD": 0.12
+    },
+    "fx": {
+      "ambientShare": 0.3167,
+      "impactDrop": 18,
+      "deathDrop": 67,
+      "peak": 121,
+      "cap": 680,
+      "ambientSkip": 3155
+    },
+    "audio2s": {
+      "hit": 114,
+      "hitPlay": 14,
+      "exposed": 0,
+      "exposedPlay": 0,
+      "armored": 1,
+      "armoredPlay": 1,
+      "kill": 101,
+      "killPlay": 11,
+      "clustered": 102,
+      "crackThrottle": 0
+    },
+    "maxCalls": 16,
+    "foes": 200,
+    "errs": []
+  },
+  "hit": {
+    "m0": {
+      "throws": 47,
+      "connects": 46,
+      "pct": 0.9787234042553191,
+      "t": 71.9999999999972,
+      "foes": 58,
+      "mode": "playing",
+      "baseThrows": 47,
+      "baseConnects": 46
+    },
+    "m2": {
+      "throws": 105,
+      "connects": 103,
+      "pct": 0.9809523809523809,
+      "t": 71.9999999999972,
+      "foes": 38,
+      "mode": "playing",
+      "baseThrows": 105,
+      "baseConnects": 103
+    },
+    "meridian": {
+      "throws": 393,
+      "connects": 130,
+      "pct": 0.33078880407124683,
+      "t": 71.9999999999972,
+      "foes": 33,
+      "mode": "playing",
+      "baseThrows": 0,
+      "baseConnects": 0
+    }
+  },
+  "shade": {
+    "found": true,
+    "spot": {
+      "x": 3,
+      "z": 0,
+      "x2": 4.4,
+      "z2": 0,
+      "t": 0
+    },
+    "deltas": [
+      {
+        "dmg": 3,
+        "lit": 0,
+        "floor": false
+      },
+      {
+        "dmg": 12,
+        "lit": 1,
+        "floor": false
+      },
+      {
+        "dmg": 3,
+        "lit": 0,
+        "floor": false
+      },
+      {
+        "dmg": 12,
+        "lit": 1,
+        "floor": false
+      }
+    ],
+    "cap": 6,
+    "lit": {
+      "hits": 1,
+      "dead": true,
+      "first": {
+        "dmg": 12,
+        "lit": 1,
+        "floor": true
+      },
+      "cap": 6,
+      "floor": true
+    }
+  },
+  "zombie": [
+    {
+      "kind": "spear",
+      "killEvents": 40,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 0,
+      "dying": 0
+    },
+    {
+      "kind": "halo",
+      "killEvents": 16,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 24,
+      "dying": 0
+    },
+    {
+      "kind": "flare",
+      "killEvents": 40,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 0,
+      "dying": 0
+    },
+    {
+      "kind": "bell",
+      "killEvents": 0,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 40,
+      "dying": 0
+    },
+    {
+      "kind": "helio",
+      "killEvents": 40,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 0,
+      "dying": 0
+    },
+    {
+      "kind": "scarab",
+      "killEvents": 6,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 34,
+      "dying": 0
+    },
+    {
+      "kind": "stake",
+      "killEvents": 38,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 2,
+      "dying": 0
+    },
+    {
+      "kind": "prism",
+      "killEvents": 27,
+      "doubles": 0,
+      "zombies": 0,
+      "alive": 13,
+      "dying": 0
+    }
+  ],
+  "h1": {
+    "before": "menu",
+    "mode": "menu",
+    "vorbis": "probably",
+    "touch": 5,
+    "play": {
+      "w": 313,
+      "h": 58,
+      "x": 39,
+      "y": 395
+    },
+    "howto": {
+      "w": 313,
+      "h": 44,
+      "x": 39,
+      "y": 464
+    },
+    "settings": {
+      "w": 313,
+      "h": 44,
+      "x": 39,
+      "y": 517
+    },
+    "credits": {
+      "w": 313,
+      "h": 44,
+      "x": 39,
+      "y": 571
+    },
+    "wheel": null,
+    "audio": {
+      "mode": "settings",
+      "music": "45",
+      "mute": {
+        "w": 13,
+        "h": 13,
+        "checked": false
+      }
+    },
+    "errs": []
+  }
+}

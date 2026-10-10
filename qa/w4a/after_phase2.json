@@ -1,0 +1,196 @@
+{
+  "build": "http://127.0.0.1:5182/noonsworn/assets/index-D31xCrvy.js",
+  "sunspear": {
+    "batches": [
+      {
+        "throws": 32,
+        "connects": 27,
+        "foes": 24,
+        "errs": []
+      },
+      {
+        "throws": 66,
+        "connects": 57,
+        "foes": 24,
+        "errs": []
+      },
+      {
+        "throws": 96,
+        "connects": 78,
+        "foes": 26,
+        "errs": []
+      },
+      {
+        "throws": 96,
+        "connects": 78,
+        "foes": 46,
+        "errs": []
+      },
+      {
+        "throws": 96,
+        "connects": 78,
+        "foes": 78,
+        "errs": []
+      }
+    ],
+    "throws": 96,
+    "connects": 78,
+    "rate": 0.8125
+  },
+  "shaderErr": false,
+  "shade": {
+    "found": true,
+    "x": 4,
+    "z": 0,
+    "sun": 0,
+    "litStable": 0,
+    "deltas": [
+      {
+        "dmg": 3,
+        "lit": 0
+      },
+      {
+        "dmg": 12,
+        "lit": 1
+      }
+    ],
+    "dead": true,
+    "cap": 6,
+    "floor": false
+  },
+  "bell10": {
+    "kind": "bell",
+    "ticks": 600,
+    "killEvents": 40,
+    "doubles": 0,
+    "zombies": 0,
+    "alive": 0
+  },
+  "scarab": {
+    "kind": "scarab",
+    "ticks": 480,
+    "killEvents": 6,
+    "doubles": 0,
+    "zombies": 0,
+    "alive": 34
+  },
+  "high60": {
+    "started": {
+      "mode": "playing",
+      "foes": 200,
+      "tier": "high"
+    },
+    "n": 61,
+    "modes": [
+      "playing"
+    ],
+    "stop": {
+      "stops": 0,
+      "maxRolling1s": 0.0,
+      "refractoryBreaks": 0,
+      "maxD": 0
+    },
+    "fx": {
+      "ambientShare": 0,
+      "impactDrop": 0,
+      "deathDrop": 0,
+      "peak": 0,
+      "cap": 680
+    },
+    "audio2s": {
+      "hit": 0,
+      "hitPlay": 0,
+      "exposed": 0,
+      "exposedPlay": 0,
+      "armored": 0,
+      "armoredPlay": 0,
+      "kill": 0,
+      "killPlay": 0,
+      "clustered": 0,
+      "crackThrottle": 0
+    },
+    "maxCalls": 19,
+    "foes": 200,
+    "errs": []
+  },
+  "med20": {
+    "started": {
+      "mode": "playing",
+      "foes": 200,
+      "tier": "med"
+    },
+    "n": 21,
+    "modes": [
+      "playing"
+    ],
+    "stop": {
+      "stops": 0,
+      "maxRolling1s": 0.0,
+      "refractoryBreaks": 0,
+      "maxD": 0
+    },
+    "fx": {
+      "ambientShare": 0,
+      "impactDrop": 0,
+      "deathDrop": 0,
+      "peak": 0,
+      "cap": 680
+    },
+    "audio2s": {
+      "hit": 0,
+      "hitPlay": 0,
+      "exposed": 0,
+      "exposedPlay": 0,
+      "armored": 0,
+      "armoredPlay": 0,
+      "kill": 0,
+      "killPlay": 0,
+      "clustered": 0,
+      "crackThrottle": 0
+    },
+    "maxCalls": 15,
+    "foes": 200,
+    "errs": []
+  },
+  "static": {
+    "rows": [
+      {
+        "label": "menu",
+        "mode": "menu",
+        "frames": 0
+      },
+      {
+        "label": "howto",
+        "mode": "howto",
+        "frames": 0
+      },
+      {
+        "label": "settings",
+        "mode": "settings",
+        "frames": 0
+      },
+      {
+        "label": "credits",
+        "mode": "credits",
+        "frames": 0
+      },
+      {
+        "label": "wheel",
+        "missing": true
+      },
+      {
+        "label": "paused",
+        "mode": "paused",
+        "frames": 0
+      },
+      {
+        "label": "dead",
+        "mode": "dead",
+        "frames": 0
+      }
+    ],
+    "errs": [],
+    "touch": 5,
+    "actx": null
+  }
+}

@@ -1,0 +1,122 @@
+[
+  {
+    "name": "bell_evo_after_phone.webm",
+    "ok": true,
+    "before": {
+      "duration": 8.206,
+      "size": 3528177,
+      "bit_rate": 3439607,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    },
+    "strength": 4,
+    "target": "8M",
+    "probe": {
+      "duration": 8.206,
+      "size": 11682311,
+      "bit_rate": 11389043,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    }
+  },
+  {
+    "name": "flare_evo_after_phone.webm",
+    "ok": true,
+    "before": {
+      "duration": 8.208,
+      "size": 3809281,
+      "bit_rate": 3712749,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    },
+    "strength": 4,
+    "target": "8M",
+    "probe": {
+      "duration": 8.208,
+      "size": 11821385,
+      "bit_rate": 11521817,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    }
+  },
+  {
+    "name": "flare_r5_after_phone.webm",
+    "ok": true,
+    "before": {
+      "duration": 8.206,
+      "size": 2966486,
+      "bit_rate": 2892016,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    },
+    "strength": 4,
+    "target": "8M",
+    "probe": {
+      "duration": 8.206,
+      "size": 11810822,
+      "bit_rate": 11514328,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    }
+  },
+  {
+    "name": "helio_evo_after_phone.webm",
+    "ok": true,
+    "before": {
+      "duration": 8.206,
+      "size": 3998229,
+      "bit_rate": 3897859,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    },
+    "strength": 4,
+    "target": "8M",
+    "probe": {
+      "duration": 8.206,
+      "size": 11756753,
+      "bit_rate": 11461616,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    }
+  }
+]

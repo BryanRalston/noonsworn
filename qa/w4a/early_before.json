@@ -1,0 +1,190 @@
+{
+  "rows": [
+    {
+      "seed": 11,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 0
+      },
+      "t": 41.04999999999895,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 3,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 3,
+      "spears": 0,
+      "aim": {
+        "throws": 10,
+        "connects": 9
+      },
+      "errs": [],
+      "hpLost": 100
+    },
+    {
+      "seed": 22,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 3
+      },
+      "t": 38.96666666666574,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 3,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 3,
+      "spears": 0,
+      "aim": {
+        "throws": 7,
+        "connects": 7
+      },
+      "errs": [],
+      "hpLost": 100
+    },
+    {
+      "seed": 33,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 3
+      },
+      "t": 45.716666666665354,
+      "hp": 0,
+      "max": 100,
+      "mode": "playing",
+      "kills": 19,
+      "t10": 42.23333333333222,
+      "level": 4,
+      "spear": 1,
+      "cap": 3,
+      "spears": 1,
+      "aim": {
+        "throws": 20,
+        "connects": 20
+      },
+      "errs": [],
+      "hpLost": 100
+    },
+    {
+      "seed": 44,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 3
+      },
+      "t": 40.999999999998956,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 3,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 3,
+      "spears": 0,
+      "aim": {
+        "throws": 8,
+        "connects": 8
+      },
+      "errs": [],
+      "hpLost": 100
+    },
+    {
+      "seed": 55,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 3
+      },
+      "t": 40.16666666666567,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 5,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 3,
+      "spears": 0,
+      "aim": {
+        "throws": 9,
+        "connects": 9
+      },
+      "errs": [],
+      "hpLost": 100
+    },
+    {
+      "seed": 66,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 3
+      },
+      "t": 42.31666666666555,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 4,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 3,
+      "spears": 0,
+      "aim": {
+        "throws": 10,
+        "connects": 10
+      },
+      "errs": [],
+      "hpLost": 100
+    }
+  ],
+  "mite": [
+    {
+      "lit": true,
+      "x": 3,
+      "z": 0,
+      "hp0": 8,
+      "hits": 2,
+      "dead": true,
+      "hp": -4,
+      "alive": 1,
+      "cap": 3
+    },
+    {
+      "lit": false,
+      "x": 2.68,
+      "z": 6.47,
+      "hp0": 8,
+      "hits": 0,
+      "dead": false,
+      "hp": 8,
+      "alive": 1,
+      "cap": 3
+    }
+  ]
+}

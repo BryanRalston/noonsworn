@@ -1,0 +1,62 @@
+[
+  {
+    "name": "flare_r5_before_phone.webm",
+    "ok": true,
+    "before": {
+      "duration": 8.207,
+      "size": 2994200,
+      "bit_rate": 2918679,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    },
+    "strength": 4,
+    "target": "8M",
+    "probe": {
+      "duration": 8.207,
+      "size": 11870756,
+      "bit_rate": 11571347,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    }
+  },
+  {
+    "name": "bell_evo_before_phone.webm",
+    "ok": true,
+    "before": {
+      "duration": 8.207,
+      "size": 3977526,
+      "bit_rate": 3877203,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    },
+    "strength": 4,
+    "target": "8M",
+    "probe": {
+      "duration": 8.207,
+      "size": 11769491,
+      "bit_rate": 11472636,
+      "width": 390,
+      "height": 844,
+      "vcodec": "vp9",
+      "kinds": [
+        "video",
+        "audio"
+      ]
+    }
+  }
+]

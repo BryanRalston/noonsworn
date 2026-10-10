@@ -1,0 +1,225 @@
+{
+  "rows": [
+    {
+      "seed": 11,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 0
+      },
+      "t": 41.53333333333226,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 3,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 6,
+      "spears": 0,
+      "aim": {
+        "throws": 7,
+        "connects": 6
+      },
+      "errs": [
+        "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n",
+        "THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n"
+      ],
+      "hpLost": 100
+    },
+    {
+      "seed": 22,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 6
+      },
+      "t": 60.01666666666454,
+      "hp": 36.8,
+      "max": 100,
+      "mode": "playing",
+      "kills": 79,
+      "t10": 37.78333333333247,
+      "level": 5,
+      "spear": 1,
+      "cap": 6,
+      "spears": 1,
+      "aim": {
+        "throws": 26,
+        "connects": 26
+      },
+      "errs": [
+        "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n",
+        "THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n"
+      ],
+      "hpLost": 63.2
+    },
+    {
+      "seed": 33,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 6
+      },
+      "t": 51.06666666666505,
+      "hp": 0,
+      "max": 100,
+      "mode": "playing",
+      "kills": 49,
+      "t10": 40.43333333333232,
+      "level": 4,
+      "spear": 1,
+      "cap": 6,
+      "spears": 1,
+      "aim": {
+        "throws": 20,
+        "connects": 20
+      },
+      "errs": [
+        "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n",
+        "THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n"
+      ],
+      "hpLost": 100
+    },
+    {
+      "seed": 44,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 6
+      },
+      "t": 42.66666666666553,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 4,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 6,
+      "spears": 0,
+      "aim": {
+        "throws": 6,
+        "connects": 6
+      },
+      "errs": [
+        "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n",
+        "THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n"
+      ],
+      "hpLost": 100
+    },
+    {
+      "seed": 55,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 6
+      },
+      "t": 41.13333333333228,
+      "hp": 0,
+      "max": 100,
+      "mode": "level",
+      "kills": 5,
+      "t10": 0,
+      "level": 2,
+      "spear": 1,
+      "cap": 6,
+      "spears": 0,
+      "aim": {
+        "throws": 6,
+        "connects": 6
+      },
+      "errs": [
+        "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n",
+        "THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n"
+      ],
+      "hpLost": 100
+    },
+    {
+      "seed": 66,
+      "boot": {
+        "mode": "playing",
+        "hp": 100,
+        "max": 100,
+        "level": 1,
+        "spear": 1,
+        "cap": 6
+      },
+      "t": 56.93333333333138,
+      "hp": 0,
+      "max": 100,
+      "mode": "playing",
+      "kills": 78,
+      "t10": 39.833333333332355,
+      "level": 4,
+      "spear": 3,
+      "cap": 6,
+      "spears": 1,
+      "aim": {
+        "throws": 25,
+        "connects": 25
+      },
+      "errs": [
+        "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n",
+        "THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: ShaderMaterial\n\nProgram Info Log: Vertex shader is not compiled.\nVERTEX\n\nERROR: 0:76: 'instanceMatrix' : redefinition\n\n  71:       attribute vec3 color;\n  72:       attribute float aEmit;\n  73:       attribute float iFlash;\n  74:       attribute float iLit;\n  75:       attribute vec4 iPose;\n> 76:       attribute mat4 instanceMatrix;\n  77:       uniform float uTime;\n  78:       varying vec3 vColor;\n  79:       varying float vEmit;\n  80:       varying float vLit;\n  81:       varying float vFlash;\n  82:       void main() {\n"
+      ],
+      "hpLost": 100
+    }
+  ],
+  "mite": [
+    {
+      "mapOnly": true,
+      "floorLit": true,
+      "foeLit": 0,
+      "x": 3,
+      "z": 0,
+      "hp0": 8,
+      "hits": 1,
+      "dead": true,
+      "hp": -4,
+      "alive": 1,
+      "cap": 6
+    },
+    {
+      "mapOnly": false,
+      "floorLit": false,
+      "foeLit": 0,
+      "x": 2.68,
+      "z": 6.47,
+      "hp0": 8,
+      "hits": 0,
+      "dead": false,
+      "hp": 8,
+      "alive": 1,
+      "cap": 6
+    }
+  ],
+  "shade": {
+    "found": true,
+    "x": 3,
+    "z": 0,
+    "sunTime": 0,
+    "floorLit": false,
+    "foeLit": 0,
+    "hp0": 8,
+    "hits": 2,
+    "dead": true,
+    "hp": -7,
+    "cap": 6
+  }
+}
