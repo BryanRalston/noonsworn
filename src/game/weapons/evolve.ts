@@ -1,4 +1,4 @@
-import { TUNING } from '../../data/tuning'
+import { TUNING, type TierName } from '../../data/tuning'
 import { detectMobile } from '../../render/quality'
 import { FreeList } from '../../core/pool'
 import { hashQuery } from '../spatialHash'
@@ -26,6 +26,13 @@ import {
   setEvoLights,
   type EvoRead,
 } from './evoHook'
+
+function strike(horde: Horde, index: number, amount: number, might: number, ctx: HordeCtx, hold = 0, dirX = 0, dirZ = 0): number {
+  const hit = horde.damage(index, amount, 'weapon', might, false, dirX, dirZ)
+  if (hit > 0 && hold > 0) horde.hold(index, hold)
+  if (hit === 2) horde.slay(index, ctx)
+  return hit
+}
 
 const Q = new Int16Array(160)
 const STREAK_RGB: [number, number, number] = [1.033, 0.249, 0]
@@ -326,6 +333,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
   let bladeLen = 6
 
   let burstCd = 0
+  let coronaRay = 0
   let burstCount = 0
   const coronaAt = new Float32Array(TUNING.hordeCap)
   const knockAt = new Float32Array(TUNING.hordeCap)
@@ -511,7 +519,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
     bossTouch(horde, px, pz, 1.2, stats.damage, might, ROW.meridian.boss, stamp++)
   }
 
-  function stepLances(dt: number, horde: Horde, might: number, time: number) {
+  function stepLances(dt: number, horde: Horde, might: number, time: number, ctx: HordeCtx) {
     for (let i = 0; i < lanceN; i++) {
       if (!lalive[i]) continue
       llife[i] = (llife[i] ?? 0) - dt
@@ -533,11 +541,15 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
         if (s < 0 || !horde.living(s)) continue
         if (segDist2(ox, oz, nx, nz, horde.x[s] ?? 0, horde.z[s] ?? 0) > rad * rad) continue
         if (seen(i, s)) continue
-        const hit = horde.damage(s, ldmg[i] ?? 0, 'weapon', might)
+        const hit = strike(horde, s, ldmg[i] ?? 0, might, ctx, lbig[i] ? 0.06 : 0.05, lvx[i] ?? 0, lvz[i] ?? 0)
         if (hit > 0) {
           if (!lnoted[i]) {
             lnoted[i] = 1
             lanceConnects++
+            if (lbig[i]) {
+              ctx.feel?.stop(0.04, false)
+              ctx.feel?.shake(lvx[i] ?? 0, lvz[i] ?? 0, 0.06)
+            }
           }
           horde.gleamFor(s, ROW.meridian.gleam, time)
           fx.hit(horde.x[s] ?? nx, horde.z[s] ?? nz, (horde.lit[s] ?? 0) === 1)
@@ -699,7 +711,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
       haveFoot = false
       lightReset()
     },
-    update(dt: number, px: number, pz: number, horde: Horde, might: number, haste: number, mapLit: (x: number, z: number) => boolean, shadow: (out: ShadowDir) => void, ctx: HordeCtx, time: number) {
+    update(dt: number, px: number, pz: number, horde: Horde, might: number, haste: number, mapLit: (x: number, z: number) => boolean, shadow: (out: ShadowDir) => void, ctx: HordeCtx, time: number, tier: TierName) {
       void ctx.dt
       lightReset()
       const t0 = performance.now()
@@ -709,7 +721,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           spearCd = spearStats(5).cooldown * hasteMul(haste)
           aimFan(px, pz, horde, might)
         }
-        stepLances(dt, horde, might, time)
+        stepLances(dt, horde, might, time, ctx)
       }
       addEvoCpu('meridian', performance.now() - t0)
 
@@ -718,6 +730,15 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
         const sun = mapLit(px, pz)
         const radius = sun ? ROW.corona.sun : ROW.corona.shade
         read.coronaR = radius
+        coronaRay -= dt
+        if (coronaRay <= 0) {
+          coronaRay = 0.1
+          const rays = tier === 'low' ? 0 : 6
+          for (let i = 0; i < rays; i++) {
+            const a = time * 0.5 + (i / 6) * Math.PI * 2
+            fx.ray(px + Math.cos(a) * radius, 0.12, pz + Math.sin(a) * radius, a, sun ? 1.6 : 2.2, 0.22, 0.08)
+          }
+        }
         const inner = radius - ROW.corona.band * 0.5
         const outer = radius + ROW.corona.band * 0.5
         const n = hashQuery(px, pz, outer + 0.4, Q)
@@ -731,7 +752,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           horde.washFor(s, ROW.corona.wash)
           if (due(coronaAt, s, time, ROW.corona.tick)) {
             const stats = haloStats(5)
-            horde.damage(s, stats?.damage ?? 18, 'weapon', might)
+            strike(horde, s, stats?.damage ?? 18, might, ctx)
           }
           if (!sun && due(knockAt, s, time, ROW.corona.knockGap) && d > 0.2) {
             horde.nudge(s, (dx / d) * ROW.corona.knock, (dz / d) * ROW.corona.knock)
@@ -755,7 +776,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               for (let k = 0; k < hit; k++) {
                 const s = Q[k] ?? -1
                 if (s < 0 || !horde.living(s)) continue
-                horde.damage(s, stats?.damage ?? 18, 'weapon', might)
+                strike(horde, s, stats?.damage ?? 18, might, ctx)
               }
               bossTouch(horde, hx, hz, 1.1, stats?.damage ?? 18, might, ROW.corona.boss, stamp++)
               fx.ray(px, 0.15, pz, a, ROW.corona.burstRange, 0.35, 0.12)
@@ -777,6 +798,11 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           dayburstFlash(time)
           fx.band(px, pz, stats.sun, 0.35)
           fx.core(px, pz, stats.sun * 0.45)
+          ctx.feel?.rank(1)
+          ctx.feel?.stop(0.04, false)
+          ctx.feel?.shake(0, 0, 0.1)
+          ctx.feel?.burst(0.015, 8)
+          ctx.feel?.beginArea()
           const n = hashQuery(px, pz, stats.sun, Q)
           for (let k = 0; k < n; k++) {
             const s = Q[k] ?? -1
@@ -784,9 +810,11 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             const dx = (horde.x[s] ?? 0) - px
             const dz = (horde.z[s] ?? 0) - pz
             if (dx * dx + dz * dz > stats.sun * stats.sun) continue
-            horde.damage(s, stats.damage, 'weapon', might)
+            strike(horde, s, stats.damage, might, ctx, 0.04, dx, dz)
           }
           bossTouch(horde, px, pz, stats.sun, stats.damage, might, ROW.dayburst.boss, stamp++)
+          ctx.feel?.endArea(px, pz)
+          ctx.feel?.rank(0)
         }
         if (tongueIn >= 0) {
           tongueIn -= dt
@@ -807,7 +835,9 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               for (let k = 0; k < n; k++) {
                 const s = Q[k] ?? -1
                 if (s < 0 || !horde.living(s)) continue
-                horde.damage(s, dmg, 'weapon', might)
+                const dx = (horde.x[s] ?? 0) - hx
+                const dz = (horde.z[s] ?? 0) - hz
+                strike(horde, s, dmg, might, ctx, 0.03, dx, dz)
               }
               bossTouch(horde, hx, hz, ROW.dayburst.tongueR, dmg, might, ROW.dayburst.boss, stamp++)
               if (shade) addSpot(hx, hz)
@@ -856,6 +886,9 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             const u = (tollN - 1) / Math.max(1, ROW.twelvefold.tolls - 1)
             tollR = ROW.twelvefold.r0 + (ROW.twelvefold.r1 - ROW.twelvefold.r0) * u
             const sun = mapLit(px, pz)
+            const finalToll = tollN === ROW.twelvefold.tolls
+            if (finalToll) ctx.feel?.rank(1)
+            ctx.feel?.beginArea()
             const n = hashQuery(px, pz, tollR, Q)
             let hits = 0
             for (let k = 0; k < n; k++) {
@@ -865,7 +898,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               const dz = (horde.z[s] ?? 0) - pz
               const d = Math.hypot(dx, dz)
               if (d > tollR) continue
-              if (due(tollAt, s, time, gap * 0.6)) horde.damage(s, tollDmg, 'weapon', might)
+              if (due(tollAt, s, time, gap * 0.6)) strike(horde, s, tollDmg, might, ctx, 0.02, dx, dz)
               if (d > 0.15) {
                 const sgn = sun ? -1 : 1
                 horde.nudge(s, (dx / d) * ROW.twelvefold.shove * sgn, (dz / d) * ROW.twelvefold.shove * sgn)
@@ -878,11 +911,17 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             }
             bossTouch(horde, px, pz, tollR, tollDmg, might, ROW.twelvefold.boss, stamp++)
             fx.shock(px, pz, tollR)
-            if (tollN === ROW.twelvefold.tolls) {
+            ctx.feel?.endArea(px, pz)
+            if (finalToll) {
+              ctx.feel?.shake(0, 0, 0.08)
+              ctx.feel?.rank(0)
               const heal = hits > ROW.twelvefold.healCap ? ROW.twelvefold.healCap : hits
               healed += heal
               evoHeal(heal)
               tolling = false
+            } else {
+              const face = TUNING.camera.yaw
+              ctx.feel?.shake(Math.sin(face), Math.cos(face), 0.025)
             }
           }
         }
@@ -919,7 +958,9 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             for (let c = 0; c < chainN; c++) {
               const s = chainS[c] ?? -1
               if (s < 0 || !horde.living(s)) continue
-              horde.damage(s, helioDmg, 'weapon', might)
+              const nx = horde.x[s] ?? prevX
+              const nz = horde.z[s] ?? prevZ
+              strike(horde, s, helioDmg, might, ctx, c === 0 ? 0.015 : 0, nx - prevX, nz - prevZ)
               const hx = horde.x[s] ?? prevX
               const hz = horde.z[s] ?? prevZ
               fx.helioRay((prevX + hx) * 0.5, 1.2, (prevZ + hz) * 0.5, Math.atan2(hz - prevZ, hx - prevX), Math.hypot(hx - prevX, hz - prevZ), 0.28, 0.16)
@@ -957,7 +998,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               const mx = px + Math.cos(mirrorA[m] ?? 0) * ROW.solar.radius
               const mz = pz + Math.sin(mirrorA[m] ?? 0) * ROW.solar.radius
               if (target >= 0) {
-                horde.damage(target, helioDmg, 'weapon', might)
+                strike(horde, target, helioDmg, might, ctx, 0.015, (horde.x[target] ?? mx) - mx, (horde.z[target] ?? mz) - mz)
                 const hx = horde.x[target] ?? mx
                 const hz = horde.z[target] ?? mz
                 fx.helioRay((mx + hx) * 0.5, 1.3, (mz + hz) * 0.5, Math.atan2(hz - mz, hx - mx), Math.hypot(hx - mx, hz - mz), 0.42, 0.18)
@@ -1012,7 +1053,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           horde.washFor(s, 0.25)
           if (!due(ballAt, s, time, ROW.sunroller.gap)) continue
           ballHits++
-          horde.damage(s, ROW.sunroller.damage, 'weapon', might)
+          strike(horde, s, ROW.sunroller.damage, might, ctx)
           if (d > 0.05) horde.nudge(s, (dx / d) * ROW.sunroller.knock, (dz / d) * ROW.sunroller.knock)
         }
         if (time - ballBoss >= ROW.sunroller.gap && bossTouch(horde, bx, bz, ROW.sunroller.ball * 0.5, ROW.sunroller.damage, might, ROW.sunroller.boss, stamp++)) ballBoss = time
@@ -1060,14 +1101,14 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
           oAng[i] = (oAng[i] ?? 0) + (ROW.obelisk.sweep * Math.PI) / 180 * dt
           const x1 = (ox[i] ?? 0) + Math.cos(oAng[i] ?? 0) * len
           const z1 = (oz[i] ?? 0) + Math.sin(oAng[i] ?? 0) * len
-          if (mapLit(px, pz)) {
+          if (mapLit(ox[i] ?? 0, oz[i] ?? 0)) {
             const n = hashQuery(((ox[i] ?? 0) + x1) * 0.5, ((oz[i] ?? 0) + z1) * 0.5, len * 0.5 + 1, Q)
             for (let k = 0; k < n; k++) {
               const s = Q[k] ?? -1
               if (s < 0 || !horde.living(s)) continue
               if (segDist2(ox[i] ?? 0, oz[i] ?? 0, x1, z1, horde.x[s] ?? 0, horde.z[s] ?? 0) > 0.35 * 0.35) continue
               if (!due(obAt, s, time, ROW.obelisk.gap)) continue
-              horde.damage(s, ROW.obelisk.damage, 'weapon', might)
+              strike(horde, s, ROW.obelisk.damage, might, ctx, 0.04, x1 - (ox[i] ?? 0), z1 - (oz[i] ?? 0))
             }
           }
           if (time - (obBoss[i] ?? -10) >= ROW.obelisk.gap) {
@@ -1092,7 +1133,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               if (segDist2(ox[i] ?? 0, oz[i] ?? 0, ox[j] ?? 0, oz[j] ?? 0, horde.x[s] ?? 0, horde.z[s] ?? 0) > 0.5) continue
               horde.washFor(s, 0.3)
               if (!due(fenceAt, s, time, ROW.obelisk.fenceGap)) continue
-              horde.damage(s, ROW.obelisk.fenceDmg, 'weapon', might)
+              strike(horde, s, ROW.obelisk.fenceDmg, might, ctx)
             }
           }
         }
@@ -1108,7 +1149,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
               const dx = (horde.x[s] ?? 0) - px
               const dz = (horde.z[s] ?? 0) - pz
               if (dx * dx + dz * dz > 2.6 * 2.6) continue
-              horde.damage(s, ring, 'weapon', might)
+              strike(horde, s, ring, might, ctx, 0.04, dx, dz)
             }
             fx.shock(px, pz, 2.6)
           }
@@ -1173,7 +1214,7 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
             const dx = (horde.x[s] ?? 0) - (pxA[i] ?? 0)
             const dz = (horde.z[s] ?? 0) - (pzA[i] ?? 0)
             if (dx * dx + dz * dz > 0.36) continue
-            horde.damage(s, dmg, 'weapon', might)
+            strike(horde, s, dmg, might, ctx, 0.02, (pvx[i] ?? dx), (pvz[i] ?? dz))
             trySplit(i, mapLit)
             pAlive[i] = 0
             pfree.release(i)
@@ -1221,10 +1262,6 @@ export function attachEvolve(fx: WeaponFx, arsenal: Arsenal) {
         const rims = spinRims(px, 0.05, pz, 0, scale, ringLocal(3.2, 0))
         const rim = rimAt(rims, 0, px + radius, 0.05, pz)
         probePut('corona', 5, px, 0.05, pz, rim.x, rim.y, rim.z, px + radius + 0.4, 0.02, pz, rims)
-        for (let i = 0; i < 12; i++) {
-          const a = time * 0.5 + (i / 12) * Math.PI * 2
-          fx.ray(px + Math.cos(a) * radius, 0.12, pz + Math.sin(a) * radius, a, sun ? 1.6 : 2.2, 0.22, 0.08)
-        }
       }
       if (evoDriving('bell') && tolling) {
         const sy = (ROW.twelvefold.height / 1.15) * 0.6

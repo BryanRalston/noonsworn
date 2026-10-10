@@ -1,4 +1,4 @@
-import { TUNING } from '../../data/tuning'
+import { TUNING, type TierName } from '../../data/tuning'
 import { FreeList } from '../../core/pool'
 import { yawFromDirection } from '../../core/math'
 import { hashQuery } from '../spatialHash'
@@ -252,6 +252,7 @@ export interface W2 {
     shadow: (out: ShadowDir) => void,
     ctx: HordeCtx,
     time: number,
+    tier: TierName,
   ) => void
   mark: (mapLit: (x: number, z: number) => boolean, shadow: (out: ShadowDir) => void) => void
   sync: (px: number, pz: number, helio: number, scarab: number, stake: number, prism: number, time: number) => void
@@ -1090,13 +1091,13 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       refreshStakes(mapLit, shadow)
       evo.mark()
     },
-    update(dt, px, pz, horde, helio, scarab, stake, prism, multitude, haste, might, mapLit, shadow, ctx, time) {
+    update(dt, px, pz, horde, helio, scarab, stake, prism, multitude, haste, might, mapLit, shadow, ctx, time, tier) {
       litNow = mapLit
       const t0 = performance.now()
       if (!evoDriving('helio')) stepHelio(dt, px, pz, horde, helio, multitude, haste, might, mapLit, ctx, time)
       cpuH += performance.now() - t0
       const t1 = performance.now()
-      stepScarabs(dt, px, pz, horde, scarab, multitude, haste, might, ctx)
+      if (!evoDriving('scarab')) stepScarabs(dt, px, pz, horde, scarab, multitude, haste, might, ctx)
       cpuS += performance.now() - t1
       const t2 = performance.now()
       if (!evoDriving('stake')) stepStakes(dt, px, pz, horde, stake, haste, might, mapLit, shadow, ctx)
@@ -1104,7 +1105,7 @@ export function createW2(fx: WeaponFx, arsenal: Arsenal): W2 {
       const t3 = performance.now()
       if (!evoDriving('prism')) stepPrisms(dt, px, pz, horde, prism, multitude, haste, might, mapLit, ctx, time)
       cpuP += performance.now() - t3
-      evo.update(dt, px, pz, horde, might, haste, mapLit, shadow, ctx, time)
+      evo.update(dt, px, pz, horde, might, haste, mapLit, shadow, ctx, time, tier)
     },
     sync(px, pz, helio, scarab, stake, prism, time) {
       if (helio > 0 && !evoDriving('helio')) {

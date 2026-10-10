@@ -1,6 +1,6 @@
 import { CylinderGeometry, InstancedMesh, MeshBasicMaterial } from 'three'
 import { TUNING } from '../../data/tuning'
-import { hasteMul } from '../sunClock'
+import { earlyScale, hasteMul } from '../sunClock'
 import { reachMul } from './passives'
 import { makeCrowd } from '../../render/instancing'
 import { hashQuery } from '../spatialHash'
@@ -77,6 +77,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
   const knockAt = new Float32Array(TUNING.hordeCap)
   knockAt.fill(-10)
   let rayAt = -1
+  const discRayAt = new Float32Array(TUNING.halo.maxDiscs)
   let footSun = false
   let footHold = 0
   let footReady = false
@@ -145,7 +146,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
       discScale = ((big ? TUNING.halo.discL5 : TUNING.halo.disc) / 0.5) * reachMul()
       const damage = stats.damage * (footSun ? TUNING.halo.sunDamage : 1)
       const reach = (TUNING.halo.discR + TUNING.halo.reachPad) * reachMul()
-      const knock = big ? TUNING.halo.knockL5 : TUNING.halo.knock
+      const every = TUNING.halo.hitEvery * earlyScale()
       if (big && time - rayAt > 0.36) {
         rayAt = time
         halo.pulses++
@@ -159,7 +160,10 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
         const sx = px + Math.cos(a) * halo.orbit
         const sz = pz + Math.sin(a) * halo.orbit
         const tangent = a + Math.PI / 2
-        fx.ray(sx, 1.05, sz, tangent, 1.4, 0.38, 0.16)
+        if (time - (discRayAt[d] ?? 0) >= 0.1) {
+          discRayAt[d] = time
+          fx.ray(sx, 1.05, sz, tangent, 1.4, 0.38, 0.16)
+        }
         for (let k = 0; k < n; k++) {
           const slot = QUERY[k] ?? -1
           if (slot < 0 || !horde.alive[slot]) continue
@@ -167,16 +171,17 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
           const ez = (horde.z[slot] ?? 0) - sz
           if (ex * ex + ez * ez > reach * reach) continue
           const stampAt = slot * TUNING.halo.maxDiscs + d
-          if (time - (stamps[stampAt] ?? 0) < TUNING.halo.hitEvery) continue
+          if (time - (stamps[stampAt] ?? 0) < every) continue
           stamps[stampAt] = time
           const hit = horde.damage(slot, damage, 'weapon', might)
           if (hit === 0) continue
-          if (!footSun && time - (knockAt[slot] ?? -10) >= TUNING.halo.hitEvery) {
+          horde.hold(slot, footSun ? 0.02 : 0.04)
+          if (!footSun && time - (knockAt[slot] ?? -10) >= every) {
             knockAt[slot] = time
             const ox = (horde.x[slot] ?? sx) - px
             const oz = (horde.z[slot] ?? sz) - pz
             const od = Math.hypot(ox, oz) || 1
-            horde.nudge(slot, (ox / od) * knock, (oz / od) * knock)
+            horde.nudge(slot, (ox / od) * 1.2, (oz / od) * 1.2)
             wardPulse = 0.2
           }
           const hx = horde.x[slot] ?? sx
@@ -186,7 +191,7 @@ export function createHalo(fx: WeaponFx, arsenal: Arsenal, mapLit: (x: number, z
           if (hit === 2) horde.slay(slot, ctx)
         }
         if ((bossStamp[d] ?? 0) > time) bossStamp[d] = 0
-        const gate = !horde.bossLock || time - (bossStamp[d] ?? 0) >= TUNING.halo.hitEvery
+        const gate = !horde.bossLock || time - (bossStamp[d] ?? 0) >= every
         if (gate) {
           const landed = horde.bossHit?.(sx, sz, reach, damage * TUNING.halo.boss, 'weapon', might, 10 + d)
           if (landed && horde.bossLock) bossStamp[d] = time

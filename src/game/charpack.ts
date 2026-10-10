@@ -7,6 +7,7 @@ import {
 } from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
+import { flashTintGlsl } from '../render/instancing'
 
 export interface MorphLut {
   weights: Float32Array
@@ -70,7 +71,7 @@ function dressEnemy(root: Object3D, nodeName: string): { geometry: BufferGeometr
       .replace('#include <common>', '#include <common>\nvarying float vFlash;\nvarying float vLit;')
       .replace(
         '#include <opaque_fragment>',
-        `outgoingLight = mix(outgoingLight, vec3(1.0, 0.93, 0.75), clamp(vFlash, 0.0, 1.0));
+        `${flashTintGlsl('vFlash', 'outgoingLight')}
         float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.0);
         if (vLit < 0.5) {
           outgoingLight *= vec3(0.62, 0.72, 0.88);

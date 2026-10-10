@@ -165,7 +165,28 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
     return sum
   }
 
+  const ribbonOf = new Int8Array(MAX)
+  ribbonOf.fill(-1)
+  const ribbonAge = new Float32Array(MAX)
+  const ribbonFree: number[] = [0, 1, 2, 3, 4, 5, 6, 7]
+
+  function takeRibbon(i: number) {
+    const slot = ribbonFree.pop()
+    ribbonOf[i] = slot == null ? -1 : slot
+    ribbonAge[i] = 0
+  }
+
+  function giveRibbon(i: number) {
+    const slot = ribbonOf[i] ?? -1
+    if (slot >= 0) {
+      fx.lanceEnd(slot)
+      ribbonFree.push(slot)
+    }
+    ribbonOf[i] = -1
+  }
+
   function drop(i: number) {
+    giveRibbon(i)
     alive[i] = 0
     life[i] = 0
     forget(i)
@@ -308,6 +329,7 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
     dmg[i] = damage
     alive[i] = 1
     trailAt[i] = 0
+    takeRibbon(i)
     serial[i] = nextSerial++
     bossed[i] = 0
     gleamed[i] = 0
@@ -445,8 +467,12 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
           if (seen) continue
           if (open >= 0) hits[base + open] = slot
           const wasLit = (horde.lit[slot] ?? 0) === 1
-          const hit = horde.damage(slot, dmg[i] ?? 0, 'weapon', might)
+          const hit = horde.damage(slot, dmg[i] ?? 0, 'weapon', might, false, vx[i] ?? 0, vz[i] ?? 0)
           if (hit === 0) continue
+          horde.hold(slot, 0.05)
+          const spd = Math.hypot(vx[i] ?? 0, vz[i] ?? 0) || 1
+          const knock = wasLit ? 0.25 : 0.08
+          horde.nudge(slot, ((vx[i] ?? 0) / spd) * knock, ((vz[i] ?? 0) / spd) * knock)
           note(i)
           const hx = horde.x[slot] ?? nx
           const hz = horde.z[slot] ?? nz
@@ -507,16 +533,11 @@ export function createSunspear(fx: WeaponFx, arsenal: Arsenal): Sunspear {
         }
         x[i] = nx
         z[i] = nz
-        const big = level >= 5
-        trailAt[i] = (trailAt[i] ?? 0) - dt
-        if ((trailAt[i] ?? 0) <= 0) {
-          trailAt[i] = 0.1
-          const spd = Math.hypot(vx[i] ?? 0, vz[i] ?? 0) || 1
-          const fxDir = (vx[i] ?? 0) / spd
-          const fzDir = (vz[i] ?? 0) / spd
+        const ribbon = ribbonOf[i] ?? -1
+        if (ribbon >= 0) {
+          ribbonAge[i] = (ribbonAge[i] ?? 0) + dt
           const yaw = yawFromDirection(vx[i] ?? 0, vz[i] ?? 1)
-          fx.ribbon(nx - fxDir * 0.15, BODY_Y - 0.05, nz - fzDir * 0.15, yaw, big ? 7.5 : 6.5)
-          fx.glint(nx + fxDir * 0.45, BODY_Y, nz + fzDir * 0.45, big ? 0.36 : 0.32)
+          fx.lance(ribbon, nx, BODY_Y, nz, yaw, Math.min(1, (ribbonAge[i] ?? 0) / 0.08))
         }
         life[i] = (life[i] ?? 0) - dt
         if ((life[i] ?? 0) <= 0) {

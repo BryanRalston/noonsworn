@@ -83,7 +83,7 @@ export interface CastVisual {
 export interface CastPeek {
   votaries: { x: number; z: number; hp: number; mode: number; flash: number; wash: number; yaw: number }[]
   blots: { x: number; z: number; hp: number; mode: number; yaw: number; t: number; vx: number; vz: number }[]
-  boss: { x: number; z: number; y: number; hp: number; max: number; phase: number; on: number; dead: number; rise: number; rig: number; clip: string; clipT: number }
+  boss: { x: number; z: number; y: number; hp: number; max: number; phase: number; on: number; dead: number; rise: number; rig: number; clip: string; clipT: number; wind: number }
   vis: { pull: number; warn: number; glyph: number; crest: number; dry: number; hold: number; fan: number; laneT: number; slamR: number; lane0: number[]; lane1: number[]; pours: number; slams: number }
   tris: { votary: number; blot: number; boss: number; ewer: number }
 }
@@ -1120,6 +1120,7 @@ export function createCast(parent: Object3D, hooks: CastHooks, ask: CastQuery): 
           rig: rig.ready() ? 1 : 0,
           clip: rig.clip(),
           clipT: rig.time(),
+          wind: force > 0 || slamT > 0.4 ? 1 : 0,
         },
         vis: {
           pull: visual.pull,

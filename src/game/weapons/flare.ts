@@ -185,17 +185,29 @@ export function createFlare(fx: WeaponFx): Flare {
       const sun = mapLit(px, pz)
       const radius = (sun ? stats.sun : stats.shade) * reachMul()
       const n = hashQuery(px, pz, radius, QUERY)
+      let flareHits = 0
+      ctx.feel?.rank(2)
+      ctx.feel?.beginArea()
       for (let k = 0; k < n; k++) {
         const slot = QUERY[k] ?? -1
         if (slot < 0 || !horde.alive[slot]) continue
         const ex = (horde.x[slot] ?? 0) - px
         const ez = (horde.z[slot] ?? 0) - pz
         if (ex * ex + ez * ez > radius * radius) continue
-        const hit = horde.damage(slot, stats.damage, 'weapon', might)
+        const hit = horde.damage(slot, stats.damage, 'weapon', might, false, ex, ez)
         if (hit === 0) continue
+        flareHits++
+        horde.hold(slot, 0.04)
+        const od = Math.hypot(ex, ez) || 1
+        const knock = ctx.isLit(horde.x[slot] ?? px, horde.z[slot] ?? pz) ? 0.8 : 0.3
+        horde.nudge(slot, (ex / od) * knock, (ez / od) * knock)
         if (sun) horde.staggerFor(slot, TUNING.flare.stagger)
         if (hit === 2) horde.slay(slot, ctx)
       }
+      ctx.feel?.endArea(px, pz)
+      ctx.feel?.rank(0)
+      if (flareHits >= 8) ctx.feel?.stop(0.03, false)
+      if (flareHits >= 3) ctx.feel?.shake(0, 0, 0.07)
       stamp = (stamp + 1) % 1000
       horde.bossHit?.(px, pz, radius, stats.damage * TUNING.flare.boss, 'weapon', might, 400 + stamp)
       burstVisual(px, pz, radius, level >= 5)

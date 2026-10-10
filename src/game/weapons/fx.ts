@@ -172,8 +172,23 @@ export interface WeaponFx {
   glint: (x: number, y: number, z: number, size: number) => void
   anchor: (x: number, y: number, z: number, yaw: number) => void
   hero: (x: number, z: number) => void
-  death: (x: number, z: number, lit: boolean) => void
+  death: (x: number, z: number, lit: boolean, dirX?: number, dirZ?: number) => void
   ribbon: (x: number, y: number, z: number, yaw: number, length: number) => void
+  /** One persistent ribbon slot per live lance. `grow` runs 0 → 1 over the opening. */
+  lance: (slot: number, x: number, y: number, z: number, yaw: number, grow: number) => void
+  lanceEnd: (slot: number) => void
+  /** Skip optional trails and sparks for 120 ms. Impacts and deaths still allocate. */
+  hush: () => void
+  audit: () => {
+    active: number
+    cap: number
+    ambient: number
+    ambientShare: number
+    impactDrop: number
+    deathDrop: number
+    ambientSkip: number
+    peak: number
+  }
   star: (x: number, z: number) => void
   core: (x: number, z: number, radius: number) => void
   band: (x: number, z: number, radius: number, life: number) => void
@@ -334,6 +349,11 @@ export function createWeaponFx(): WeaponFx {
   const cell = new Uint8Array(MAX)
   const mode = new Uint8Array(MAX)
   const vy = new Float32Array(MAX)
+  const vx = new Float32Array(MAX)
+  const vz = new Float32Array(MAX)
+  const drag = new Float32Array(MAX)
+  const born = new Float32Array(MAX)
+  const klass = new Uint8Array(MAX)
   const hotBit = new Uint8Array(MAX)
   const ribbon = new Uint8Array(MAX)
   const order = new Int16Array(MAX)
@@ -357,6 +377,22 @@ export function createWeaponFx(): WeaponFx {
   let tier: TierName = 'high'
   let active = 0
   let salt = 1
+  let fxTime = 0
+  let hushUntil = 0
+  let ambientSkip = 0
+  let impactDrop = 0
+  let deathDrop = 0
+  let peakActive = 0
+  let glintFlip = 0
+  let moteFlip = 0
+  let lastDeathT = -1
+  let lastDeathX = 0
+  let lastDeathZ = 0
+  let lastDeathLit = 0
+  let lastScaled = 0
+  let lastN = 0
+  const lastSlots = new Int16Array(8)
+  const LANCE_N = 8
   const focus = new Vector2()
 
   function track(i: number) {
@@ -415,6 +451,9 @@ export function createWeaponFx(): WeaponFx {
     vy[i] = rise
     hotBit[i] = isHot
     ribbon[i] = isRibbon
+    vx[i] = 0
+    vz[i] = 0
+    drag[i] = 0
     if (!was && seconds > 0) {
       active++
       track(i)
@@ -423,6 +462,75 @@ export function createWeaponFx(): WeaponFx {
       active = Math.max(0, active - 1)
       untrack(i)
     }
+  }
+
+  function poolEnd(): number {
+    return MAX - TUNING.gleam.glyphs - LANCE_N
+  }
+
+  function ambientCell(kind: number): boolean {
+    return kind === CELL.spearTrail || kind === CELL.spearGlow || kind === CELL.lanceRibbon
+      || kind === CELL.scarabDust || kind === CELL.ray || kind === CELL.haloStreak
+  }
+
+  function ambientLive(): number {
+    let n = 0
+    for (let s = 0; s < nOrder; s++) {
+      const i = order[s] ?? -1
+      if (i >= 0 && klass[i] === 1 && (life[i] ?? 0) > 0) n++
+    }
+    return n
+  }
+
+  /** bucket 0 impact, 1 ambient, 2 death. */
+  function claim(bucket: 0 | 1 | 2): number {
+    const pool = poolEnd()
+    if (bucket === 1) {
+      if (fxTime < hushUntil || ambientLive() >= cap() * 0.45) {
+        ambientSkip++
+        return -1
+      }
+    }
+    if (active < cap()) {
+      const span = Math.max(1, pool - RESERVED)
+      for (let n = 0; n < span; n++) {
+        const i = cursor
+        cursor = cursor + 1 >= pool ? RESERVED : cursor + 1
+        if ((life[i] ?? 0) <= 0) return i
+      }
+    }
+    if (bucket === 1) {
+      ambientSkip++
+      return -1
+    }
+    let oldest = -1
+    let oldestT = Infinity
+    let least = -1
+    let leastLife = Infinity
+    let oldDeath = -1
+    let oldDeathLife = Infinity
+    for (let n = 0; n < nOrder; n++) {
+      const i = order[n] ?? -1
+      if (i < RESERVED || i >= pool || (life[i] ?? 0) <= 0) continue
+      if (klass[i] === 1 && (born[i] ?? 0) < oldestT) {
+        oldestT = born[i] ?? 0
+        oldest = i
+      } else if (klass[i] === 0 && (life[i] ?? 0) < leastLife) {
+        leastLife = life[i] ?? 0
+        least = i
+      } else if (klass[i] === 2 && (life[i] ?? 0) < oldDeathLife) {
+        oldDeathLife = life[i] ?? 0
+        oldDeath = i
+      }
+    }
+    if (oldest >= 0) return oldest
+    if (least >= 0) return least
+    // A full med pool of death stamps would otherwise refuse the next impact.
+    // The newest stamp replaces the death closest to expiring. Reserved slots stay put.
+    if (oldDeath >= 0) return oldDeath
+    if (bucket === 2) deathDrop++
+    else impactDrop++
+    return -1
   }
 
   function put(
@@ -439,12 +547,14 @@ export function createWeaponFx(): WeaponFx {
     rise: number,
     isHot = 0,
     isRibbon = 0,
-  ) {
-    const pool = MAX - TUNING.gleam.glyphs
-    if (active >= cap()) return
-    const i = cursor
-    cursor = cursor + 1 >= pool ? RESERVED : cursor + 1
+    bucket: 0 | 1 | 2 = ambientCell(kind) ? 1 : 0,
+  ): number {
+    const i = claim(bucket)
+    if (i < 0) return -1
     writeSlot(i, kind, px, py, pz, rot, w, h, seconds, rgb, how, rise, isHot, isRibbon)
+    klass[i] = bucket
+    born[i] = fxTime
+    return i
   }
 
   function toward(px: number, py: number, pz: number, dist: number): [number, number, number] {
@@ -484,26 +594,23 @@ export function createWeaponFx(): WeaponFx {
       }
       return out.length
     },
-    hit(px, pz, lit, scale = 1) {
+    hit(px, pz, lit, scale = 1, dirX = 0, dirZ = 0) {
       const at = toward(px, 0.85, pz, 0.6)
-      const budget = TUNING.tiers[tier].sparkHit
-      const n = tier === 'low' ? Math.min(4, budget) : Math.max(4, Math.min(6, budget))
       if (lit) {
-        const rgb = FX.goldHot
-        put(CELL.impactStar, at[0], at[1], at[2], TUNING.camera.yaw, 1.15 * scale, 1.15 * scale, 0.22, rgb, 5, 0, 1)
+        put(CELL.impactStar, at[0], at[1], at[2], TUNING.camera.yaw, 0.7 * scale, 0.7 * scale, 0.08, FX.white, 5, 0, 2)
+        const mag = Math.hypot(dirX, dirZ)
+        const base = mag > 1e-4 ? Math.atan2(dirZ, dirX) : hash(salt++) * Math.PI * 2
+        const n = tier === 'low' ? 2 : 4
         for (let i = 0; i < n; i++) {
-          const a = (i / n) * Math.PI * 2
-          put(CELL.sparkStreak, px + Math.cos(a) * 0.2, 0.7, pz + Math.sin(a) * 0.2, a, 0.14, 0.85, 0.22, rgb, 5, 0, 1)
+          const a = base + (i - (n - 1) * 0.5) * 0.35
+          put(CELL.sparkStreak, px + Math.cos(a) * 0.15, 0.7, pz + Math.sin(a) * 0.15, a, 0.1, 0.7, 0.12, FX.goldHot, 5, 0, 1)
         }
         return
       }
-      const chip: [number, number, number] = [0.62, 0.66, 0.74]
-      put(CELL.puff, at[0], at[1], at[2], TUNING.camera.yaw, 0.42 * scale, 0.28 * scale, 0.16, chip, 5, 0, 1)
-      const chips = Math.max(3, Math.min(n, 4))
-      for (let i = 0; i < chips; i++) {
-        const a = (i / chips) * Math.PI * 2
-        put(CELL.sparkStreak, px + Math.cos(a) * 0.15, 0.55, pz + Math.sin(a) * 0.15, a, 0.08, 0.35, 0.14, chip, 5, 0, 1)
-      }
+      const mag = Math.hypot(dirX, dirZ)
+      const away = mag > 1e-4 ? Math.atan2(dirZ, dirX) + Math.PI : hash(salt++) * Math.PI * 2
+      const chip: [number, number, number] = [0.7, 0.76, 0.9]
+      put(CELL.puff, px + Math.cos(away) * 0.2, 0.6, pz + Math.sin(away) * 0.2, away, 0.36 * scale, 0.2 * scale, 0.055, chip, 5, 0, 1)
     },
     streak(px, py, pz, rot, length, width, seconds, rgb) {
       put(CELL.spearTrail, px, py, pz, rot, Math.max(0.12, width), length, seconds, rgb, 0, 0, 0, 1)
@@ -521,6 +628,10 @@ export function createWeaponFx(): WeaponFx {
       put(CELL.fence, px, 0.1, pz, rot, Math.max(0.4, width), length, 0.16, FX.punch, 0, 0, 1)
     },
     scarabMote(px, pz) {
+      if (tier === 'med') {
+        moteFlip ^= 1
+        if (moteFlip) return
+      }
       put(CELL.scarabDust, px, 0.2, pz, 0, 0.4, 0.4, 0.28, FX.punch, 0, 0, 1)
     },
     prismFlash(px, pz) {
@@ -573,6 +684,10 @@ export function createWeaponFx(): WeaponFx {
       put(CELL.puff, px, 0.4, pz, 0, radius, radius * 0.62, 0.55, FX.shadePuff, 5, 0)
     },
     glint(px, py, pz, size) {
+      if (tier === 'med') {
+        glintFlip ^= 1
+        if (glintFlip) return
+      }
       put(CELL.spearGlow, px, py, pz, TUNING.camera.yaw, size, size, 0.12, FX.goldHot, 5, 0, 1)
     },
     anchor(px, py, pz, rot) {
@@ -632,16 +747,98 @@ export function createWeaponFx(): WeaponFx {
     dust(px, pz) {
       put(CELL.puff, px, 0.35, pz, 0, 1.4, 0.7, 0.35, FX.gold, 5, 0.4)
     },
-    death(px, pz, lit) {
-      salt = (salt + 17) | 0
-      const n = 8
-      for (let k = 0; k < n; k++) {
-        const h = hash(salt * 13 + k * 97)
-        const h2 = hash(salt * 29 + k * 53)
+    death(px, pz, lit, dirX = 0, dirZ = 0) {
+      const same = fxTime - lastDeathT < 0.06
+        && Math.hypot(px - lastDeathX, pz - lastDeathZ) < 1.2
+        && (lit ? 1 : 0) === lastDeathLit
+      if (same) {
+        if (!lastScaled) {
+          for (let s = 0; s < lastN; s++) {
+            const i = lastSlots[s] ?? -1
+            if (i < 0) continue
+            sx[i] = (sx[i] ?? 1) * 1.4
+            sz[i] = (sz[i] ?? 1) * 1.4
+          }
+          lastScaled = 1
+        }
+        return
+      }
+      lastDeathT = fxTime
+      lastDeathX = px
+      lastDeathZ = pz
+      lastDeathLit = lit ? 1 : 0
+      lastScaled = 0
+      lastN = 0
+      const remember = (i: number) => {
+        if (i >= 0 && lastN < lastSlots.length) lastSlots[lastN++] = i
+      }
+      if (lit) {
+        remember(put(CELL.ringThin, px, 0.12, pz, 0, 2.4, 2.4, 0.12, FX.white, 8, 0, 0, 0, 2))
+        const mag = Math.hypot(dirX, dirZ)
+        const base = mag > 1e-4 ? Math.atan2(dirZ, dirX) + Math.PI : hash(salt) * Math.PI * 2
+        for (let k = 0; k < 4; k++) {
+          salt = (salt + 17) | 0
+          const h = hash(salt * 13 + k * 97)
+          const ang = base + (h - 0.5) * ((100 * Math.PI) / 180)
+          const speed = 3 + hash(salt * 29 + k) * 2.5
+          const life = 0.26 + hash(salt * 3 + k) * 0.06
+          const i = put(CELL.goldSpark, px, 0.55, pz, ang, 0.22, 0.5, life, FX.goldHot, 7, 1.2 + h * 0.6, 1, 0, 2)
+          if (i >= 0) {
+            vx[i] = Math.cos(ang) * speed
+            vz[i] = Math.sin(ang) * speed
+            vy[i] = 1.2 + h * 0.6
+            drag[i] = 6
+            remember(i)
+          }
+        }
+        return
+      }
+      for (let k = 0; k < 3; k++) {
+        salt = (salt + 13) | 0
+        const h = hash(salt * 11 + k * 19)
         const ang = h * Math.PI * 2
-        const kind = lit ? CELL.goldSpark : CELL.inkA + (k % 3)
-        const w = lit ? 0.5 : 0.42
-        put(kind, px + Math.cos(ang) * 0.15, 0.45, pz + Math.sin(ang) * 0.15, ang, w, lit ? 0.22 : w, 0.36 + h2 * 0.12, FX.white, 2, 1.4 + h * 1.6)
+        const speed = 2 + hash(salt * 7 + k)
+        const i = put(CELL.inkA + (k % 3), px, 0.35, pz, ang, 0.42, 0.42, 0.32, FX.shade, 7, 1.1, 0, 0, 2)
+        if (i >= 0) {
+          vx[i] = Math.cos(ang) * speed
+          vz[i] = Math.sin(ang) * speed
+          vy[i] = 1.1
+          drag[i] = 4
+          remember(i)
+        }
+      }
+      remember(put(CELL.inkB, px, 0.06, pz, 0, 0.8, 0.8, 0.6, FX.shade, 0, 0, 0, 0, 2))
+    },
+    lance(slot, px, py, pz, rot, grow) {
+      if (slot < 0 || slot >= LANCE_N) return
+      const i = poolEnd() + slot
+      const u = Math.max(0, Math.min(1, grow))
+      const len = Math.max(0.05, 6.5 * u)
+      const width = Math.max(0.04, 0.42 * (1 - u))
+      writeSlot(i, CELL.lanceRibbon, px, py, pz, rot, width, len, 0.12, FX.punch, 9, 0, 0, 1)
+      klass[i] = 1
+      born[i] = fxTime
+    },
+    lanceEnd(slot) {
+      if (slot < 0 || slot >= LANCE_N) return
+      const i = poolEnd() + slot
+      if ((life[i] ?? 0) > 0.12) life[i] = 0.12
+    },
+    hush() {
+      hushUntil = fxTime + 0.12
+    },
+    audit() {
+      const amb = ambientLive()
+      const limit = cap()
+      return {
+        active,
+        cap: limit,
+        ambient: amb,
+        ambientShare: limit > 0 ? amb / limit : 0,
+        impactDrop,
+        deathDrop,
+        ambientSkip,
+        peak: peakActive,
       }
     },
     tele(px, pz, rot) {
@@ -653,6 +850,8 @@ export function createWeaponFx(): WeaponFx {
       focus.set(px, pz)
     },
     update(dt) {
+      fxTime += dt
+      if (active > peakActive) peakActive = active
       let nA = 0
       heroDraw = -1
       const limit = cap()
@@ -669,6 +868,15 @@ export function createWeaponFx(): WeaponFx {
           untrack(i)
           continue
         }
+        if (mode[i] === 7) {
+          const damp = Math.exp(-(drag[i] ?? 0) * dt)
+          vx[i] = (vx[i] ?? 0) * damp
+          vz[i] = (vz[i] ?? 0) * damp
+          x[i] = (x[i] ?? 0) + (vx[i] ?? 0) * dt
+          z[i] = (z[i] ?? 0) + (vz[i] ?? 0) * dt
+          y[i] = (y[i] ?? 0) + (vy[i] ?? 0) * dt
+          vy[i] = (vy[i] ?? 0) - 9 * dt
+        }
         if (probeSoloCanon() && i !== SLOT_HERO && !soloCell(cell[i] ?? -1)) continue
         if (drawn >= limit) continue
         drawn++
@@ -684,6 +892,14 @@ export function createWeaponFx(): WeaponFx {
         }
         if (mode[i] === 2) y[i] = (y[i] ?? 0) + (vy[i] ?? 0) * dt
         let fade = mode[i] === 3 ? Math.max(0.35, k) : k
+        if (mode[i] === 7) fade = k * k
+        if (mode[i] === 8) {
+          const u = Math.min(1, age / 0.12)
+          const radius = 0.4 + 0.8 * u
+          w = radius * 2
+          h = w
+          fade = 1 - u
+        }
         if (mode[i] === 6) {
           const left = life[i] ?? 0
           fade = left > 0.3 ? 1 : left / 0.3
@@ -693,7 +909,7 @@ export function createWeaponFx(): WeaponFx {
         dummy.rotation.set(0, 0, 0)
         dummy.scale.set(1, 1, 1)
         dummy.scale.set(Math.max(0.04, w), Math.max(0.04, h), 1)
-        if (how === 5 || how === 2) {
+        if (how === 5 || how === 2 || how === 7) {
           dummy.lookAt((x[i] ?? 0) + Math.sin(face) * horiz, (y[i] ?? 0) + Math.sin(pitch), (z[i] ?? 0) + Math.cos(face) * horiz)
         } else if (how === 4) dummy.rotation.y = yaw[i] ?? 0
         else {
@@ -824,6 +1040,13 @@ export function createWeaponFx(): WeaponFx {
       nOrder = 0
       active = 0
       cursor = RESERVED
+      hushUntil = 0
+      ambientSkip = 0
+      impactDrop = 0
+      deathDrop = 0
+      peakActive = 0
+      lastDeathT = -1
+      lastN = 0
       mesh.count = 0
       mesh.visible = false
     },

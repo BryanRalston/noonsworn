@@ -128,7 +128,7 @@ export function sweepCut(
     if (!alive[i] || cut.seen[i] === cut.id) continue
     const d = distPointSeg(horde.x[i] ?? 0, horde.z[i] ?? 0, cut.sx, cut.sz, player.x, player.z)
     if (d > TUNING.cut.radius) continue
-    const hit = horde.damage(i, TUNING.cut.damage, 'cut', might)
+    const hit = horde.damage(i, TUNING.cut.damage, 'cut', might, false, cut.dirX, cut.dirZ)
     if (hit === 0) continue
     const hx = horde.x[i] ?? 0
     const hz = horde.z[i] ?? 0

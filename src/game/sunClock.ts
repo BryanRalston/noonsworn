@@ -102,9 +102,20 @@ export function createSunClock(): SunClock {
   return sun
 }
 
-/** Cooldown scale shared by the four weapons. Haste 0 leaves the printed cadence. */
+/** Cooldown scale shared by the weapons. Haste 0 leaves the printed cadence. Below level 6 the cadence is ×1.6. */
+let earlyCd = 1
+
+export function setEarlyCd(level: number): void {
+  earlyCd = level < TUNING.earlyLevel ? 1.6 : 1
+}
+
 export function hasteMul(ranks: number): number {
-  return Math.max(0.2, 1 - TUNING.passive.haste * ranks)
+  return Math.max(0.2, (1 - TUNING.passive.haste * ranks) * earlyCd)
+}
+
+/** Halo's contact gate does not go through hasteMul. Same ×1.6 below level 6. */
+export function earlyScale(): number {
+  return earlyCd
 }
 
 let shadeWeapon: number = TUNING.armoredWeapon

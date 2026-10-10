@@ -10,6 +10,7 @@ import type { Horde, HordeCtx } from '../enemies/horde'
 import type { WeaponFx } from './fx'
 
 const QUERY = new Int16Array(48)
+const TOLL_HIT = new Int16Array(48)
 
 export interface BellStats {
   cooldown: number
@@ -276,25 +277,37 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
     return c
   }
 
-  function hurt(horde: Horde, x: number, z: number, radius: number, amount: number, might: number, ctx: HordeCtx) {
+  function hurt(horde: Horde, x: number, z: number, radius: number, amount: number, might: number, ctx: HordeCtx, hold: number): number {
     const n = hashQuery(x, z, radius, QUERY)
     const r2 = radius * radius
+    let hits = 0
+    ctx.feel?.rank(2)
+    ctx.feel?.beginArea()
     for (let k = 0; k < n; k++) {
       const slot = QUERY[k] ?? -1
       if (slot < 0 || !horde.alive[slot]) continue
       const dx = (horde.x[slot] ?? 0) - x
       const dz = (horde.z[slot] ?? 0) - z
       if (dx * dx + dz * dz > r2) continue
-      const hit = horde.damage(slot, amount, 'weapon', might)
+      const hit = horde.damage(slot, amount, 'weapon', might, false, dx, dz)
+      if (hit === 0) continue
+      hits++
+      if (hold > 0) horde.hold(slot, hold)
       if (hit === 2) horde.slay(slot, ctx)
     }
+    ctx.feel?.endArea(x, z)
+    ctx.feel?.rank(0)
     stamp = (stamp + 1) % 1000
     horde.bossHit?.(x, z, radius, amount * TUNING.bell.boss, 'weapon', might, 500 + stamp)
+    return hits
   }
 
   function slam(horde: Horde, might: number, ctx: HordeCtx) {
     const radius = TUNING.bell.slamRadius * reachMul()
-    hurt(horde, tx, tz, radius, TUNING.bell.slam, might, ctx)
+    const hits = hurt(horde, tx, tz, radius, TUNING.bell.slam, might, ctx, 0.05)
+    if (hits >= 6) ctx.feel?.stop(0.035, false)
+    const face = TUNING.camera.yaw
+    ctx.feel?.shake(Math.sin(face), Math.cos(face), 0.09)
     fx.shock(tx, tz, radius * (shownLevel >= 5 ? 1.18 : 1))
     fx.dust(tx, tz)
   }
@@ -302,28 +315,32 @@ export function createBell(fx: WeaponFx, arsenal: Arsenal): Bell {
   function toll(horde: Horde, might: number, ctx: HordeCtx, onToll: () => void) {
     const radius = tollRadius * reachMul()
     const daze = TUNING.bell.daze * endureMul()
-    hurt(horde, tx, tz, radius, tollDamage, might, ctx)
+    hurt(horde, tx, tz, radius, tollDamage, might, ctx, 0.02)
     fx.shock(tx, tz, radius * (shownLevel >= 5 ? 1.18 : 1))
     onToll()
-    if (sun) horde.pullTo(tx, tz, radius, TUNING.bell.pull)
-    else {
-      const n = hashQuery(tx, tz, radius, QUERY)
-      const r2 = radius * radius
-      const hit: number[] = []
-      for (let k = 0; k < n; k++) {
-        const slot = QUERY[k] ?? -1
-        if (slot < 0 || !horde.alive[slot]) continue
-        const dx = (horde.x[slot] ?? 0) - tx
-        const dz = (horde.z[slot] ?? 0) - tz
-        if (dx * dx + dz * dz > r2) continue
-        hit.push(slot)
-      }
-      for (let i = 0; i < hit.length; i++) {
-        const slot = hit[i] ?? -1
+    const face = TUNING.camera.yaw
+    ctx.feel?.shake(Math.sin(face), Math.cos(face), 0.025)
+    const n = hashQuery(tx, tz, radius, QUERY)
+    const r2 = radius * radius
+    let tollN = 0
+    for (let k = 0; k < n; k++) {
+      const slot = QUERY[k] ?? -1
+      if (slot < 0 || !horde.alive[slot]) continue
+      const dx = (horde.x[slot] ?? 0) - tx
+      const dz = (horde.z[slot] ?? 0) - tz
+      if (dx * dx + dz * dz > r2) continue
+      const lit = (horde.lit[slot] ?? 0) === 1
+      const od = Math.hypot(dx, dz) || 1
+      if (lit) horde.nudge(slot, (dx / od) * 0.6, (dz / od) * 0.6)
+      else horde.nudge(slot, (-dx / od) * 0.4, (-dz / od) * 0.4)
+      if (!sun && tollN < TOLL_HIT.length) TOLL_HIT[tollN++] = slot
+    }
+    if (!sun) {
+      for (let i = 0; i < tollN; i++) {
+        const slot = TOLL_HIT[i] ?? -1
         horde.staggerFor(slot, daze)
         horde.slow(horde.x[slot] ?? tx, horde.z[slot] ?? tz, 0.2, TUNING.bell.slow)
       }
-      horde.knockFrom(tx, tz, radius, TUNING.bell.push)
     }
   }
 }

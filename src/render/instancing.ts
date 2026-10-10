@@ -9,7 +9,27 @@ import {
 } from 'three'
 
 const dummy = new Object3D()
+const spin = new Object3D()
 const time = { value: 0 }
+
+export function flashTintGlsl(packed: string, dest: string): string {
+  return `
+        float flashKind = floor(${packed} / 2.0 + 0.001);
+        float flashT = ${packed} - flashKind * 2.0;
+        float flashHot = 1.0;
+        if (flashKind < 1.5) {
+          if (flashT <= 0.05) {
+            float flashU = clamp(flashT / 0.05, 0.0, 1.0);
+            flashHot = (1.0 - (1.0 - flashU) * (1.0 - flashU)) * 0.7;
+          }
+        } else {
+          flashHot = step(0.001, flashT);
+        }
+        vec3 flashRgb = (flashKind > 0.5 && flashKind < 1.5) ? vec3(0.70, 0.76, 0.90) : vec3(1.0);
+        float flashGain = (flashKind > 0.5 && flashKind < 1.5) ? flashHot * 0.55 : flashHot;
+        ${dest} = mix(${dest}, flashRgb, clamp(flashGain, 0.0, 1.0));
+  `
+}
 
 function enemyVertex(): string {
   return /* glsl */ `
@@ -36,7 +56,7 @@ function enemyVertex(): string {
         float moving = step(8.0, rest) * (1.0 - crouch);
         float phase = rest - moving * 8.0 - crouch * 16.0;
         float wave = sin(uTime * 8.0 + phase) * (0.35 + 0.65 * moving);
-        vec3 p = position * sc;
+        vec3 p = (instanceMatrix * vec4(position * sc, 1.0)).xyz;
         p.y *= mix(1.0, 0.62, crouch) * (1.0 + wave * 0.07);
         p.y += wave * 0.045;
         float lean = wave * 0.1;
@@ -74,7 +94,7 @@ export function createEnemyMaterial(): ShaderMaterial {
         vec3 col = vColor;
         if (vEmit > 0.5) col *= 1.7;
         else if (vLit < 0.5) col *= 0.72;
-        col = mix(col, vec3(1.0, 0.93, 0.75), vFlash);
+        ${flashTintGlsl('vFlash', 'col')}
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }
@@ -112,11 +132,30 @@ export function writeInstance(
   sy?: number,
   lean = 0,
   sz?: number,
+  axisYaw?: number,
 ) {
+  const sx = scale
+  const syN = sy ?? scale
+  const szN = sz ?? scale
   dummy.position.set(x, y, z)
   dummy.rotation.set(lean, yaw, 0)
-  dummy.scale.set(scale, sy ?? scale, sz ?? scale)
+  dummy.scale.set(1, 1, 1)
   dummy.updateMatrix()
+  if (axisYaw == null) {
+    dummy.scale.set(sx, syN, szN)
+    dummy.updateMatrix()
+  } else {
+    const rel = axisYaw - yaw
+    spin.position.set(0, 0, 0)
+    spin.rotation.set(0, rel, 0)
+    spin.scale.set(sx, syN, szN)
+    spin.updateMatrix()
+    dummy.matrix.multiply(spin.matrix)
+    spin.rotation.set(0, -rel, 0)
+    spin.scale.set(1, 1, 1)
+    spin.updateMatrix()
+    dummy.matrix.multiply(spin.matrix)
+  }
   mesh.setMatrixAt(index, dummy.matrix)
 }
 

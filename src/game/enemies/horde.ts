@@ -28,6 +28,13 @@ const STAGGER = 5
 const DYING = 6
 const DART = 7
 const QUERY = new Int16Array(48)
+const KNOCK_TAU = 0.09
+const KNOCK_CAP = 25
+const FLASH_LIFE = 0.083
+const KILL_FLASH = 0.05
+const DEATH_POP = 0.04
+const DEATH_FALL = 0.14
+const DEATH_LIFE = DEATH_POP + DEATH_FALL
 
 function specOf(kind: number): { hp: number; speed: number; radius: number; contact: number; xp: number } {
   if (kind === 2) return TUNING.darter
@@ -146,7 +153,10 @@ export interface Horde {
   spawn: (type: 0 | 1 | 2, x: number, z: number, bench: boolean, limit?: number, fromX?: number, fromZ?: number) => number
   clear: () => void
   cullTo: (cap: number, px: number, pz: number) => void
-  damage: (index: number, base: number, source: DamageSource, might: number, raw?: boolean) => 0 | 1 | 2
+  damage: (index: number, base: number, source: DamageSource, might: number, raw?: boolean, dirX?: number, dirZ?: number) => 0 | 1 | 2
+  /** Freeze locomotion. A later hit takes the max, never the sum. Bosses are not in this horde. */
+  hold: (index: number, seconds: number) => void
+  kindOf: (index: number) => number
   /** Weapon hits are capped at this while it is above 0. Boss hits do not use damage(). */
   dmgCap: number
   slay: (index: number, ctx: HordeCtx) => void
@@ -157,7 +167,7 @@ export interface Horde {
   shove: (apply: (x: number, z: number, radius: number) => { x: number; z: number } | null) => void
   face: (yaw: number) => void
   nearest: (x: number, z: number, range: number) => number
-  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
+  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number, source?: DamageSource) => void) | null
   onExpose: ((x: number, z: number) => void) | null
   visit: (fn: (x: number, z: number, kind: number) => void) => void
   each: (fn: (index: number, x: number, z: number) => void) => void
@@ -224,13 +234,23 @@ export interface HordeCtx {
   lureR2: number
   pass: boolean
   onHurt: (amount: number, reason?: string) => void
-  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number) => void) | null
+  onHit: ((x: number, z: number, amount: number, lit: boolean, killed: boolean, index: number, source?: DamageSource) => void) | null
   onExpose: ((x: number, z: number) => void) | null
   onXp: (x: number, z: number, value: number) => void
   onKill: () => void
-  onDeath: (x: number, z: number, lit: boolean) => void
+  onDeath: (x: number, z: number, lit: boolean, dirX: number, dirZ: number) => void
   onEmber: (x: number, z: number) => void
   onSpark: (x: number, z: number, lit: boolean) => void
+  /** Impact feedback. Null until the world attaches it. Never changes damage. */
+  feel: {
+    stop: (seconds: number, fromCut: boolean) => void
+    shake: (dirX: number, dirZ: number, amp: number) => void
+    hush: () => void
+    rank: (n: number) => void
+    beginArea: () => void
+    endArea: (x: number, z: number) => void
+    burst: (amp: number, times: number) => void
+  } | null
 }
 
 function triCount(geo: BufferGeometry): number {
@@ -335,6 +355,16 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const houndShade = new Color()
   const body = new Float32Array(MAX)
   const squash = new Float32Array(MAX)
+  const squashAge = new Float32Array(MAX)
+  const squashBack = new Uint8Array(MAX)
+  const holdHit = new Float32Array(MAX)
+  const kvx = new Float32Array(MAX)
+  const kvz = new Float32Array(MAX)
+  const flashKind = new Uint8Array(MAX)
+  const hitDX = new Float32Array(MAX)
+  const hitDZ = new Float32Array(MAX)
+  let aimPx = 0
+  let aimPz = 0
   let stepDt = 0
   let deepFn: ((x: number, z: number) => boolean) | null = null
   const miteTris = triCount(miteSrc.geometry)
@@ -378,6 +408,95 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     const bucket = (i * 13) % 5
     body[i] = kind === 0 ? (bucket < 2 ? 0.8 : bucket < 4 ? 1 : 1.35) : kind === 1 ? 1.3 : 1
     squash[i] = 0
+    squashAge[i] = 0
+    squashBack[i] = 0
+    holdHit[i] = 0
+    kvx[i] = 0
+    kvz[i] = 0
+    flashKind[i] = 0
+    hitDX[i] = 0
+    hitDZ[i] = 0
+  }
+
+  function shareOf(i: number): number {
+    const kind = type[i] ?? 0
+    const mass = kind === 2 ? 1.2 : kind === 1 ? 0.6 : 1
+    const light = lit[i] === 1 ? 1.3 : 0.6
+    return mass * light
+  }
+
+  function addKv(i: number, dirx: number, dirz: number, dist: number) {
+    const len = Math.hypot(dirx, dirz)
+    if (len < 1e-6 || dist === 0) return
+    const add = (dist / KNOCK_TAU) * shareOf(i)
+    let kx = (kvx[i] ?? 0) + (dirx / len) * add
+    let kz = (kvz[i] ?? 0) + (dirz / len) * add
+    const sp = Math.hypot(kx, kz)
+    if (sp > KNOCK_CAP) {
+      const s = KNOCK_CAP / sp
+      kx *= s
+      kz *= s
+    }
+    kvx[i] = kx
+    kvz[i] = kz
+  }
+
+  function integrateKnock(i: number, dt: number) {
+    const kx = kvx[i] ?? 0
+    const kz = kvz[i] ?? 0
+    const sp = Math.hypot(kx, kz)
+    if (sp < 0.02) {
+      kvx[i] = 0
+      kvz[i] = 0
+      return
+    }
+    const ox = x[i] ?? 0
+    const oz = z[i] ?? 0
+    const nx = ox + kx * dt
+    const nz = oz + kz * dt
+    if (sp > 0.2) {
+      const spec = specOf(type[i] ?? 0)
+      const slid = slideCircle(ox, oz, nx, nz, spec.radius)
+      x[i] = slid.x
+      z[i] = slid.z
+    } else {
+      x[i] = nx
+      z[i] = nz
+    }
+    const decay = Math.exp(-dt / KNOCK_TAU)
+    kvx[i] = kx * decay
+    kvz[i] = kz * decay
+  }
+
+  function aimDir(i: number, dirX: number, dirZ: number): { x: number; z: number } {
+    let dx = dirX
+    let dz = dirZ
+    let len = Math.hypot(dx, dz)
+    if (len < 1e-4) {
+      dx = (x[i] ?? 0) - aimPx
+      dz = (z[i] ?? 0) - aimPz
+      len = Math.hypot(dx, dz)
+    }
+    if (len < 1e-4) return { x: 0, z: 1 }
+    return { x: dx / len, z: dz / len }
+  }
+
+  function squashFrame(i: number): { sx: number; sy: number; sz: number; axis: number; on: boolean } {
+    const amp = squash[i] ?? 0
+    let env = 0
+    if (amp > 0) {
+      const age = squashAge[i] ?? 0
+      if (age < 0.12) {
+        const u = age / 0.12
+        env = (1 - u) * (1 - u)
+      } else if (squashBack[i] === 1) {
+        const u = (age - 0.12) / 0.08
+        if (u < 1) env = -Math.sin(u * Math.PI) * (0.05 / amp)
+      }
+    }
+    const yDrop = amp > 0.1 ? 0.2 : 0.075
+    const axis = Math.atan2(-(hitDZ[i] ?? 0), hitDX[i] ?? 1)
+    return { sx: 1 + amp * env, sy: 1 - yDrop * env, sz: 1, axis, on: Math.abs(env) > 0.001 }
   }
 
   function wipeControl(i: number) {
@@ -418,16 +537,28 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     return true
   }
 
-  function sting(i: number) {
-    flash[i] = TUNING.hitFlash
-    squash[i] = 0.1
+  function sting(i: number, dirX = 0, dirZ = 0) {
+    const exposed = lit[i] === 1
+    flash[i] = FLASH_LIFE
+    flashKind[i] = exposed ? 0 : 1
+    const dir = aimDir(i, dirX, dirZ)
+    hitDX[i] = dir.x
+    hitDZ[i] = dir.z
+    squash[i] = exposed ? 0.16 : 0.06
+    squashAge[i] = 0
+    squashBack[i] = exposed ? 1 : 0
   }
 
   function kill(i: number, ctx: HordeCtx) {
     if (state[i] === DYING || !alive[i]) return
     state[i] = DYING
-    stateT[i] = TUNING.deathTime
+    stateT[i] = DEATH_LIFE
     scale[i] = 1
+    flash[i] = KILL_FLASH
+    flashKind[i] = 2
+    const dir = aimDir(i, hitDX[i] ?? 0, hitDZ[i] ?? 0)
+    hitDX[i] = dir.x
+    hitDZ[i] = dir.z
     let value = specOf(type[i] ?? 0).xp
     if (type[i] === 0 && bonusMites < 15) {
       bonusMites++
@@ -435,7 +566,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     }
     ctx.onXp(x[i] ?? 0, z[i] ?? 0, value)
     ctx.onKill()
-    ctx.onDeath(x[i] ?? 0, z[i] ?? 0, lit[i] === 1)
+    ctx.onDeath(x[i] ?? 0, z[i] ?? 0, lit[i] === 1, dir.x, dir.z)
   }
 
   const telePool = Array.from({ length: 8 }, () => ({ x: 0, z: 0, yaw: 0 }))
@@ -563,7 +694,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const litNow = lit[i] === 1
         const dealt = amount * (litNow ? 2 : 1)
         hp[i] = (hp[i] ?? 0) - dealt
-        sting(i)
+        sting(i, dx, dz)
         const killed = (hp[i] ?? 0) <= 0
         horde.onHit?.(x[i] ?? 0, z[i] ?? 0, dealt, litNow, killed, i)
         if (killed) kill(i, hitCtx)
@@ -582,7 +713,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         }
       }
       hp[index] = (hp[index] ?? 0) - amount
-      sting(index)
+      sting(index, (x[index] ?? 0) - aimPx, (z[index] ?? 0) - aimPz)
       const killed = (hp[index] ?? 0) <= 0
       horde.onHit?.(x[index] ?? 0, z[index] ?? 0, amount, lit[index] === 1, killed, index)
       if (killed) kill(index, hitCtx)
@@ -594,7 +725,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if (!alive[i] || state[i] === DYING || bench[i]) continue
         if (Math.abs((x[i] ?? 0) - cx) > hx || Math.abs((z[i] ?? 0) - cz) > hz) continue
         hp[i] = (hp[i] ?? 0) - amount
-        sting(i)
+        sting(i, (x[i] ?? 0) - cx, (z[i] ?? 0) - cz)
         const killed = (hp[i] ?? 0) <= 0
         horde.onHit?.(x[i] ?? 0, z[i] ?? 0, amount, lit[i] === 1, killed, i)
         if (killed) kill(i, hitCtx)
@@ -610,7 +741,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const dz = (z[i] ?? 0) - cz
         if (dx * dx + dz * dz > r2) continue
         hp[i] = (hp[i] ?? 0) - amount
-        sting(i)
+        sting(i, dx, dz)
         const killed = (hp[i] ?? 0) <= 0
         horde.onHit?.(x[i] ?? 0, z[i] ?? 0, amount, lit[i] === 1, killed, i)
         if (killed) kill(i, hitCtx)
@@ -652,15 +783,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const dz = (z[i] ?? 0) - cz
         const d2 = dx * dx + dz * dz
         if (d2 > r2 || d2 < 1e-6) continue
-        const d = Math.sqrt(d2)
-        const ox = x[i] ?? 0
-        const oz = z[i] ?? 0
-        x[i] = ox + (dx / d) * dist
-        z[i] = oz + (dz / d) * dist
-        const spec = specOf(type[i] ?? 0)
-        const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
-        x[i] = slid.x
-        z[i] = slid.z
+        addKv(i, dx, dz, dist)
       }
     },
     pullTo(cx, cz, radius, dist) {
@@ -674,27 +797,13 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const d = Math.sqrt(d2)
         const step = Math.min(dist, d)
         if (!allowControl(i, clock)) continue
-        const ox = x[i] ?? 0
-        const oz = z[i] ?? 0
-        x[i] = ox + (dx / d) * step
-        z[i] = oz + (dz / d) * step
-        const spec = specOf(type[i] ?? 0)
-        const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, spec.radius)
-        x[i] = slid.x
-        z[i] = slid.z
+        addKv(i, dx, dz, step)
       }
     },
     nudge(index, dx, dz) {
       if (!alive[index] || state[index] === DYING || bench[index]) return
       if (!allowControl(index, clock)) return
-      const ox = x[index] ?? 0
-      const oz = z[index] ?? 0
-      x[index] = ox + dx
-      z[index] = oz + dz
-      const spec = specOf(type[index] ?? 0)
-      const slid = slideCircle(ox, oz, x[index] ?? 0, z[index] ?? 0, spec.radius)
-      x[index] = slid.x
-      z[index] = slid.z
+      addKv(index, dx, dz, Math.hypot(dx, dz))
     },
     slow(cx, cz, radius, seconds) {
       const r2 = radius * radius
@@ -790,11 +899,19 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const next = apply(x[i] ?? 0, z[i] ?? 0, specOf(type[i] ?? 0).radius)
         if (!next) continue
         if (!allowControl(i, clock)) continue
-        x[i] = next.x
-        z[i] = next.z
+        const ox = x[i] ?? 0
+        const oz = z[i] ?? 0
+        addKv(i, next.x - ox, next.z - oz, Math.hypot(next.x - ox, next.z - oz))
       }
     },
-    damage(index, base, source, might, raw = false) {
+    hold(index, seconds) {
+      if (seconds <= 0 || !alive[index] || state[index] === DYING) return
+      holdHit[index] = Math.max(holdHit[index] ?? 0, seconds)
+    },
+    kindOf(index) {
+      return type[index] ?? 0
+    },
+    damage(index, base, source, might, raw = false, dirX = 0, dirZ = 0) {
       if (horde.frozen) return 0
       if (!alive[index] || state[index] === DYING || bench[index]) return 0
       const darting = type[index] === 2 && state[index] === DART
@@ -804,9 +921,9 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       let amount = raw ? base * (1 + TUNING.passive.might * might) : damageAmount(baseHit, lit[index] === 1 || darting, source, might, inDeep)
       if (darting && source === 'cut') amount *= 1.5
       hp[index] = (hp[index] ?? 0) - amount
-      sting(index)
+      sting(index, dirX, dirZ)
       const killed = (hp[index] ?? 0) <= 0
-      horde.onHit?.(x[index] ?? 0, z[index] ?? 0, amount, lit[index] === 1, killed, index)
+      horde.onHit?.(x[index] ?? 0, z[index] ?? 0, amount, lit[index] === 1, killed, index, source)
       return killed ? 2 : 1
     },
     slay(index, ctx) {
@@ -816,6 +933,8 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       clock = ctx.time
       syncTick = ctx.tick
       deepFn = ctx.deep
+      aimPx = ctx.px
+      aimPz = ctx.pz
       stepDt = horde.frozen ? 0 : ctx.dt
       hashBuild(x, z, alive, MAX)
       if (horde.frozen) return
@@ -852,19 +971,28 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         vx[i] = 0
         vz[i] = 0
         flash[i] = Math.max(0, (flash[i] ?? 0) - ctx.dt)
-        squash[i] = Math.max(0, (squash[i] ?? 0) - ctx.dt)
+        if ((squash[i] ?? 0) > 0) {
+          squashAge[i] = (squashAge[i] ?? 0) + ctx.dt
+          if ((squashAge[i] ?? 0) > 0.22) squash[i] = 0
+        }
         contact[i] = Math.max(0, (contact[i] ?? 0) - ctx.dt)
         if ((washT[i] ?? 0) > 0) washT[i] = Math.max(0, (washT[i] ?? 0) - ctx.dt)
         if ((gleamT[i] ?? 0) > 0) gleamT[i] = Math.max(0, (gleamT[i] ?? 0) - ctx.dt)
         if (bench[i]) continue
         if (state[i] === DYING) {
           stateT[i] = (stateT[i] ?? 0) - ctx.dt
-          scale[i] = Math.max(0, (stateT[i] ?? 0) / TUNING.deathTime)
+          const age = DEATH_LIFE - (stateT[i] ?? 0)
+          if (age < DEATH_POP) scale[i] = 1 + 0.12 * (age / DEATH_POP)
+          else scale[i] = 1.12 * (1 - Math.min(1, (age - DEATH_POP) / DEATH_FALL))
           if ((stateT[i] ?? 0) <= 0) {
             alive[i] = 0
             state[i] = 0
             free.release(i)
           }
+          continue
+        }
+        if ((holdHit[i] ?? 0) > 0) {
+          holdHit[i] = Math.max(0, (holdHit[i] ?? 0) - ctx.dt)
           continue
         }
         const dx = ctx.px - (x[i] ?? 0)
@@ -1091,11 +1219,15 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         z[i] = slid.z
         yaw[i] = yawFromDirection(sx, sz)
       }
+      for (let i = 0; i < MAX; i++) {
+        if (!alive[i] || bench[i]) continue
+        integrateKnock(i, ctx.dt)
+      }
       if (!ctx.pass) {
       const pushR = 0.9
       const pushR2 = pushR * pushR
       for (let i = 0; i < MAX; i++) {
-        if (!alive[i] || bench[i] || state[i] === DYING) continue
+        if (!alive[i] || bench[i] || state[i] === DYING || (holdHit[i] ?? 0) > 0) continue
         const dx = (x[i] ?? 0) - ctx.px
         const dz = (z[i] ?? 0) - ctx.pz
         const d2 = dx * dx + dz * dz
@@ -1222,18 +1354,24 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       for (let i = 0; i < MAX; i++) {
         if (!alive[i]) continue
         const s = Math.max(0.001, scale[i] ?? 1)
-        const moving = state[i] === CHASE || state[i] === LUNGE || state[i] === DART ? 1 : 0
+        const held = (holdHit[i] ?? 0) > 0
+        const moving = !held && (state[i] === CHASE || state[i] === LUNGE || state[i] === DART) ? 1 : 0
         const crouch = type[i] === 1 && state[i] === TELE ? 1 : 0
         const ph = phase[i] ?? 0
         const pack = ph + moving * 8 + crouch * 16 + Math.round(Math.min(1, s) * 32) * 32
-        const hot = Math.min(1, (flash[i] ?? 0) / TUNING.hitFlash)
+        const hot = (flash[i] ?? 0) + 2 * (flashKind[i] ?? 0)
         const litNow = lit[i] ?? 0
         const yawNow = yaw[i] ?? 0
-        const squish = Math.min(1, (squash[i] ?? 0) / 0.1)
+        const framed = squashFrame(i)
         const sized = Math.max(0.001, (scale[i] ?? 1) * (body[i] ?? 1))
+        const bodyX = sized * framed.sx
+        const bodyY = sized * framed.sy
+        const bodyZ = sized * (framed.on ? framed.sz : framed.sx)
         if (type[i] === 2) {
           darterA.pose.setXYZW(darters, x[i] ?? 0, z[i] ?? 0, yawNow, pack)
-          if (darterA.flash.getX(darters) !== hot) {
+          const rel = framed.on ? framed.axis - yawNow : 0
+          writeInstance(darterMesh, darters, 0, 0, 0, rel, framed.on ? framed.sx : 1, framed.on ? framed.sy : 1, 0, framed.on ? framed.sz : 1)
+          if (Math.abs(darterA.flash.getX(darters) - hot) > 0.0001) {
             darterA.flash.setX(darters, hot)
             darterFlash = true
           }
@@ -1243,9 +1381,9 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           }
           darters++
         } else if (type[i] === 0) {
-          writeInstance(miteMesh, mites, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
-          if (moving && state[i] !== DYING) phase[i] = ((phase[i] ?? 0) + stepDt / 0.4) % 1
-          else phase[i] = 0
+          writeInstance(miteMesh, mites, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, bodyX, bodyY, 0, bodyZ, framed.on ? framed.axis : undefined)
+          if (!held && moving && state[i] !== DYING) phase[i] = ((phase[i] ?? 0) + stepDt / 0.4) % 1
+          else if (!held) phase[i] = 0
           if (miteSrc.hop && miteMorphN > 0 && writeMorph) sampleMorph(miteSrc.hop, phase[i] ?? 0, miteW)
           if (miteMorphN > 0 && writeMorph) miteMesh.setMorphAt(mites, miteMorph)
           const jitter = 0.92 + ((i * 13) % 10) * 0.016
@@ -1255,7 +1393,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
             miteMesh.setColorAt(mites, miteShade)
             miteColor = true
           }
-          if (miteA.flash.getX(mites) !== hot) {
+          if (Math.abs(miteA.flash.getX(mites) - hot) > 0.0001) {
             miteA.flash.setX(mites, hot)
             miteFlash = true
           }
@@ -1265,7 +1403,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
           }
           mites++
         } else {
-          writeInstance(houndMesh, hounds, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, sized * (1 + 0.1 * squish), sized * (1 - 0.1 * squish))
+          writeInstance(houndMesh, hounds, x[i] ?? 0, horde.ground(z[i] ?? 0, x[i]), z[i] ?? 0, yawNow, bodyX, bodyY, 0, bodyZ, framed.on ? framed.axis : undefined)
           let morphPhase = 0
           let useLunge = false
           if (state[i] === TELE) {
@@ -1277,7 +1415,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
             const u = Math.min(1, (travelled[i] ?? 0) / Math.max(0.01, TUNING.hound.lunge))
             morphPhase = 0.1 / 0.35 + u * (1 - 0.1 / 0.35)
             useLunge = true
-          } else if (moving && state[i] !== DYING) {
+          } else if (!held && moving && state[i] !== DYING) {
             phase[i] = ((phase[i] ?? 0) + stepDt / 0.5) % 1
             morphPhase = phase[i] ?? 0
           }
@@ -1294,7 +1432,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
             houndMesh.setColorAt(hounds, houndShade)
             houndColor = true
           }
-          if (houndA.flash.getX(hounds) !== hot) {
+          if (Math.abs(houndA.flash.getX(hounds) - hot) > 0.0001) {
             houndA.flash.setX(hounds, hot)
             houndFlash = true
           }

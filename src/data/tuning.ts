@@ -29,7 +29,7 @@ export const TUNING = {
   // While Sela is below this level, weapon base damage is clamped before sunlight.
   // A lit hit stays louder than shade. Idle card-1 otherwise one-shots the ring. Boss hits are separate.
   earlyLevel: 6,
-  earlyWeaponCap: 3,
+  earlyWeaponCap: 6,
   exposedDamage: 2,
   exposedSpeed: 0.8,
   armoredWeapon: 0.5,
@@ -87,7 +87,7 @@ export const TUNING = {
     refund: 0.15,
     refundMax: 1.5,
     bigHits: 3,
-    hitStop: 0.06,
+    hitStop: 0.055,
     ribbonFade: 0.2,
     shake: 0.08,
   },
@@ -301,9 +301,9 @@ export const TUNING = {
   openSeconds: 30,
   openContact: 0.75,
   tiers: {
-    low: { minRatio: 0.75, maxRatio: 1.5, cap: 150, projectiles: 300, xp: 400, sepHz: 30, motes: 0, floats: 24, sparks: 90, trails: 64, sparkHit: 2 },
-    med: { minRatio: 0.9, maxRatio: 2, cap: 250, projectiles: 500, xp: 600, sepHz: 60, motes: 200, floats: 32, sparks: 80, trails: 40, sparkHit: 4 },
-    high: { minRatio: 1, maxRatio: 2, cap: 400, projectiles: 800, xp: 1000, sepHz: 60, motes: 500, floats: 40, sparks: 420, trails: 260, sparkHit: 7 },
+    low: { minRatio: 0.75, maxRatio: 1.5, cap: 150, projectiles: 300, xp: 400, sepHz: 30, motes: 0, floats: 12, sparks: 90, trails: 64, sparkHit: 2 },
+    med: { minRatio: 0.9, maxRatio: 2, cap: 250, projectiles: 500, xp: 600, sepHz: 60, motes: 200, floats: 12, sparks: 80, trails: 40, sparkHit: 4 },
+    high: { minRatio: 1, maxRatio: 2, cap: 400, projectiles: 800, xp: 1000, sepHz: 60, motes: 500, floats: 12, sparks: 420, trails: 260, sparkHit: 7 },
   },
   quality: {
     benchSeconds: 2.5,

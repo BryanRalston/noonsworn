@@ -58,7 +58,7 @@ import { CARD, applyRank, assertSlotCap, createBuild, describe, grantXp, isSunBo
 import { createCut, resetCut, sweepCut, updateCut } from './noonCut'
 import { createPickups } from './pickups'
 import { createPlayer, hurtPlayer, integratePlayer, resetPlayer } from './player'
-import { createSunClock, damageAmount, setShadeWeapon } from './sunClock'
+import { createSunClock, damageAmount, setEarlyCd, setShadeWeapon } from './sunClock'
 import { bootMeta, liveMeta } from './meta'
 import { clockShadow, stairShadow, type ShadowDir } from './shadowDir'
 import { cellBlocked, PILLARS, resetHomePillars, setBeds } from './collision'
@@ -96,6 +96,7 @@ interface W2Live {
     shadow: (out: ShadowDir) => void,
     ctx: HordeCtx,
     time: number,
+    tier: TierName,
   ) => void
   mark: (mapLit: (x: number, z: number) => boolean, shadow: (out: ShadowDir) => void) => void
   sync: (px: number, pz: number, helio: number, scarab: number, stake: number, prism: number, time: number) => void
@@ -643,10 +644,27 @@ diffuseColor.a = 1.0;
   let toastTimer = 0
   let xpStep = 0
   let cutWas = false
+  let cutHeard = false
+  let wall = 0
+  let refractoryUntil = 0
+  let impactRank = 0
+  let lastLitKill = -1
+  let bossFxArm = false
+  let bossArmX = 0
+  let bossArmZ = 0
+  let radialLeft = 0
+  let radialAmp = 0
+  let radialAcc = 0
+  let springX = 0
+  let springZ = 0
+  let springVx = 0
+  let springVz = 0
+  const shakeAt = [-10, -10, -10]
+  let shakeCursor = 0
+  const stopLog: { t: number; d: number }[] = []
+  let area: { max: number; n: number; kill: boolean; hot: boolean } | null = null
   let washSlow = 0
-  let litBurst = 0
   let stepAcc = 0
-  let litBurstAt = 0
   let flareMs = 0
   let bellMs = 0
   let previewSweepX = 0
@@ -660,7 +678,6 @@ diffuseColor.a = 1.0;
   let profSync = 0
   let chestMs = 0
   let sparkVis = 0
-  const armFloatAt = new Float32Array(TUNING.hordeCap)
   const fxSeed = forcedSeed ?? 1
   let fxState = fxSeed >>> 0
   function fxRng() {
@@ -751,6 +768,97 @@ diffuseColor.a = 1.0;
   }
   loadArsenal()
 
+  function bossWinding(): boolean {
+    if (activeMap === 'lattice') return !!lattice?.bossInfo()?.tele
+    if (activeMap === 'stair') {
+      const fight = stair?.fightInfo()
+      if (!fight) return false
+      return (fight.clip === 'cast' && fight.mixer < 0.3) || (fight.clip === 'sweep' && fight.mixer < 0.8)
+    }
+    if (activeMap === 'nadir') return nadir?.info().tell != null
+    if (activeMap === 'cloister') return (cloister?.peek().boss.wind ?? 0) > 0
+    return false
+  }
+
+  function stopUsed(now: number): number {
+    let sum = 0
+    const start = now - 1
+    for (let i = 0; i < stopLog.length; i++) {
+      const row = stopLog[i]
+      if (!row) continue
+      const a = Math.max(row.t, start)
+      const b = Math.min(row.t + row.d, now)
+      if (b > a) sum += b - a
+    }
+    return sum
+  }
+
+  function requestStop(seconds: number, fromCut: boolean): void {
+    if (!(seconds > 0)) return
+    if (cut.active && !fromCut) return
+    if (bossWinding()) return
+    if (mode === 'level') return
+    if (hitStop <= 0 && wall < refractoryUntil) return
+    const room = 0.12 - stopUsed(wall)
+    if (room <= 0.001) return
+    const want = Math.min(seconds, room)
+    if (hitStop > 0) {
+      if (want <= hitStop) return
+      const extra = Math.min(want - hitStop, room)
+      if (extra <= 0) return
+      hitStop += extra
+      const last = stopLog[stopLog.length - 1]
+      if (last) last.d += extra
+      return
+    }
+    hitStop = want
+    stopLog.push({ t: wall, d: want })
+    if (stopLog.length > 48) stopLog.shift()
+  }
+
+  function applyKick(dirX: number, dirZ: number, amp: number): void {
+    if (!(amp > 0) || !shakeOn()) return
+    if (mode === 'level' || bossWinding()) return
+    let recent = 0
+    for (let i = 0; i < 3; i++) {
+      if (wall - (shakeAt[i] ?? -10) < 0.5) recent++
+    }
+    if (recent >= 3) return
+    shakeAt[shakeCursor % 3] = wall
+    shakeCursor++
+    let dx = dirX
+    let dz = dirZ
+    const mag = Math.hypot(dx, dz)
+    if (mag < 1e-4) {
+      const ang = wall * 3.1 + shakeCursor
+      dx = Math.cos(ang)
+      dz = Math.sin(ang)
+    } else {
+      dx /= mag
+      dz /= mag
+    }
+    springX += dx * amp
+    springZ += dz * amp
+    const hyp = Math.hypot(springX, springZ)
+    if (hyp > 0.12) {
+      const scale = 0.12 / hyp
+      springX *= scale
+      springZ *= scale
+    }
+  }
+
+  function beginArea(): void {
+    area = { max: 0, n: 0, kill: false, hot: false }
+  }
+
+  function endArea(x: number, z: number): void {
+    const row = area
+    area = null
+    if (!row || row.n <= 0) return
+    if (!row.kill && row.max < TUNING.cut.damage) return
+    floats.area(x, z, Math.round(row.max), row.n, row.kill ? 'crit' : row.hot ? 'hot' : 'arm')
+  }
+
   const ctx: HordeCtx = {
     dt: 0,
     time: 0,
@@ -774,30 +882,28 @@ diffuseColor.a = 1.0;
     lureZ: 0,
     lureR2: 0,
     pass: false,
-    onHit(x, z, amount, lit, killed, index) {
-      if (lit) audio.hit()
-      const bigHit = amount >= TUNING.cut.damage
+    onHit(x, z, amount, lit, killed, index, source = 'weapon') {
+      const rank = source === 'cut' ? 3 : impactRank
+      audio.contact(lit, killed, rank, index)
       const crit = killed && lit
-      if (lit) audio.exposed()
-      else audio.armored()
-      if ((bigHit || crit) && (lit || time - (armFloatAt[index] ?? 0) >= 0.35)) {
-        if (!lit) armFloatAt[index] = time
-        floats.push(x, z, `${Math.round(amount)}`, crit ? 'crit' : lit ? 'hot' : 'arm')
+      if (area) {
+        area.n++
+        if (amount > area.max) area.max = amount
+        if (crit) area.kill = true
+        if (lit) area.hot = true
+      } else if (crit || amount >= TUNING.cut.damage) {
+        floats.push(x, z, `${Math.round(amount)}`, crit ? 'crit' : lit ? 'hot' : 'arm', index)
       }
-      if (killed) audio.kill(lit)
       if (killed && lit && activeMap === 'stair' && stair) stair.sealAt(x, z)
-      if (killed && lit) {
-        if (time - litBurstAt > 0.12) litBurst = 0
-        litBurst++
-        litBurstAt = time
-        if (litBurst >= TUNING.exposedBurst) hitStop = Math.max(hitStop, TUNING.exposedStop)
-        shakeAmp = Math.max(shakeAmp, TUNING.exposedShake)
-        shakeT = Math.max(shakeT, TUNING.shakeDecay)
+      if (crit && horde.kindOf(index) === 1) requestStop(0.065, source === 'cut')
+      if (crit) {
+        if (lastLitKill >= 0 && wall - lastLitKill < 0.4) applyKick(0, 0, 0.02)
+        lastLitKill = wall
       }
     },
     onExpose(x, z) {
       audio.shimmer()
-      if (exposePops < 5) {
+      if (tutorial.active() && exposePops < 1) {
         exposePops++
         floats.push(x, z, 'EXPOSED!', 'pop')
       }
@@ -810,7 +916,7 @@ diffuseColor.a = 1.0;
         shakeAmp = TUNING.hurtShake
         shakeT = TUNING.shakeDecay
       }
-      hitStop = Math.max(hitStop, TUNING.hurtStop)
+      requestStop(TUNING.hurtStop, false)
       audio.hurt()
       buzz(24)
       bus.emit('hurt', { amount })
@@ -836,9 +942,26 @@ diffuseColor.a = 1.0;
       if (sparkVis > 4) return
       fx.ember(x, z, lit && build.searing >= 5)
     },
-    onDeath(x, z, lit) {
-      fx.death(x, z, lit)
+    onDeath(x, z, lit, dirX, dirZ) {
+      fx.death(x, z, lit, dirX, dirZ)
       if (activeMap === 'lattice' && lattice?.bloom(x, z, lit)) audio.coinBloom()
+    },
+    feel: {
+      stop: requestStop,
+      shake: applyKick,
+      hush() {
+        fx.hush()
+      },
+      rank(n) {
+        impactRank = n
+      },
+      beginArea,
+      endArea,
+      burst(amp, times) {
+        radialAmp = amp
+        radialLeft = times
+        radialAcc = 0
+      },
     },
   }
 
@@ -1388,7 +1511,7 @@ diffuseColor.a = 1.0;
   function offerFirst() {
     firstOffer = false
     rollOffers()
-    hitStop = Math.max(hitStop, 0.4)
+    requestStop(0.12, false)
     mode = 'level'
     const cards = shown.slice(0, offerCount)
     // The strip's text layout stays off this sim frame. The hook measures the next turn on its own.
@@ -1488,15 +1611,61 @@ diffuseColor.a = 1.0;
   }
   horde.onDart = () => audio.darterDart()
   horde.bossHit = (x, z, radius, base, source, might, stamp) => {
-    if (activeMap === 'lattice' && lattice) return lattice.hitBoss(x, z, radius, base, source, might, stamp)
-    if (activeMap === 'cloister' && cloister) return cloister.soak(x, z, radius, base, source, might, stamp)
-    if (activeMap === 'stair' && stair) {
+    const before = bossSnap()
+    if (before) {
+      bossFxArm = true
+      bossArmX = before.x
+      bossArmZ = before.z
+    }
+    let hit = false
+    if (activeMap === 'lattice' && lattice) hit = lattice.hitBoss(x, z, radius, base, source, might, stamp)
+    else if (activeMap === 'cloister' && cloister) hit = cloister.soak(x, z, radius, base, source, might, stamp)
+    else if (activeMap === 'stair' && stair) {
       const boss = stair.soak(x, z, radius, base, source, might, stamp)
       const crowd = stair.crowdHit(x, z, radius, base, source, might, stamp)
-      return boss || crowd
+      hit = boss || crowd
+    } else if (activeMap === 'nadir' && nadir) hit = nadir.soak(x, z, radius, base, source, might, stamp)
+    bossFxArm = false
+    if (!hit || !before) return hit
+    const after = bossSnap()
+    if (!after) return true
+    const dealt = before.hp - after.hp
+    const killed = before.hp > 0 && after.hp <= 0
+    const staggered = after.phase > before.phase
+    if (dealt <= 0 && !killed && !staggered) return true
+    const lit = before.lit
+    fx.hit(x, z, lit)
+    audio.contact(lit, killed, source === 'cut' ? 3 : impactRank, 0)
+    if (killed || dealt >= TUNING.cut.damage) {
+      floats.push(x, z, `${Math.max(1, Math.round(dealt))}`, killed && lit ? 'crit' : lit ? 'hot' : 'arm')
     }
-    if (activeMap === 'nadir' && nadir) return nadir.soak(x, z, radius, base, source, might, stamp)
-    return false
+    if (killed) requestStop(0.1, source === 'cut')
+    else if (staggered) requestStop(0.06, source === 'cut')
+    return true
+  }
+
+  function bossSnap(): { hp: number; phase: number; x: number; z: number; lit: boolean } | null {
+    if (activeMap === 'lattice' && lattice) {
+      const info = lattice.bossInfo()
+      if (!info) return null
+      return { hp: info.hp, phase: info.phase, x: info.x, z: info.z, lit: info.exposed }
+    }
+    if (activeMap === 'cloister' && cloister) {
+      const boss = cloister.peek().boss
+      if (!boss.on) return null
+      return { hp: boss.hp, phase: boss.phase, x: boss.x, z: boss.z, lit: litAt(boss.x, boss.z) }
+    }
+    if (activeMap === 'stair' && stair) {
+      const at = stair.boss()
+      if (!at) return null
+      const fight = stair.fightInfo()
+      return { hp: fight.hp, phase: fight.phase, x: at.x, z: at.z, lit: litAt(at.x, at.z) }
+    }
+    if (activeMap === 'nadir' && nadir) {
+      const info = nadir.info()
+      return { hp: info.hp, phase: info.phase, x: info.boss.x, z: info.boss.z, lit: info.exposed }
+    }
+    return null
   }
 
   function clearedNow(): boolean {
@@ -1669,12 +1838,19 @@ diffuseColor.a = 1.0;
               },
               vulnerable: () => player.iframe <= 0 && player.invuln <= 0 && !cut.active,
               each: (fn) => horde.each(fn),
-              damage: (index, base, source, might) => horde.damage(index, base, source, might),
+              damage: (index, base, source, might) => {
+                const hit = horde.damage(index, base, source, might)
+                if (hit === 2) horde.slay(index, ctx)
+                return hit
+              },
               place: (index, x, z) => horde.place(index, x, z),
               stagger: (index, seconds) => horde.staggerFor(index, seconds),
               wash: (index, seconds) => horde.washFor(index, seconds),
               xp: (x, z, value) => pickups.spawn(x, z, value, capXp(), player.x, player.z),
-              ping: (x, z, lit) => fx.hit(x, z, lit),
+              ping: (x, z, lit) => {
+                if (bossFxArm && Math.hypot(x - bossArmX, z - bossArmZ) < 4) return
+                fx.hit(x, z, lit)
+              },
               spawn: (kind, x, z) => horde.spawn(kind, x, z, false, 56, player.x, player.z),
               cull: (n) => horde.cullTo(n, player.x, player.z),
               track: (at) => {
@@ -2139,6 +2315,15 @@ diffuseColor.a = 1.0;
     kills = 0
     tick = 0
     hitStop = 0
+    wall = 0
+    refractoryUntil = 0
+    stopLog.length = 0
+    springX = 0
+    springZ = 0
+    springVx = 0
+    springVz = 0
+    radialLeft = 0
+    cutHeard = false
     dying = false
     deathHold = 0
     runNoted = false
@@ -2793,9 +2978,10 @@ diffuseColor.a = 1.0;
         ads.gameplayStop()
         return false
       }
+      wall += frameSec
       if (hitStop > 0) {
-        hitStop -= frameSec
-        if (hitStop < 0) hitStop = 0
+        hitStop = Math.max(0, hitStop - frameSec)
+        if (hitStop === 0) refractoryUntil = wall + 0.3
         return false
       }
       if (queuedCut && mode === 'playing') {
@@ -3017,7 +3203,7 @@ diffuseColor.a = 1.0;
           shakeAmp = Math.max(shakeAmp, traps.events.shake)
           shakeT = Math.max(shakeT, TUNING.shakeDecay)
         }
-        hitStop = Math.max(hitStop, traps.events.stop)
+        requestStop(traps.events.stop, false)
       }
       if (traps.events.mirage) audio.mirage()
       audio.setHums(traps.events.hum)
@@ -3052,30 +3238,33 @@ diffuseColor.a = 1.0;
       if (previewWeapon) player.iframe = Math.max(player.iframe, 30)
       if (cut.active && !cutWas) {
         cutMark = -1
+        cutHeard = false
         const slashYaw = yawFromDirection(cut.dirX, cut.dirZ)
         const midX = cut.sx + cut.dirX * TUNING.cut.distance * 0.5
         const midZ = cut.sz + cut.dirZ * TUNING.cut.distance * 0.5
         fx.scorch(midX, midZ, slashYaw, TUNING.cut.distance, 1.7, 1, false)
         fx.crescent(midX, midZ, slashYaw, false)
         fx.afterimage(player.x, player.z, cut.dirX, cut.dirZ)
+        fx.hush()
         previewFires++
         audio.cut()
         buzz(16)
-        if (shakeOn()) {
-          shakeAmp = Math.max(shakeAmp, TUNING.cut.shake)
-          shakeT = Math.max(shakeT, TUNING.shakeDecay)
-        }
+        applyKick(cut.dirX, cut.dirZ, TUNING.cut.shake)
       }
       cutWas = cut.active
       if (cut.active) {
         sweepCut(cut, player, horde, build.might, ctx, () => {
-          shakeAmp = Math.max(shakeAmp, Math.min(TUNING.hurtShake, TUNING.cut.shake + 0.03))
-          shakeT = TUNING.shakeDecay
+          requestStop(0.065, true)
+          applyKick(cut.dirX, cut.dirZ, 0.11)
           const slashYaw = yawFromDirection(cut.dirX, cut.dirZ)
           fx.scorch(cut.sx + cut.dirX * TUNING.cut.distance * 0.5, cut.sz + cut.dirZ * TUNING.cut.distance * 0.5, slashYaw, TUNING.cut.distance, 1.7, 1, true)
           fx.crescent(player.x + cut.dirX * 1.6, player.z + cut.dirZ * 1.6, slashYaw, true)
         }, (hx, hz, lit) => {
           fx.hit(hx, hz, lit)
+          if (!cutHeard) {
+            cutHeard = true
+            requestStop(TUNING.cut.hitStop, true)
+          }
         })
         if (activeMap === 'cloister' && cloister) {
           cloister.cut(
@@ -3214,6 +3403,7 @@ diffuseColor.a = 1.0;
       setWeaponPassives(build.reach, build.endurance)
       spears.multitude = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
       const spearT = performance.now()
+      setEarlyCd(build.level)
       horde.dmgCap = activeMap === 'nadir' ? 0 : build.level < TUNING.earlyLevel ? TUNING.earlyWeaponCap : 0
       if (!nadirHold) spears.update(dt, player.x, player.z, horde, build.spear, build.haste, build.might, capProjectiles(), ctx)
       profSpear += performance.now() - spearT
@@ -3231,7 +3421,7 @@ diffuseColor.a = 1.0;
       }
       bellMs += performance.now() - bellT
       const multi = build.multitude > 2 ? 2 : build.multitude > 0 ? build.multitude : 0
-      if (!nadirHold) w2?.update(dt, player.x, player.z, horde, build.helio, build.scarab, build.stake, build.prism, multi, build.haste, build.might, mapLit, writeShadow, ctx, time)
+      if (!nadirHold) w2?.update(dt, player.x, player.z, horde, build.helio, build.scarab, build.stake, build.prism, multi, build.haste, build.might, mapLit, writeShadow, ctx, time, quality.tier)
       const wasReveal = chests.revealUp()
       const chestT = performance.now()
       chestEnv.rawDt = rawDt
@@ -3336,16 +3526,42 @@ diffuseColor.a = 1.0;
       while (dy > Math.PI) dy -= Math.PI * 2
       while (dy < -Math.PI) dy += Math.PI * 2
       const yaw = player.prevYaw + dy * alpha
+      if (radialLeft > 0) {
+        radialAcc += frameSec
+        while (radialLeft > 0 && radialAcc >= 0.045) {
+          radialAcc -= 0.045
+          radialLeft--
+          applyKick(0, 0, radialAmp)
+        }
+      }
+      const omega = 38
+      const zeta = 0.45
+      const damp = 2 * zeta * omega
+      const stiff = omega * omega
+      springVx += (-stiff * springX - damp * springVx) * frameSec
+      springVz += (-stiff * springZ - damp * springVz) * frameSec
+      springX += springVx * frameSec
+      springZ += springVz * frameSec
       let sx = 0
       let sz = 0
-      if (shakeT > 0) {
-        shakeT -= frameSec
-        if (shakeOn()) {
-          const k = Math.max(0, shakeT / TUNING.shakeDecay)
-          const amp = shakeAmp * k
-          const now = performance.now() * 0.001
-          sx = Math.sin(now * 70) * amp
-          sz = Math.cos(now * 54) * amp
+      if (mode !== 'level' && !bossWinding()) {
+        sx = springX
+        sz = springZ
+        if (shakeT > 0) {
+          shakeT -= frameSec
+          if (shakeOn()) {
+            const k = Math.max(0, shakeT / TUNING.shakeDecay)
+            const amp = shakeAmp * k
+            const now = performance.now() * 0.001
+            sx += Math.sin(now * 70) * amp
+            sz += Math.cos(now * 54) * amp
+          }
+        }
+        const hyp = Math.hypot(sx, sz)
+        if (hyp > 0.12) {
+          const scale = 0.12 / hyp
+          sx *= scale
+          sz *= scale
         }
       }
       follow.update(x, z, frameSec, sx, sz)
@@ -3430,7 +3646,7 @@ diffuseColor.a = 1.0;
       if (mode === 'playing' || mode === 'dead' || mode === 'clear') fx.anchor(spearPoint.x, spearPoint.y, spearPoint.z, playerView.rotation.y)
       if (sela.cue.slashHit && cut.hits > 0 && time - slashStopAt >= 0.3) {
         slashStopAt = time
-        hitStop = Math.max(hitStop, 0.05)
+        requestStop(0.05, true)
       }
       animHurt = false
       animThrust = false
@@ -3830,6 +4046,9 @@ diffuseColor.a = 1.0;
     grantMirage: () => {
       build.mirage = 1
     },
+    impactLog: () => stopLog.map((row) => ({ t: row.t, d: row.d, wall })),
+    audioAudit: () => audio.impactAudit(),
+    fxAudit: () => fx.audit(),
     probe: () => {
       const c = follow.camera
       c.updateMatrixWorld()

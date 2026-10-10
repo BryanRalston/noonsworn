@@ -64,6 +64,20 @@ export interface AudioBus {
   exposed: () => void
   armored: () => void
   kill: (lit?: boolean) => void
+  /** Body plus one sweetener. Rank breaks a 90 ms cluster: cut 3, bell/flare 2, finisher 1, hit 0. */
+  contact: (lit: boolean, killed: boolean, rank: number, index: number) => void
+  impactAudit: () => {
+    hit: number
+    hitPlay: number
+    exposed: number
+    exposedPlay: number
+    armored: number
+    armoredPlay: number
+    kill: number
+    killPlay: number
+    clustered: number
+    crackThrottle: number
+  }
   cut: () => void
   xp: (step: number) => void
   level: () => void
@@ -154,6 +168,17 @@ export function createAudio(fxRng: () => number): AudioBus {
   let hitBurst = 0
   let hitBurstAt = 0
   let hitClustered = false
+  let clusterUntil = 0
+  let clusterRank = -1
+  let clusterBody = false
+  let lastKillAccent = 0
+  let killChain = 0
+  let killChainAt = 0
+  const crackAt: number[] = []
+  const impact = {
+    hit: 0, hitPlay: 0, exposed: 0, exposedPlay: 0, armored: 0, armoredPlay: 0,
+    kill: 0, killPlay: 0, clustered: 0, crackThrottle: 0,
+  }
   let shimmerAt = 0
 
   function ensure(): AudioContext {
@@ -792,6 +817,87 @@ export function createAudio(fxRng: () => number): AudioBus {
     kill(lit = true) {
       mark('kill')
       one(shatters, lit ? 0.4 : 0.4 * Math.pow(10, -6 / 20), 'kill')
+    },
+    contact(lit, killed, rank, index) {
+      const now = performance.now()
+      impact.hit++
+      mark('hit')
+      if (now > clusterUntil) {
+        clusterUntil = now + 90
+        clusterRank = rank
+        clusterBody = false
+      } else if (rank < clusterRank) {
+        impact.clustered++
+        return
+      } else if (rank > clusterRank) {
+        clusterRank = rank
+        clusterBody = false
+      } else if (clusterBody && !killed) {
+        impact.clustered++
+        return
+      }
+      if (!clusterBody) {
+        clusterBody = true
+        impact.hitPlay++
+        const body = vary(0.42)
+        play(pick(stones), sfxBus, body.gain, body.rate, 'hit')
+      }
+      if (killed && lit) {
+        crackAt[index] = now
+        if (now - lastKillAccent < 120) {
+          impact.kill++
+          impact.clustered++
+          return
+        }
+        lastKillAccent = now
+        if (now - killChainAt > 400) killChain = 0
+        const semi = killChain
+        killChain = killChain >= 5 ? 0 : killChain + 1
+        killChainAt = now
+        impact.kill++
+        impact.killPlay++
+        mark('kill')
+        const v = vary(0.4)
+        play(pick(shatters), sfxBus, v.gain, v.rate * Math.pow(2, semi / 12), 'kill')
+        return
+      }
+      if (killed) {
+        if (now - lastKillAccent < 120) {
+          impact.kill++
+          impact.clustered++
+          return
+        }
+        lastKillAccent = now
+        impact.kill++
+        impact.killPlay++
+        mark('kill')
+        const v = vary(0.4 * Math.pow(10, -6 / 20))
+        play(pick(shatters), sfxBus, v.gain, v.rate, 'kill')
+        return
+      }
+      if (lit) {
+        const prev = crackAt[index] ?? -1e9
+        if (now - prev < 500) {
+          impact.exposed++
+          impact.crackThrottle++
+          return
+        }
+        crackAt[index] = now
+        impact.exposed++
+        impact.exposedPlay++
+        mark('exposed')
+        const v = vary(0.34)
+        play(pick(cracks), sfxBus, v.gain, v.rate, 'exposed')
+        return
+      }
+      impact.armored++
+      impact.armoredPlay++
+      mark('armored')
+      const v = vary(0.32)
+      play(pick(tinks), sfxBus, v.gain, v.rate * Math.pow(2, -2 / 12), 'armored')
+    },
+    impactAudit() {
+      return { ...impact }
     },
     cut() {
       mark('cut')
