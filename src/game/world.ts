@@ -2360,6 +2360,7 @@ diffuseColor.a = 1.0;
     }
     activeMap = wantMap
     horde.setTouchShare(activeMap === 'lattice' ? TUNING.latticeTouch : 1)
+    horde.setDeathChase(activeMap === 'cloister' ? TUNING.cloisterChase : 0)
     audio.enterMap(wantMap)
     applyOfferFilter()
     nadir?.setSliver(liveMeta().lineLive('line.sliver', activeMap))

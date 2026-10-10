@@ -554,3 +554,92 @@ PUSH-READY: NO
 - Clips: not re-recorded. Sundial weapon feel is on the same path as W4a.2.
 
 Local commits only. This round was not pushed.
+
+## W4a.4
+
+On top of `7159ac9`. Same harness, same base table, same band. Diagnosis ran before the edit, base `b70fc90` on port 5183 against `index-QKpIM3vv.js` on port 5182. `RENDER=0`, tier high, kit e2, cap 220, seeds 11, 22, 33, 44, 55, 66. 0 console errors. No 402 or 429.
+
+### Cloister timeline
+
+Wake is the same on every seed of both builds: t=270.03, player HP 100, 40 adds alive, 0 enemies in contact range. Every killing blow after that is in the boss phase. Global hit-stop time in this harness is 0. `RENDER=0` calls `step`, and `beginFrame` is where hit-stop counts down. Per-enemy hold applied during the boss is 0. Base has no `hold()`. Head requests hold, then `hold()` returns immediately while a boss is tracked. The requested seconds are in the table so the two are not mixed. Contact at the killing tick is 0. Alive in the last 15 s is a handful of adds on both builds.
+
+The DOM cause string is "The court is held" because the court line overwrites `#end-cause`. Killers below come from the damage, the shove, and the distance to the boss. A 30 at about 2 m is the boss body. A remainder of that 30, at the same distance, is the boss finishing the last HP. A 10 with a 5–6 m shove at 11–13 m is a brim wash. A 6 at 1.45 m is blot contact.
+
+| Side | Seed | End | Phase | t | Killer | Dist | Contact kill / max 15s | Hit-stop | Hold applied | Hold requested | Alive 15s | HP over the last 15 s |
+| --- | ---: | --- | --- | ---: | --- | ---: | --- | ---: | ---: | ---: | --- | --- |
+| Base | 11 | clear 32.48 | boss | 302.48 | boss body 30 | 1.90 | 0 / 0 | 0 | 0 | 0 | 1–6 | 48 for 10 s, then 18 |
+| Head | 11 | clear 32.48 | boss | 302.48 | boss body 30 | 1.90 | 0 / 0 | 0 | 0 | 1.035 | 1–6 | 70 for 10 s, then 40 |
+| Base | 22 | clear 40.14 | boss | 310.14 | brim wash 10 | 11.93 | 3 / 0 | 0 | 0 | 0 | 0–4 | 74 flat |
+| Head | 22 | clear 45.64 | boss | 315.64 | boss body 30 | 1.94 | 0 / 4 | 0 | 0 | 1.315 | 0–6 | 36, then 6 |
+| Base | 33 | clear 44.31 | boss | 314.31 | brim wash 10 | 12.80 | 3 / 2 | 0 | 0 | 0 | 0–6 | 32 flat |
+| Head | 33 | death | boss | 310.68 | boss body, 4 left | 0.78 | 0 / 2 | 0 | 0 | 1.905 | 0–5 | 34, then 4 |
+| Base | 44 | death | boss | 301.24 | blot contact 6 | 1.45 | 0 / 0 | 0 | 0 | 0 | 2–7 | 66, then 36 |
+| Head | 44 | death | boss | 301.94 | boss body, 18 left | 1.94 | 0 / 2 | 0 | 0 | 1.585 | 0–4 | 48, then 38, 28, 18 |
+| Base | 55 | death | boss | 313.66 | boss body, 2 left | 1.91 | 0 / 0 | 0 | 0 | 0 | 1–4 | 62, then 32, then 2 |
+| Head | 55 | clear 40.98 | boss | 310.98 | brim wash 10 | 11.21 | 1 / 0 | 0 | 0 | 1.715 | 0–3 | 64 flat |
+| Base | 66 | clear 41.31 | boss | 311.31 | boss body 30 | 1.91 | 0 / 3 | 0 | 0 | 0 | 1–4 | 54, then 24 |
+| Head | 66 | death | boss | 299.98 | boss body, 26 left | 1.94 | 0 / 2 | 0 | 0 | 1.590 | 1–5 | 66, 56, then 46, 36, 26 |
+
+Head 22 and head 55 cleared in this one sample. W4a.2 and W4a.3 both died on those seeds, and head 33 and head 66 died at the same clocks as those rounds (t=310.68 and t=299.98). The sample is the killer log. The pre-fix gate result stays 1/6 at 32.48.
+
+### Cause
+
+Sela dies in the boss phase to the boss body and to repeated brim washes. She is in contact with no add when that happens. Hold is not freezing biters, hit-stop is not stalling her, and the last 15 s are not a packed lane of mites. The pillar steer left that result where it was.
+
+`strike()` removes an add the moment weapon damage reaches 0 HP. Base leaves that body alive: HP at or below 0, state not DYING, still chasing. Those chasers are what move the ring's stand. Head deletes them, and the stand settles where the wash can shove her and the boss body can finish her. Seed 11 is the same boss-body tick on both builds (t=298.38, dist 1.90) and she lives there only because she still has HP.
+
+### What changed
+
+Cloister boss only. A slain add chases for 3 s and does not bite. The state is DYING, so a 0 HP body outside DYING still counts as 0. The body is drawn at scale 0. `TUNING.cloisterChase` is 3. Other maps set the chase to 0. An 8 s chase, the length tried on every boss in W4a.1, killed the seed that had been clearing and still lost 33 and 66, so it is not this build. Boss HP, wash, slam, lane, and contact were not retuned. `latticeTouch` stays 0.15.
+
+### Sundial
+
+Sundial has no boss. `bossSnap()` returns null, and the clear is `time >= 300`. There is no boss HP and no phase-change HP%. On `index-tuKaEFBz.js` all six seeds reach noon at 30.02 s. Player HP is 100 on 11, 22, 33, and 66, and 92 on 44 and 55 (one hit of 8). The fight runs the full measured window. Accepted. The adds do not put her down.
+
+### Lattice
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Base | 4/6 | 55.67 | 29.01 | 49.36 | 59.36 | death | death | 71.49 | 42.48 |
+| W4a.4 | 4/6 | 61.44 | 1.16 | 61.49 | 60.83 | death | death | 61.99 | 61.43 |
+
+Mean +10.4% PASS. Clears 4/6 PASS. Seeds 33 and 44 die at the W4a.3 clocks (t=291.01, boss 5960; t=282.09, boss 7236), same twelve bites of 8 plus a final 4.
+
+### Cloister
+
+Two passes on `index-tuKaEFBz.js`. The clear rows match. Seed 66 dies on both, at t=300.71 and t=300.88.
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 3/6 | 38.87 | 11.50 | 32.48 | 40.14 | 43.98 | death | death | death |
+| B | 4/6 | 39.48 | 11.50 | 32.48 | 40.14 | 43.98 | death | death | 41.31 |
+| W4a.4 | 4/6 | 41.31 | 14.00 | 32.31 | 45.64 | death | 46.31 | 40.98 | death |
+
+Mean 41.31 is +5.4% of the base midpoint 39.175. PASS. Clear count 4 is within 1 of both 3 and 4 PASS. Seeds 33 and 66 still die (t=310.56, t=300.71). Seeds 44 and 55 clear on both passes of this build.
+
+### Stair
+
+All six seeds match W4a.2 head: 74.49, 119.16, 78.33, 105.91, 154.49, 112.83. Mean 107.54, +0.9%, 6/6. PASS.
+
+### Nadir
+
+All six seeds match W4a.2 head, including seed 22 dead at t=154.71 with 1251 boss HP left. Mean of the five clears 137.71, +3.5%, 5/6. PASS.
+
+### Feel
+
+No after-clip was re-recorded. Hold, flash, and knock distance are the same calls as `7159ac9`. The chase runs only on the Cloister court while a boss is tracked, and the body scale is 0, so the Sundial weapon clips do not take a new read.
+
+## Push
+
+PUSH-READY: YES
+
+- Sundial: accepted. No boss HP, so no phase-change percentage. Noon at 30.02 s, player HP 92 or 100.
+- Lattice: PASS. Mean +10.4%. Clears 4/6.
+- Cloister: PASS. Mean +5.4%. Clears 4/6, within 1 of base 3 and base 4. Two passes agree on the clears.
+- Stair: PASS. Mean +0.9%, 6/6, same rows as W4a.2.
+- Nadir: PASS. Mean +3.5%, 5/6, same rows as W4a.2.
+- Gate width: unchanged.
+- Clips: not re-recorded. Hold, flash, and knock are unchanged.
+- camera.ts: unchanged versus `b70fc90`.
+
+Local commits only. This round was not pushed.

@@ -332,6 +332,9 @@ export const TUNING = {
   // Lattice boss only. A hound already near Sela takes this share of a weapon hit,
   // so the bite lasts long enough to match the base clear rate.
   latticeTouch: 0.15,
+  // Cloister boss only. A slain add keeps chasing this long, with no contact,
+  // so the ring's stand stays off the boss body the way the base crowd did.
+  cloisterChase: 3,
   // E2 boss scales are the payoff. Solar also pulses the boss in shade, because a
   // ring hold sits off the sun patch. Stun, knock, and light still do not touch bosses.
   evo: {

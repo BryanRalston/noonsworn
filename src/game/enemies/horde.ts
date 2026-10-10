@@ -162,6 +162,8 @@ export interface Horde {
   slay: (index: number, ctx: HordeCtx) => void
   /** During a Lattice boss, a hound inside contact reach takes this fraction of weapon damage. */
   setTouchShare: (share: number) => void
+  /** During a Cloister boss, a slain add chases for this long and does not bite. */
+  setDeathChase: (seconds: number) => void
   update: (ctx: HordeCtx) => void
   sync: (camX: number, camZ: number, high: boolean) => void
   /** World y of a foot point. Lattice terraces override this; Sundial stays at 0. */
@@ -360,6 +362,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const squashAge = new Float32Array(MAX)
   const squashBack = new Uint8Array(MAX)
   const holdHit = new Float32Array(MAX)
+  const chaseDie = new Float32Array(MAX)
   const kvx = new Float32Array(MAX)
   const kvz = new Float32Array(MAX)
   const flashKind = new Uint8Array(MAX)
@@ -416,6 +419,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     squashAge[i] = 0
     squashBack[i] = 0
     holdHit[i] = 0
+    chaseDie[i] = 0
     kvx[i] = 0
     kvz[i] = 0
     flashKind[i] = 0
@@ -621,11 +625,15 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     squashBack[i] = exposed ? 1 : 0
   }
 
+  let deathChase = 0
+
   function kill(i: number, ctx: HordeCtx) {
     if (state[i] === DYING || !alive[i]) return
     state[i] = DYING
-    stateT[i] = DEATH_LIFE
-    scale[i] = 1
+    const chase = deathChase > 0 && horde.bossAt != null
+    stateT[i] = chase ? deathChase : DEATH_LIFE
+    chaseDie[i] = chase ? deathChase : 0
+    scale[i] = chase ? 0 : 1
     flash[i] = KILL_FLASH
     flashKind[i] = 2
     const dir = aimDir(i, hitDX[i] ?? 0, hitDZ[i] ?? 0)
@@ -706,6 +714,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       state.fill(0)
       bench.fill(0)
       gleamT.fill(0)
+      chaseDie.fill(0)
       gleamN = 0
       tired.fill(0)
       ctrlAt.fill(-100)
@@ -1019,6 +1028,9 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     setTouchShare(share) {
       touchShare = share > 0 && share < 1 ? share : 1
     },
+    setDeathChase(seconds) {
+      deathChase = seconds > 0 ? seconds : 0
+    },
     update(ctx) {
       clock = ctx.time
       syncTick = ctx.tick
@@ -1072,6 +1084,28 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if ((gleamT[i] ?? 0) > 0) gleamT[i] = Math.max(0, (gleamT[i] ?? 0) - ctx.dt)
         if (bench[i]) continue
         if (state[i] === DYING) {
+          if ((chaseDie[i] ?? 0) > 0) {
+            chaseDie[i] = (chaseDie[i] ?? 0) - ctx.dt
+            scale[i] = 0
+            const dx = ctx.px - (x[i] ?? 0)
+            const dz = ctx.pz - (z[i] ?? 0)
+            const dist = Math.hypot(dx, dz) || 0.0001
+            const step = Math.min(dist, specOf(type[i] ?? 0).speed * ctx.dt)
+            const ox = x[i] ?? 0
+            const oz = z[i] ?? 0
+            x[i] = ox + (dx / dist) * step
+            z[i] = oz + (dz / dist) * step
+            const slid = slideCircle(ox, oz, x[i] ?? 0, z[i] ?? 0, specOf(type[i] ?? 0).radius)
+            x[i] = slid.x
+            z[i] = slid.z
+            if ((chaseDie[i] ?? 0) <= 0) {
+              alive[i] = 0
+              state[i] = 0
+              chaseDie[i] = 0
+              free.release(i)
+            }
+            continue
+          }
           stateT[i] = (stateT[i] ?? 0) - ctx.dt
           const age = DEATH_LIFE - (stateT[i] ?? 0)
           if (age < DEATH_POP) scale[i] = 1 + 0.12 * (age / DEATH_POP)
