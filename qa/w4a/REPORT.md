@@ -489,3 +489,68 @@ PUSH-READY: NO
 - Game code: unchanged. No clip was re-recorded.
 
 Local commits only. This round was not pushed.
+
+## W4a.3
+
+On top of `b913bbb`. Same harness and the same base table. The band stays ±15% and ±1 seed of both base passes. Head is `index-QKpIM3vv.js` on port 5182. 0 console errors. Boss numbers were not retuned.
+
+### Cause
+
+The e2 kit's only boss knock is the sunroller, 1.5 m, and only while a boss is tracked. Halo and Bell are not equipped, and no knock deposited an add on Sela.
+
+On Cloister the head and the base do not fail the same way. Measured on seeds 33 and 66 before the edit: every head nudge was shortened by a pillar (7/7 and 1/1) and none of them entered shade. The base, which clears those seeds, completed most nudges and did push adds into shade (4 and 10). The player stands in the wash band on both builds. The stable head deaths are extra brim hits of 10 and a boss-body hit of 30, not mite contact.
+
+On Lattice the player is stuck in the same spot on both builds. The base hound stays up and lands twelve bites of 8. The head slays that hound after about nine bites, and seeds 33 and 44 clear. Hold already does nothing while a boss is tracked, so a shorter hold cannot put those bites back.
+
+### What changed
+
+Cloister boss knocks that a pillar would eat now take an open heading of the same length, and a lit add stops at the shade line instead of landing Armored. `TUNING.latticeTouch` is 0.15. During a Lattice boss, a hound already within 0.75 m past contact reach takes that share of a weapon hit. A one-HP floor on Cloister adds was tried and made spit kill the seed that used to clear, so it is not in this build.
+
+### Sundial
+
+The base deaths are player HP at 0 between t=283.05 and t=288.72. The cap already runs to t=490. Extending it cannot produce a base mean of clears. The W4a.2 table stands: base 0/6, head 6/6 at 30.02. FAIL. Clear rate moves by 6 seeds.
+
+### Lattice
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Base | 4/6 | 55.67 | 29.01 | 49.36 | 59.36 | death | death | 71.49 | 42.48 |
+| W4a.3 | 4/6 | 61.44 | 1.16 | 61.49 | 60.83 | death | death | 61.99 | 61.43 |
+
+Mean +10.4% PASS. Clear rate 4 versus 4 PASS. Seeds 33 and 44 die again (t=291.01, boss 5960; t=282.09, boss 7236), on the same twelve bites of 8 plus a final 4 as the base. Seeds 11, 22, 55, and 66 are unchanged from W4a.2.
+
+### Cloister
+
+| Pass | Clears | Mean | Spread | 11 | 22 | 33 | 44 | 55 | 66 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 3/6 | 38.87 | 11.50 | 32.48 | 40.14 | 43.98 | death | death | death |
+| B | 4/6 | 39.48 | 11.50 | 32.48 | 40.14 | 43.98 | death | death | 41.31 |
+| W4a.3 | 1/6 | 32.48 | 0.00 | 32.48 | death | death | death | death | death |
+
+Seed 11 stays 32.48. Seeds 22 and 33 die at the W4a.2 times (t=308.38, t=310.68). Seed 55 still dies. Seed 66 dies at t=299.98. Seed 44 cleared once at 43.64 and died on the repeat at t=305.06, so it is not counted as a clear. Mean of the one stable clear is −17.1% FAIL. Clear rate 1 versus 3 and 1 versus 4 FAIL.
+
+### Stair
+
+Replayed all six seeds. They match W4a.2 head exactly: 74.49, 119.16, 78.33, 105.91, 154.49, 112.83. Mean 107.54, +0.9%, 6/6. PASS.
+
+### Nadir
+
+Replayed all six seeds. They match W4a.2 head exactly, including seed 22 dead at t=154.71 with 1251 boss HP left. Mean of the five clears 137.71, +3.5%, 5/6. PASS.
+
+### Feel
+
+No after-clip was re-recorded. The knock steer runs only on the Cloister court while a boss is tracked, so the Sundial weapon clips do not take it. The Lattice share changes how hard a hound on Sela is hit. It does not change the hold, the flash, or the knock distance. The existing after-clips still show that feel.
+
+## Push
+
+PUSH-READY: NO
+
+- Sundial: FAIL. No base mean. Deaths are already inside the cap, so the cap was not extended. Head remains 6/6 at 30.02.
+- Lattice: PASS. Mean +10.4%. Clears 4/6 against 4/6.
+- Cloister: FAIL. The pillar steer does not restore a stable clear. Mean of the one stable clear is −17.1%. Clears stay 1 against 3 and 4.
+- Stair: PASS. Mean +0.9%, 6/6, same rows as W4a.2.
+- Nadir: PASS. Mean +3.5%, 5/6, same rows as W4a.2.
+- Gate width: unchanged.
+- Clips: not re-recorded. Sundial weapon feel is on the same path as W4a.2.
+
+Local commits only. This round was not pushed.

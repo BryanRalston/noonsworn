@@ -329,6 +329,9 @@ export const TUNING = {
     storageKey: 'noonsworn.quality.v3',
   },
   passive: { might: 0.1, haste: 0.08, swift: 0.07, vitalHp: 20, vitalHeal: 20, lode: 0.25, max: 5 },
+  // Lattice boss only. A hound already near Sela takes this share of a weapon hit,
+  // so the bite lasts long enough to match the base clear rate.
+  latticeTouch: 0.15,
   // E2 boss scales are the payoff. Solar also pulses the boss in shade, because a
   // ring hold sits off the sun patch. Stun, knock, and light still do not touch bosses.
   evo: {

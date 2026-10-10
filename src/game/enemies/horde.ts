@@ -13,7 +13,7 @@ import { TUNING, type DamageSource } from '../../data/tuning'
 import { COLOR } from '../../data/palette'
 import { FreeList } from '../../core/pool'
 import { yawFromDirection } from '../../core/math'
-import { BEDS, slideCircle, steerBeds } from '../collision'
+import { BEDS, cloisterCourt, cloisterWalk, slideCircle, steerBeds } from '../collision'
 import { hashBuild, hashQuery } from '../spatialHash'
 import { damageAmount } from '../sunClock'
 import { createEnemyMaterial, makeCrowd, writeInstance } from '../../render/instancing'
@@ -160,6 +160,8 @@ export interface Horde {
   /** Weapon hits are capped at this while it is above 0. Boss hits do not use damage(). */
   dmgCap: number
   slay: (index: number, ctx: HordeCtx) => void
+  /** During a Lattice boss, a hound inside contact reach takes this fraction of weapon damage. */
+  setTouchShare: (share: number) => void
   update: (ctx: HordeCtx) => void
   sync: (camX: number, camZ: number, high: boolean) => void
   /** World y of a foot point. Lattice terraces override this; Sundial stays at 0. */
@@ -365,7 +367,10 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
   const hitDZ = new Float32Array(MAX)
   let aimPx = 0
   let aimPz = 0
+  let aimR = 0.45
   let stepDt = 0
+  let touchShare = 1
+  let litFn: ((x: number, z: number) => boolean) | null = null
   let deepFn: ((x: number, z: number) => boolean) | null = null
   const miteTris = triCount(miteSrc.geometry)
   const houndTris = triCount(houndSrc.geometry)
@@ -468,13 +473,69 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     kvz[i] = kz * decay
   }
 
-  function placeBy(i: number, dx: number, dz: number) {
+  function slideDelta(ox: number, oz: number, tx: number, tz: number, radius: number): { x: number; z: number; d: number } {
+    const slid = slideCircle(ox, oz, tx, tz, radius)
+    const sx = slid.x
+    const sz = slid.z
+    return { x: sx - ox, z: sz - oz, d: Math.hypot(sx - ox, sz - oz) }
+  }
+
+  function rayClear(x0: number, z0: number, x1: number, z1: number, radius: number): boolean {
+    for (let i = 1; i <= 4; i++) {
+      const u = i / 4
+      if (!cloisterWalk(x0 + (x1 - x0) * u, z0 + (z1 - z0) * u, radius)) return false
+    }
+    return true
+  }
+
+  // A pillar eats the straight teleport, and the leftover skate pins the add.
+  // Take an open heading of the same length, and stop at the shade line so a lit add does not land Armored.
+  function steeredKnock(ox: number, oz: number, dx: number, dz: number, radius: number): { x: number; z: number } {
+    const want = Math.hypot(dx, dz)
+    if (want < 0.05 || !cloisterCourt()) return { x: dx, z: dz }
+    const straight = slideDelta(ox, oz, ox + dx, oz + dz, radius)
+    const headings: { x: number; z: number }[] = []
+    if (straight.d >= want * 0.55) headings.push({ x: straight.x, z: straight.z })
+    const ang = Math.atan2(dz, dx)
+    const turns = [0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2.0, -2.0]
+    for (let t = 0; t < turns.length; t++) {
+      const a = ang + (turns[t] ?? 0)
+      const tx = Math.cos(a) * want
+      const tz = Math.sin(a) * want
+      if (!rayClear(ox, oz, ox + tx, oz + tz, radius)) continue
+      headings.push({ x: tx, z: tz })
+    }
+    if (headings.length === 0) return { x: straight.x, z: straight.z }
+    for (let h = 0; h < headings.length; h++) {
+      const step = headings[h]
+      if (!step) continue
+      if (!litFn || !litFn(ox, oz) || litFn(ox + step.x, oz + step.z)) return step
+      let lo = 0
+      let hi = 1
+      for (let n = 0; n < 6; n++) {
+        const mid = (lo + hi) * 0.5
+        if (litFn(ox + step.x * mid, oz + step.z * mid)) lo = mid
+        else hi = mid
+      }
+      if (lo >= 0.35) return { x: step.x * lo, z: step.z * lo }
+    }
+    return { x: straight.x, z: straight.z }
+  }
+
+  function placeBy(i: number, dx: number, dz: number, steer = false) {
     kvx[i] = 0
     kvz[i] = 0
     const ox = x[i] ?? 0
     const oz = z[i] ?? 0
     const spec = specOf(type[i] ?? 0)
-    const slid = slideCircle(ox, oz, ox + dx, oz + dz, spec.radius)
+    let mx = dx
+    let mz = dz
+    if (steer) {
+      const step = steeredKnock(ox, oz, dx, dz, spec.radius)
+      mx = step.x
+      mz = step.z
+    }
+    const slid = slideCircle(ox, oz, ox + mx, oz + mz, spec.radius)
     x[i] = slid.x
     z[i] = slid.z
   }
@@ -797,7 +858,7 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         if (d2 > r2 || d2 < 1e-6) continue
         if (tracked) {
           const d = Math.sqrt(d2)
-          placeBy(i, (dx / d) * dist, (dz / d) * dist)
+          placeBy(i, (dx / d) * dist, (dz / d) * dist, true)
         } else addKv(i, dx, dz, dist)
       }
     },
@@ -813,14 +874,14 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
         const d = Math.sqrt(d2)
         const step = Math.min(dist, d)
         if (!allowControl(i, clock)) continue
-        if (tracked) placeBy(i, (dx / d) * step, (dz / d) * step)
+        if (tracked) placeBy(i, (dx / d) * step, (dz / d) * step, true)
         else addKv(i, dx, dz, step)
       }
     },
     nudge(index, dx, dz) {
       if (!alive[index] || state[index] === DYING || bench[index]) return
       if (!allowControl(index, clock)) return
-      if (horde.bossAt) placeBy(index, dx, dz)
+      if (horde.bossAt) placeBy(index, dx, dz, true)
       else addKv(index, dx, dz, Math.hypot(dx, dz))
     },
     slow(cx, cz, radius, seconds) {
@@ -939,6 +1000,13 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
       if (!raw && source === 'weapon' && horde.dmgCap > 0 && baseHit > horde.dmgCap) baseHit = horde.dmgCap
       let amount = raw ? base * (1 + TUNING.passive.might * might) : damageAmount(baseHit, lit[index] === 1 || darting, source, might, inDeep)
       if (darting && source === 'cut') amount *= 1.5
+      if (touchShare < 1 && horde.bossAt && source === 'weapon' && (type[index] ?? 0) === 1) {
+        const spec = specOf(type[index] ?? 0)
+        const dx = (x[index] ?? 0) - aimPx
+        const dz = (z[index] ?? 0) - aimPz
+        const reach = aimR + spec.radius + 0.75
+        if (dx * dx + dz * dz <= reach * reach) amount *= touchShare
+      }
       hp[index] = (hp[index] ?? 0) - amount
       sting(index, dirX, dirZ)
       const killed = (hp[index] ?? 0) <= 0
@@ -948,12 +1016,17 @@ export function createHorde(miteSrc: EnemyMesh, houndSrc: EnemyMesh): Horde {
     slay(index, ctx) {
       kill(index, ctx)
     },
+    setTouchShare(share) {
+      touchShare = share > 0 && share < 1 ? share : 1
+    },
     update(ctx) {
       clock = ctx.time
       syncTick = ctx.tick
       deepFn = ctx.deep
+      litFn = ctx.isLit
       aimPx = ctx.px
       aimPz = ctx.pz
+      aimR = ctx.playerR
       stepDt = horde.frozen ? 0 : ctx.dt
       hashBuild(x, z, alive, MAX)
       if (horde.frozen) return
